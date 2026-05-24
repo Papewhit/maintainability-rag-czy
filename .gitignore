@@ -35,6 +35,8 @@ eval/reports/
 .omx/
 .superpowers/
 .jbeval/
+.claude/
+.codex/
 
 # Frontend dependencies
 node_modules/
