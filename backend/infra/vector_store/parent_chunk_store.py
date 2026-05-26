@@ -42,6 +42,8 @@ class ParentChunkStore:
             "chunk_level": item.chunk_level,
             "chunk_idx": item.chunk_idx,
             "index_profile": getattr(item, "index_profile", self.index_profile) or self.index_profile,
+            "term_matches": getattr(item, "term_matches", None) or [],
+            "protected_tokens": getattr(item, "protected_tokens", None) or [],
         }
 
     def _cache_key(self, chunk_id: str) -> str:
@@ -63,6 +65,8 @@ class ParentChunkStore:
             "root_chunk_id": doc.get("root_chunk_id", ""),
             "chunk_level": int(doc.get("chunk_level", 0) or 0),
             "chunk_idx": int(doc.get("chunk_idx", 0) or 0),
+            "term_matches": doc.get("term_matches") or [],
+            "protected_tokens": doc.get("protected_tokens") or [],
             "updated_at": updated_at,
         }
 
@@ -79,6 +83,8 @@ class ParentChunkStore:
             "chunk_level": payload["chunk_level"],
             "chunk_idx": payload["chunk_idx"],
             "index_profile": payload["index_profile"],
+            "term_matches": payload.get("term_matches") or [],
+            "protected_tokens": payload.get("protected_tokens") or [],
         }
 
     def upsert_documents(self, docs: List[dict]) -> int:

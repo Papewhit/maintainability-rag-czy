@@ -55,6 +55,51 @@ class ChatMessage(Base):
     session = relationship("ChatSession", back_populates="messages")
 
 
+class TerminologyEntryModel(Base):
+    __tablename__ = "terminology_entries"
+    __table_args__ = (
+        UniqueConstraint("entity_type", "canonical", name="uq_terminology_canonical"),
+        {"extend_existing": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    canonical: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    variants: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=local_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=local_now, onupdate=local_now, nullable=False)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    snapshot_before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    snapshot_after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=local_now, nullable=False)
+
+
+class RescanTaskModel(Base):
+    __tablename__ = "rescan_tasks"
+    __table_args__ = {"extend_existing": True}
+
+    task_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    processed_chunks: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_chunks: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ParentChunk(Base):
     __tablename__ = "parent_chunks"
     __table_args__ = {"extend_existing": True}
@@ -70,4 +115,6 @@ class ParentChunk(Base):
     root_chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     chunk_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     chunk_idx: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    term_matches: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    protected_tokens: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=local_now, nullable=False)

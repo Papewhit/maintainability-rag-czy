@@ -74,6 +74,57 @@ class RecursiveCharacterTextSplitter:
         return docs
 
 
+def _scan_terminology(chunks: list[dict]) -> list[dict]:
+    """Post-process chunks to annotate terminology metadata.
+
+    Scans each chunk's retrieval_text for domain terms and writes entity_types,
+    term_match_count, term_matches, and protected_tokens into chunk metadata.
+    Does nothing if the terminology table is not loaded.
+    """
+    try:
+        from backend.rag.terminology.table import get_terminology_table
+        table = get_terminology_table()
+    except RuntimeError:
+        return chunks
+    if not table.is_loaded or table.entry_count() == 0:
+        return chunks
+
+    for chunk in chunks:
+        retrieval_text = chunk.get("retrieval_text", "")
+        if not retrieval_text:
+            chunk.setdefault("entity_types", [])
+            chunk["term_match_count"] = 0
+            chunk.setdefault("term_matches", [])
+            chunk.setdefault("protected_tokens", [])
+            continue
+
+        matches = table.scan_text(retrieval_text)
+        entity_types: list[str] = []
+        term_matches: list[dict] = []
+        protected_tokens: list[str] = []
+        seen_types: set[str] = set()
+        for m in matches:
+            if m.entity_type not in seen_types:
+                seen_types.add(m.entity_type)
+                entity_types.append(m.entity_type)
+            term_matches.append({
+                "surface": m.surface,
+                "canonical": m.canonical,
+                "entity_type": m.entity_type,
+                "start": m.start,
+                "end": m.end,
+            })
+            if len(m.surface) >= 2 and m.surface not in protected_tokens:
+                protected_tokens.append(m.surface)
+
+        chunk["entity_types"] = entity_types
+        chunk["term_match_count"] = len(term_matches)
+        chunk["term_matches"] = term_matches
+        chunk["protected_tokens"] = protected_tokens
+
+    return chunks
+
+
 class DocumentLoader:
     """Load source documents and emit root / leaf chunks."""
 
@@ -579,7 +630,7 @@ class DocumentLoader:
             if self._detect_profile(raw_docs) == "structured":
                 structured_docs = self._build_structured_chunks(raw_docs, filename, file_path, doc_type)
                 if structured_docs:
-                    return structured_docs
+                    return _scan_terminology(structured_docs)
 
             documents = []
             page_global_chunk_idx = 0
@@ -597,7 +648,7 @@ class DocumentLoader:
                 )
                 page_global_chunk_idx += len(page_chunks)
                 documents.extend(page_chunks)
-            return documents
+            return _scan_terminology(documents)
         except Exception as exc:
             raise Exception(f"Failed to process document: {str(exc)}") from exc
 

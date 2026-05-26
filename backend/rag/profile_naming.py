@@ -36,7 +36,7 @@ DEVICE_ALIASES = {
     "A2": "cuda",
 }
 
-VALID_INDEX_PROFILES = {"I1", "I2"}
+VALID_INDEX_PROFILES = {"I1", "I2", "I3"}
 VALID_MODE_PROFILES = {"M0", "M1", "M2"}
 
 
