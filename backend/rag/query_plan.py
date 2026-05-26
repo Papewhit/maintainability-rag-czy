@@ -350,3 +350,37 @@ def parse_query_plan(
         intent_type=None,
         route=route,
     )
+
+
+# --- Terminology preflight ---------------------------------------------------
+
+
+def terminology_preflight(raw_query: str) -> dict | None:
+    """Run terminology preflight on a user query.
+
+    Returns a dict with term_matches, normalized_query, sparse_expansion,
+    and protected_tokens keys, or None if the terminology table is not loaded.
+    """
+    try:
+        from backend.rag.terminology.table import get_terminology_table
+        table = get_terminology_table()
+    except RuntimeError:
+        return None
+    if not table.is_loaded:
+        return None
+    result = table.query_preflight(raw_query)
+    return {
+        "term_matches": [
+            {
+                "surface": m.surface,
+                "canonical": m.canonical,
+                "entity_type": m.entity_type,
+                "start": m.start,
+                "end": m.end,
+            }
+            for m in result.query_entities
+        ],
+        "normalized_query": result.normalized_query,
+        "sparse_expansion": result.sparse_expansion,
+        "protected_tokens": result.protected_tokens,
+    }

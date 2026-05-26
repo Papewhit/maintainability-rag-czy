@@ -35,6 +35,10 @@ async def list_documents(_: User = Depends(require_admin)):
 async def upload_document(file: UploadFile = File(...), _: User = Depends(require_admin)):
     """Upload a document and index it for retrieval."""
     try:
+        from backend.rag.terminology.rescan import is_rescan_running
+        if is_rescan_running():
+            raise HTTPException(status_code=423, detail="Terminology rescan in progress; uploads are temporarily blocked")
+
         filename = raw_filename_basename(file.filename)
         file_lower = filename.lower()
         if not filename:
@@ -63,6 +67,10 @@ async def upload_document(file: UploadFile = File(...), _: User = Depends(requir
 async def delete_document(filename: str, _: User = Depends(require_admin)):
     """Delete a document from Milvus and parent chunk storage."""
     try:
+        from backend.rag.terminology.rescan import is_rescan_running
+        if is_rescan_running():
+            raise HTTPException(status_code=423, detail="Terminology rescan in progress; document operations are temporarily blocked")
+
         service = get_document_service()
         result = await asyncio.to_thread(service.delete_document, filename)
         return DocumentDeleteResponse(**result)

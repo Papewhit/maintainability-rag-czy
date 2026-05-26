@@ -15,6 +15,7 @@ from backend.rag.query_plan import (
     DOC_SCOPE_MATCH_BOOST,
     parse_query_plan,
     get_filename_registry,
+    terminology_preflight,
     _normalize_filename as _qp_normalize_filename,
 )
 from backend.rag.confidence import (
@@ -904,15 +905,18 @@ def embed_search_query(
     search_query: str,
     timings: Dict[str, float],
     stage_errors: list[StageErrorDict],
+    *,
+    sparse_query: str | None = None,
 ) -> QueryEmbeddings:
     stage_start = time.perf_counter()
     dense_embedding = None
     sparse_embedding = None
     dense_error = None
     sparse_error = None
+    sparse_input = sparse_query or search_query
     with ThreadPoolExecutor(max_workers=2) as embed_pool:
         dense_future = embed_pool.submit(_embedding_service.get_embeddings, [search_query])
-        sparse_future = embed_pool.submit(_embedding_service.get_sparse_embedding, search_query)
+        sparse_future = embed_pool.submit(_embedding_service.get_sparse_embedding, sparse_input)
         try:
             dense_embedding = dense_future.result()[0]
         except Exception as exc:
@@ -1446,7 +1450,15 @@ def prepare_candidate_retrieval(
     query_plan = build_query_plan(request, timings, stage_errors)
     search_query = query_plan.semantic_query
     filters = build_retrieval_filters(query_plan, request.context_files)
-    embeddings = embed_search_query(search_query, timings, stage_errors)
+
+    # Terminology preflight: expand sparse query with canonical/variant terms
+    term_preflight = terminology_preflight(query)
+    sparse_query: str | None = None
+    if term_preflight:
+        search_query = term_preflight["normalized_query"]
+        sparse_query = term_preflight["sparse_expansion"]
+
+    embeddings = embed_search_query(search_query, timings, stage_errors, sparse_query=sparse_query)
 
     use_scoped = (
         QUERY_PLAN_ENABLED
@@ -1510,6 +1522,13 @@ def prepare_candidate_retrieval(
 
     stage_errors.extend(result.stage_errors)
     retrieved, trace_patch = apply_candidate_adjustments(query_plan, result.candidates, result.trace_patch)
+
+    if term_preflight:
+        trace_patch["term_matches"] = term_preflight["term_matches"]
+        trace_patch["normalized_query"] = term_preflight["normalized_query"]
+        trace_patch["sparse_expansion"] = term_preflight["sparse_expansion"]
+        trace_patch["protected_tokens"] = term_preflight["protected_tokens"]
+
     retrieval_mode = result.retrieval_mode
     if trace_patch.get("filename_boost_applied") and retrieval_mode == "hybrid":
         retrieval_mode = "hybrid_boosted"

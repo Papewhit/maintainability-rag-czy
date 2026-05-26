@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from backend.routers.admin_terminology import router as admin_terminology_router
 from backend.routers.auth import router as auth_router
 from backend.routers.chat import router as chat_router
 from backend.routers.documents import router as documents_router
@@ -10,3 +11,4 @@ router.include_router(auth_router)
 router.include_router(chat_router)
 router.include_router(sessions_router)
 router.include_router(documents_router)
+router.include_router(admin_terminology_router)
