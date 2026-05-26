@@ -42,5 +42,9 @@ eval/reports/
 node_modules/
 frontend/node_modules/
 
+# Git worktrees
+.worktrees/
+worktrees/
+
 # BM25 backups
 *.bak-*
