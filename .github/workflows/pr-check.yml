@@ -75,7 +75,8 @@ jobs:
         run: |
           change="${{ steps.openspec.outputs.change }}"
           openspec status --change "$change" --json
-          openspec change show "$change" --json --deltas-only > /tmp/openspec-deltas.json
+          openspec instructions apply --change "$change" --json > /tmp/openspec-apply.json
+          openspec show "$change" --json --deltas-only > /tmp/openspec-deltas.json
 
           delta_count="$(node -e "const fs = require('fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(data.deltaCount ?? (Array.isArray(data.deltas) ? data.deltas.length : 0));" /tmp/openspec-deltas.json)"
           echo "OpenSpec delta count: $delta_count"
