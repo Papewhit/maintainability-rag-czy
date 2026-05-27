@@ -77,15 +77,7 @@ jobs:
           openspec status --change "$change" --json
           openspec instructions apply --change "$change" --json > /tmp/openspec-apply.json
           openspec show "$change" --json --deltas-only > /tmp/openspec-deltas.json
-
-          delta_count="$(node -e "const fs = require('fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(data.deltaCount ?? (Array.isArray(data.deltas) ? data.deltas.length : 0));" /tmp/openspec-deltas.json)"
-          echo "OpenSpec delta count: $delta_count"
-
-          if [ "$delta_count" -gt 0 ]; then
-            openspec validate "$change" --type change --strict --json --no-interactive
-          else
-            echo "No OpenSpec deltas found; skipping strict delta validation."
-          fi
+          openspec validate "$change" --type change --strict --json --no-interactive
 
       - name: Set up Python
         uses: actions/setup-python@v5
