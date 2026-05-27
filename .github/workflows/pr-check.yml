@@ -1,0 +1,77 @@
+name: PR Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      openspec_change:
+        description: OpenSpec change name to validate
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  openspec-and-checks:
+    name: OpenSpec and checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve OpenSpec change
+        id: openspec
+        shell: bash
+        env:
+          INPUT_CHANGE: ${{ inputs.openspec_change }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          change="$INPUT_CHANGE"
+
+          if [ -z "$change" ] && [ -n "$PR_BODY" ]; then
+            change="$(printf '%s\n' "$PR_BODY" | sed -n 's/^OpenSpec-Change:[[:space:]]*//p' | head -n 1)"
+          fi
+
+          if [ -z "$change" ] && [[ "$HEAD_REF" == */* ]]; then
+            change="${HEAD_REF##*/}"
+          fi
+
+          if [ -z "$change" ]; then
+            echo "OpenSpec change could not be resolved."
+            echo "Add 'OpenSpec-Change: <change-name>' to the PR body or pass workflow_dispatch input 'openspec_change'."
+            exit 1
+          fi
+
+          echo "change=$change" >> "$GITHUB_OUTPUT"
+          echo "Resolved OpenSpec change: $change"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install OpenSpec
+        run: npm install -g @fission-ai/openspec@1.3.1
+
+      - name: Validate OpenSpec change
+        run: |
+          openspec validate "${{ steps.openspec.outputs.change }}" --type change --strict --json --no-interactive
+          openspec status --change "${{ steps.openspec.outputs.change }}" --json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python syntax check
+        run: python -m compileall backend tests
+
+      - name: Frontend syntax check
+        run: node --check frontend/script.js
+
+      - name: Frontend behavior checks
+        run: node frontend/ui-redesign.test.mjs
