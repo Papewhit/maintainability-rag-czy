@@ -1,0 +1,94 @@
+name: PR Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      openspec_change:
+        description: OpenSpec change name to validate
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  openspec-and-checks:
+    name: OpenSpec and checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve OpenSpec change
+        id: openspec
+        shell: bash
+        env:
+          INPUT_CHANGE: ${{ inputs.openspec_change }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          change="$INPUT_CHANGE"
+
+          if [ -z "$change" ] && [ -n "$PR_BODY" ]; then
+            change="$(printf '%s\n' "$PR_BODY" | sed -n 's/^OpenSpec-Change:[[:space:]]*//p' | head -n 1)"
+          fi
+
+          if [ -z "$change" ] && [[ "$HEAD_REF" == */* ]]; then
+            change="${HEAD_REF##*/}"
+          fi
+
+          change="$(printf '%s' "$change" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          change_lower="$(printf '%s' "$change" | tr '[:upper:]' '[:lower:]')"
+
+          if [[ "$change_lower" == "skip" || "$change_lower" == "none" || "$change_lower" == "no-op" || "$change_lower" == "no_op" ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "change=" >> "$GITHUB_OUTPUT"
+            echo "OpenSpec validation skipped by PR metadata."
+            exit 0
+          fi
+
+          if [ -z "$change" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "change=" >> "$GITHUB_OUTPUT"
+            echo "No OpenSpec change resolved; skipping OpenSpec validation."
+            exit 0
+          fi
+
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "change=$change" >> "$GITHUB_OUTPUT"
+          echo "Resolved OpenSpec change: $change"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install OpenSpec
+        if: steps.openspec.outputs.run == 'true'
+        run: npm install -g @fission-ai/openspec@1.3.1
+
+      - name: Check OpenSpec change
+        if: steps.openspec.outputs.run == 'true'
+        run: |
+          change="${{ steps.openspec.outputs.change }}"
+          openspec status --change "$change" --json
+          openspec instructions apply --change "$change" --json > /tmp/openspec-apply.json
+          openspec show "$change" --json --deltas-only > /tmp/openspec-deltas.json
+          openspec validate "$change" --type change --strict --json --no-interactive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python syntax check
+        run: python -m compileall backend tests
+
+      - name: Frontend syntax check
+        run: node --check frontend/script.js
+
+      - name: Frontend behavior checks
+        run: node frontend/ui-redesign.test.mjs
