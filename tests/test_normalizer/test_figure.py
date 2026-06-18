@@ -13,11 +13,17 @@ from backend.documents.parse_adapter.base import ParsedFigureAnchor
 
 class TestExtractFigureNumber:
     def test_chinese(self) -> None:
-        assert _extract_figure_number("图 3-2 主轴承装配") == "图 3-2"
-        assert _extract_figure_number("图3-2 结构示意") == "图3-2"
+        assert _extract_figure_number("图 3-2 主轴承装配") == "3-2"
+        assert _extract_figure_number("图3-2 结构示意") == "3-2"
 
     def test_english(self) -> None:
-        assert _extract_figure_number("Fig. 3-2 Bearing") == "Fig. 3-2"
+        assert _extract_figure_number("Fig. 3-2 Bearing") == "3-2"
+
+    def test_variant_spacing_normalizes(self) -> None:
+        """图3-2 and 图 3-2 map to same key."""
+        a = _extract_figure_number("图3-2")
+        b = _extract_figure_number("图 3-2")
+        assert a == b == "3-2"
 
     def test_no_match(self) -> None:
         assert _extract_figure_number("示意图") is None

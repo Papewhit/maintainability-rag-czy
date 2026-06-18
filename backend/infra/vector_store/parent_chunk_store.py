@@ -42,6 +42,7 @@ class ParentChunkStore:
             "chunk_level": item.chunk_level,
             "chunk_idx": item.chunk_idx,
             "index_profile": getattr(item, "index_profile", self.index_profile) or self.index_profile,
+            "parent_extras": getattr(item, "parent_extras", None),
         }
 
     def _cache_key(self, chunk_id: str) -> str:
@@ -80,6 +81,7 @@ class ParentChunkStore:
             "chunk_level": payload["chunk_level"],
             "chunk_idx": payload["chunk_idx"],
             "index_profile": payload["index_profile"],
+            "parent_extras": payload.get("parent_extras"),
         }
 
     def upsert_documents(self, docs: List[dict]) -> int:

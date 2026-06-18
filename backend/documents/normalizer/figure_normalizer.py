@@ -21,21 +21,32 @@ _FIG_REF_PATTERNS = [
 ]
 
 
+def _normalize_figure_number(raw: str) -> str:
+    """Normalize figure ref to a common key, e.g. '图 3-2' → '3-2'.
+
+    This ensures "图3-2" and "图 3-2" are treated as the same reference.
+    """
+    m = re.search(r"([0-9]+)[\-－]([0-9]+)", raw)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    return raw
+
+
 def _extract_figure_number(caption: str) -> str | None:
-    """Extract figure reference number from caption, e.g. '3-2' from '图3-2 主轴承'."""
+    """Extract normalized figure number, e.g. '图 3-2' → '3-2'."""
     for pat in _FIG_REF_PATTERNS:
         m = pat.search(caption)
         if m:
-            return m.group(0)
+            return _normalize_figure_number(m.group(0))
     return None
 
 
 def _extract_all_figure_numbers(text: str) -> set[str]:
-    """Extract ALL figure reference numbers mentioned in *text*."""
+    """Extract all normalized figure reference numbers."""
     found: set[str] = set()
     for pat in _FIG_REF_PATTERNS:
         for m in pat.finditer(text):
-            found.add(m.group(0))
+            found.add(_normalize_figure_number(m.group(0)))
     return found
 
 
@@ -102,7 +113,7 @@ def build_figure_associations(
             if vert_gap <= nearby_distance:
                 nearby_ids.append(block.block_id)
 
-        # ── Strategy 2: text reference matching (same/adjacent pages only) ──
+        # ── Strategy 2: text reference matching (same/adjacent pages + order window) ──
         if fig_number:
             # Constrain to same page and adjacent pages (±1)
             allowed_pages = {figure.page_no}
@@ -110,15 +121,23 @@ def build_figure_associations(
                 allowed_pages.add(figure.page_no - 1)
             allowed_pages.add(figure.page_no + 1)
 
-            for block in blocks:
-                if block.block_id in nearby_ids:
-                    continue  # already matched by bbox
-                if block.page_no not in allowed_pages:
-                    continue
-                # Window: order_index within ±window_size of blocks already near the figure
-                refs = _extract_all_figure_numbers(block.text)
-                if fig_number in refs:
-                    nearby_ids.append(block.block_id)
+            # Find the order_index range on allowed pages to anchor the window
+            allowed_orders = [b.order_index for b in blocks if b.page_no in allowed_pages]
+            if allowed_orders:
+                anchor = min(allowed_orders)
+                order_max = anchor + window_size * 50  # generous per-page span
+
+                for block in blocks:
+                    if block.block_id in nearby_ids:
+                        continue  # already matched by bbox
+                    if block.page_no not in allowed_pages:
+                        continue
+                    # Within order_index window of the figure's vicinity
+                    if block.order_index > order_max:
+                        continue
+                    refs = _extract_all_figure_numbers(block.text)
+                    if fig_number in refs:
+                        nearby_ids.append(block.block_id)
 
         associations.append(
             FigureAssociation(
