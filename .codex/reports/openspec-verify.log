@@ -1,18 +1,18 @@
-Reading prompt from stdin...
-2026-06-18T12:01:01.863463Z ERROR codex_core::tools::router: error=Exit code: 1
-Wall time: 3.2 seconds
+2026-06-18T12:16:27.314435Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-06-18T12:19:15.927646Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 4.4 seconds
 Output:
-[31;1mGet-Content: [0m
-[31;1m[36;1mLine |[0m
-[31;1m[36;1m[36;1m   2 | [0m [36;1mGet-Content -Raw C:\Users\Papewhit\.codex\skills\superpowers\using-su[0m …[0m
-[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
-[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCannot find path 'C:\Users\Papewhit\.codex\skills\superpowers\using-superpowers\SKILL.md' because it does not exist.[0m
-
-2026-06-18T12:02:04.361991Z ERROR codex_core::tools::router: error=Exit code: 1
-Wall time: 5.2 seconds
-Output:
-
-2026-06-18T12:07:06.244069Z ERROR codex_core::tools::router: error=Exit code: 1
-Wall time: 3.5 seconds
-Output:
+backend\infra\vector_store\milvus_client.py:21:    "block_type",
+backend\infra\vector_store\milvus_client.py:22:    "list_group_id", "list_order", "list_marker", "list_level", "list_complete",
+backend\infra\vector_store\milvus_client.py:23:    "table_id", "table_role",
+backend\infra\vector_store\milvus_client.py:24:    "figure_id", "figure_role",
+backend\infra\vector_store\milvus_client.py:25:    "entity_types", "term_match_count",
+backend\infra\vector_store\milvus_writer.py:61:                    "block_type": doc.get("block_type", "paragraph"),
+backend\infra\vector_store\milvus_writer.py:62:                    "list_group_id": doc.get("list_group_id", ""),
+backend\infra\vector_store\milvus_writer.py:67:                    "table_id": doc.get("table_id", ""),
+backend\infra\vector_store\milvus_writer.py:69:                    "figure_id": doc.get("figure_id", ""),
+backend\infra\vector_store\milvus_writer.py:71:                    "entity_types": doc.get("entity_types", []),
+backend\infra\vector_store\milvus_writer.py:72:                    "term_match_count": doc.get("term_match_count", 0),
+rg: tests\test_rag*: 文件名、目录名或卷标语法不正确。 (os error 123)
+rg: tests\test_milvus*: 文件名、目录名或卷标语法不正确。 (os error 123)
 

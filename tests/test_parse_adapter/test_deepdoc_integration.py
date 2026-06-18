@@ -240,7 +240,7 @@ class TestParsedToChunks:
             ],
         )
 
-        chunks = parsed_to_chunks(doc, "/tmp/test.xlsx")
+        chunks = parsed_to_chunks(doc, "/tmp/test.xlsx", profile="v4_full")
         assert len(chunks) >= 2
         tbl_chunks = [c for c in chunks if c["block_type"] == "table"]
         assert len(tbl_chunks) >= 1

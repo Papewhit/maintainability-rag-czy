@@ -28,6 +28,7 @@ def parsed_to_chunks(
     filename: str | None = None,
     leaf_tokens: int = 500,
     root_tokens: int = 2000,
+    profile: str | None = None,
 ) -> list[dict]:
     """Convert a ParsedDocument to a list of chunk dicts.
 
@@ -57,7 +58,7 @@ def parsed_to_chunks(
     from backend.documents.chunker.step_chunker import chunk_normalized
     from backend.rag.profiles import current_index_profile
 
-    profile = current_index_profile()
+    profile = profile if profile is not None else current_index_profile()
     normalized = run_normalizer(doc)
     chunks.extend(
         chunk_normalized(
@@ -74,7 +75,7 @@ def parsed_to_chunks(
     if _profile_allows(profile, "v4_table_aware"):
         enriched_tables = validate_and_enrich_tables(doc.tables)
     else:
-        enriched_tables = doc.tables
+        enriched_tables = []  # tables not emitted below v4_table_aware
 
     for ti, table in enumerate(enriched_tables):
         table_text = _build_table_text(table)
