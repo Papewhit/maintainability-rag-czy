@@ -164,26 +164,45 @@ def detect_and_group_lists(
             else:
                 level_map[idx] = base
 
-    # ── Pass 3: aggregate consecutive same-level list items into ListGroups ──
+    # ── Pass 3: write levels into blocks (single source of truth) ──
+    for i, block in enumerate(enriched):
+        if block.list_marker and i in level_map:
+            enriched[i] = NormalizedBlock(
+                block_id=block.block_id, page_no=block.page_no,
+                block_type=block.block_type, text=block.text,
+                bbox=block.bbox, ocr_confidence=block.ocr_confidence,
+                order_index=block.order_index, style=dict(block.style),
+                section_path=block.section_path, section_title=block.section_title,
+                anchor_id=block.anchor_id,
+                list_marker=block.list_marker,
+                list_level=level_map[i],
+                list_item_index=None,  # filled after grouping
+            )
+
+    # ── Pass 4: aggregate consecutive same-level items into ListGroups ──
     groups: list[ListGroup] = []
     group_seq_by_level: dict[int, int] = {}
     current_group_items: list[NormalizedBlock] = []
     current_level: int | None = None
     current_page: int | None = None
+    # Track child groups for parent_group_id assignment
+    group_stack: list[ListGroup] = []  # depth-ordered ancestor groups
 
     def _flush_group() -> None:
         nonlocal current_group_items, current_level, current_page
         if not current_group_items:
             return
-        lvl = current_level or 0
+        lvl = current_level or 1
         pg = current_page or 0
         seq = group_seq_by_level.get(lvl, 0)
         group_seq_by_level[lvl] = seq + 1
 
         group_id = f"lg_p{pg}_l{lvl}_s{seq}"
-        # Assign list_item_index within group
+
+        # Assign list_item_index within group AND write back to enriched
         for gi, gb in enumerate(current_group_items):
             gb_idx = next(i for i, b in enumerate(enriched) if b.block_id == gb.block_id)
+            # Set list_item_index on the enriched block (mutate in place)
             enriched[gb_idx] = NormalizedBlock(
                 block_id=gb.block_id, page_no=gb.page_no,
                 block_type=gb.block_type, text=gb.text,
@@ -197,52 +216,46 @@ def detect_and_group_lists(
             )
             current_group_items[gi] = enriched[gb_idx]
 
-        groups.append(
-            ListGroup(
-                group_id=group_id,
-                list_level=lvl,
-                items=list(current_group_items),
-            )
+        # Determine parent_group_id from stack
+        parent_id: str | None = None
+        # Pop groups from stack that are at or deeper than current level
+        while group_stack and group_stack[-1].list_level >= lvl:
+            group_stack.pop()
+        if group_stack:
+            parent_id = group_stack[-1].group_id
+
+        group = ListGroup(
+            group_id=group_id,
+            list_level=lvl,
+            items=list(current_group_items),
+            parent_group_id=parent_id,
         )
+        groups.append(group)
+        group_stack.append(group)
+
         current_group_items = []
         current_level = None
         current_page = None
 
-    # Write levels into enriched blocks and aggregate
-    final_enriched: list[NormalizedBlock] = []
     for i, block in enumerate(enriched):
-        if block.list_marker and i in level_map:
-            lvl = level_map[i]
-            block = NormalizedBlock(
-                block_id=block.block_id, page_no=block.page_no,
-                block_type=block.block_type, text=block.text,
-                bbox=block.bbox, ocr_confidence=block.ocr_confidence,
-                order_index=block.order_index, style=dict(block.style),
-                section_path=block.section_path, section_title=block.section_title,
-                anchor_id=block.anchor_id,
-                list_marker=block.list_marker,
-                list_level=lvl,
-                list_item_index=None,
-            )
-
         # Determine if this block continues the current group
         if block.block_type == "list_item" and block.list_marker:
-            blk_level = block.list_level if block.list_level is not None else 0
-            # Break group on: level change, page change (if bbox-based), heading interruption
-            if (current_level is not None and blk_level != current_level):
+            blk_level = block.list_level if block.list_level is not None else 1
+            # Break group on: level change, non-list interruption (order gap > 5)
+            if current_level is not None and blk_level != current_level:
                 _flush_group()
             if current_group_items:
-                # Check for heading/non-list interruption
                 prev_block = current_group_items[-1]
                 if block.order_index - prev_block.order_index > 5:
                     _flush_group()
+                    # Pop stale ancestors after gap
+                    group_stack.clear()
             current_group_items.append(block)
             current_level = blk_level
             current_page = block.page_no
         else:
             _flush_group()
-
-        final_enriched.append(block)
+            group_stack.clear()  # reset nesting on non-list break
 
     _flush_group()
-    return final_enriched, groups
+    return list(enriched), groups

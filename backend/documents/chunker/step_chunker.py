@@ -97,7 +97,20 @@ def chunk_normalized(
         )
         chunks.append(root_chunk)
 
-        leaves = _split_text_into_chunks(block.text, max_tokens=leaf_tokens)
+        # For long paragraphs, use maintenance action words as soft boundary hints
+        text_to_split = block.text
+        if _estimate_tokens(text_to_split) > leaf_tokens and _starts_with_maintenance_action(text_to_split):
+            # Action word detected → prefer splitting at action boundaries
+            parts = _split_paragraph_by_actions(text_to_split)
+            if len(parts) > 1:
+                leaves = []
+                for part in parts:
+                    leaves.extend(_split_text_into_chunks(part, max_tokens=leaf_tokens))
+            else:
+                leaves = _split_text_into_chunks(text_to_split, max_tokens=leaf_tokens)
+        else:
+            leaves = _split_text_into_chunks(text_to_split, max_tokens=leaf_tokens)
+
         for li, leaf_text in enumerate(leaves):
             chunks.append(
                 _make_chunk(
@@ -232,17 +245,22 @@ def _split_by_maintenance_actions(
 def _split_by_toplevel(
     items: list[NormalizedBlock],
 ) -> list[list[NormalizedBlock]]:
-    """Split items at top-level (list_level=0) boundaries, keeping children
-    with their parent."""
+    """Split items at the minimum level in the group, keeping children
+    (higher levels) with their parent item.
+
+    Example: [1.(L1), a(L2), b(L2), 2.(L1), a(L2)] →
+             [[1., a, b], [2., a]]
+    """
     if not items:
         return []
-    # Find top-level cut points
+    min_level = min((it.list_level or 1) for it in items)
+
     sub_groups: list[list[NormalizedBlock]] = []
     current: list[NormalizedBlock] = []
 
     for item in items:
-        level = item.list_level or 0
-        if level == 0 and current:
+        level = item.list_level or 1
+        if level == min_level and current:
             sub_groups.append(current)
             current = [item]
         else:
@@ -251,3 +269,30 @@ def _split_by_toplevel(
     if current:
         sub_groups.append(current)
     return sub_groups
+
+
+def _split_paragraph_by_actions(text: str) -> list[str]:
+    """Soft-split a long paragraph at maintenance action word boundaries.
+
+    The action word serves as a hint; the split is not forced.
+    Returns [text] if no action boundaries are found.
+    """
+    import re
+    actions = "|".join(_MAINTENANCE_ACTIONS)
+    pattern = re.compile(rf"(?<=[。；\n])\s*(?={actions})")
+    parts = pattern.split(text)
+    if len(parts) <= 1:
+        return [text]
+    # Merge very short parts with neighbors
+    merged: list[str] = []
+    buf = ""
+    for p in parts:
+        if len(p) < 20 and buf:
+            buf += p
+        else:
+            if buf:
+                merged.append(buf)
+            buf = p
+    if buf:
+        merged.append(buf)
+    return merged if merged else [text]

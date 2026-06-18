@@ -55,11 +55,12 @@ class TestSplitByMaintenanceActions:
 
 class TestSplitByTopLevel:
     def test_children_follow_parent(self) -> None:
+        """Per spec: top-level items have list_level=1, children level=2."""
         items = [
-            _block("a", level=0, text="主步骤1"),
-            _block("a1", level=1, text="子步骤a"),
-            _block("a2", level=1, text="子步骤b"),
-            _block("b", level=0, text="主步骤2"),
+            _block("a", level=1, text="主步骤1"),
+            _block("a1", level=2, text="子步骤a"),
+            _block("a2", level=2, text="子步骤b"),
+            _block("b", level=1, text="主步骤2"),
         ]
         result = _split_by_toplevel(items)
         assert len(result) == 2
@@ -82,10 +83,10 @@ class TestChunkNormalized:
             ],
             list_groups=[
                 ListGroup(
-                    group_id="lg_p1_l0_s0", list_level=0,
+                    group_id="lg_p1_l1_s0", list_level=1,
                     items=[
-                        _block("b1", text="1. 检查外观", level=0, marker="1.", index=0),
-                        _block("b2", text="2. 功能测试", level=0, marker="2.", index=1),
+                        _block("b1", text="1. 检查外观", level=1, marker="1.", index=0),
+                        _block("b2", text="2. 功能测试", level=1, marker="2.", index=1),
                     ],
                 ),
             ],
@@ -105,13 +106,13 @@ class TestChunkNormalized:
                 parse_meta=ParseMeta(parse_engine="test"),
             ),
             normalized_blocks=[
-                _block("b1", text="1. 第一步", level=0, marker="1.", index=0),
+                _block("b1", text="1. 第一步", level=1, marker="1.", index=0),
             ],
             list_groups=[
                 ListGroup(
-                    group_id="lg_1", list_level=0,
+                    group_id="lg_1", list_level=1,
                     items=[
-                        _block("b1", text="1. 第一步", level=0, marker="1.", index=0),
+                        _block("b1", text="1. 第一步", level=1, marker="1.", index=0),
                     ],
                 ),
             ],

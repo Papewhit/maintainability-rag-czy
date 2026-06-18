@@ -58,6 +58,16 @@ class MilvusWriter:
                     "section_type": doc.get("section_type", ""),
                     "section_path": doc.get("section_path", ""),
                     "anchor_id": doc.get("anchor_id", ""),
+                    "block_type": doc.get("block_type", "paragraph"),
+                    "list_group_id": doc.get("list_group_id", ""),
+                    "list_order": doc.get("list_order"),
+                    "list_marker": doc.get("list_marker", ""),
+                    "list_level": doc.get("list_level"),
+                    "list_complete": doc.get("list_complete", True),
+                    "table_id": doc.get("table_id", ""),
+                    "table_role": doc.get("table_role", ""),
+                    "figure_id": doc.get("figure_id", ""),
+                    "figure_role": doc.get("figure_role", ""),
                 }
                 for doc, dense_emb, sparse_emb in prepared_batch
             ]
