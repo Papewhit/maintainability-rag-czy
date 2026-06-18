@@ -1,6 +1,6 @@
-"""Normalizer pipeline — orchestrates heading and list passes.
+"""Normalizer pipeline — orchestrates heading, list, and figure passes.
 
-ParsedDocument → heading_normalizer → list_normalizer → NormalizedDocument
+ParsedDocument → heading → list → figure → NormalizedDocument
 """
 
 from __future__ import annotations
@@ -8,15 +8,17 @@ from __future__ import annotations
 from backend.documents.normalizer.base import NormalizedBlock, NormalizedDocument
 from backend.documents.normalizer.heading_normalizer import build_heading_tree
 from backend.documents.normalizer.list_normalizer import detect_and_group_lists
+from backend.documents.normalizer.figure_normalizer import build_figure_associations
 from backend.documents.parse_adapter.base import ParsedDocument
 
 
 def run_normalizer(doc: ParsedDocument) -> NormalizedDocument:
     """Convert a ParsedDocument into a NormalizedDocument.
 
-    Applies two passes:
+    Applies three passes:
     1. Heading tree — enriches section_path, section_title, anchor_id
     2. List detection — extracts markers, infers levels, aggregates groups
+    3. Figure nearby — associates figures with nearby blocks on same page
     """
     # Convert ParsedBlocks → NormalizedBlocks (copy)
     normalized: list[NormalizedBlock] = [
@@ -39,9 +41,13 @@ def run_normalizer(doc: ParsedDocument) -> NormalizedDocument:
     # Pass 2: list detection + grouping
     normalized, list_groups = detect_and_group_lists(normalized)
 
+    # Pass 3: figure nearby associations
+    figure_associations = build_figure_associations(doc.figures, normalized)
+
     return NormalizedDocument(
         parsed=doc,
         normalized_blocks=normalized,
         list_groups=list_groups,
+        figure_associations=figure_associations,
         heading_tree=heading_tree,
     )

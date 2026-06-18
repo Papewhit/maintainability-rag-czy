@@ -13,7 +13,13 @@ import uuid
 from pathlib import Path
 
 from backend.documents.chunker.base import MaintenanceChunk
-from backend.documents.normalizer.base import ListGroup, NormalizedBlock, NormalizedDocument
+from backend.documents.normalizer.base import (
+    FigureAssociation,
+    ListGroup,
+    NormalizedBlock,
+    NormalizedDocument,
+)
+from backend.documents.normalizer.figure_normalizer import _infer_figure_role
 from backend.documents.parse_adapter.converters import _make_chunk, _split_text_into_chunks
 
 # ── Maintenance action words (step boundary signals) ──
@@ -82,6 +88,20 @@ def chunk_normalized(
             child_groups=children_of.get(group.group_id),
         )
         chunks.extend(lg_chunks)
+
+    # ── Process FigureAssociations (M3) ──
+    figure_block_ids: set[str] = set()
+    for fa in doc.figure_associations:
+        fig_chunks = _chunk_figure(
+            fa, canonical, str(path),
+            doc.normalized_blocks, root_tokens, leaf_tokens,
+        )
+        chunks.extend(fig_chunks)
+        figure_block_ids.update(fa.nearby_block_ids)
+
+    # Merge figure_block_ids into grouped_block_ids so nearby blocks
+    # included in figure chunks aren't also chunked as standalone blocks
+    grouped_block_ids.update(figure_block_ids)
 
     # ── Process non-list blocks ──
     for block in doc.normalized_blocks:
@@ -254,6 +274,122 @@ def _chunk_list_group(
                 list_complete=(len(sub_groups) == 1),
             )
             chunks.append(chunk_data_leaf)
+
+    return chunks
+
+
+# ── Figure chunking (M3) ──
+
+
+def _chunk_figure(
+    fa: FigureAssociation,
+    canonical: str,
+    file_path: str,
+    blocks: list[NormalizedBlock],
+    root_tokens: int,
+    leaf_tokens: int,
+) -> list[dict]:
+    """Generate a figure parent chunk + optional leaf chunks.
+
+    Spec: chunk text = caption (first line) + figure marker + nearby blocks.
+    """
+    block_by_id = {b.block_id: b for b in blocks}
+    nearby_texts: list[str] = []
+    page_nos: set[int] = set()
+
+    for bid in fa.nearby_block_ids:
+        blk = block_by_id.get(bid)
+        if blk:
+            nearby_texts.append(blk.text)
+            page_nos.add(blk.page_no)
+
+    # Determine caption from matching block text or the figure_id
+    caption = ""
+    figure_role = "diagram"
+    for bid in fa.nearby_block_ids:
+        blk = block_by_id.get(bid)
+        if blk and blk.block_type in ("figure_caption", "paragraph"):
+            if "图" in blk.text or "Fig" in blk.text:
+                caption = blk.text.split("\n")[0][:200]
+                figure_role = _infer_figure_role(caption)
+                break
+
+    # Build parent text: caption + nearby blocks
+    parent_lines: list[str] = []
+    if caption:
+        parent_lines.append(caption)
+    parent_lines.append(f"[Figure: {fa.figure_id}]")  # marker
+    parent_lines.extend(nearby_texts)
+    parent_text = "\n\n".join(parent_lines)
+
+    page_no = min(page_nos) if page_nos else 1
+    parent_id = f"{canonical}_{fa.figure_id}"
+
+    chunks: list[dict] = [
+        _make_chunk(
+            chunk_id=parent_id,
+            parent_chunk_id=parent_id,
+            root_chunk_id=parent_id,
+            chunk_level=1,
+            chunk_role="root",
+            filename=canonical,
+            file_path=file_path,
+            page_number=page_no,
+            text=parent_text,
+            retrieval_text="",
+            block_type="figure",
+            page_start=page_no,
+            page_end=max(page_nos) if page_nos else page_no,
+            figure_id=fa.figure_id,
+            figure_role=figure_role,
+            parent_extras={"nearby_block_ids": list(fa.nearby_block_ids)},
+        ),
+    ]
+
+    # Leaf chunks — caption + figure marker prepended to each leaf
+    leaf_prefix = f"{caption}\n[Figure: {fa.figure_id}]\n" if caption else f"[Figure: {fa.figure_id}]\n"
+    if _estimate_tokens(parent_text) > leaf_tokens:
+        for li, leaf_text in enumerate(_split_text_into_chunks(parent_text, max_tokens=leaf_tokens)):
+            retrieval = leaf_prefix + leaf_text
+            chunks.append(
+                _make_chunk(
+                    chunk_id=f"{parent_id}_leaf_{li}",
+                    parent_chunk_id=parent_id,
+                    root_chunk_id=parent_id,
+                    chunk_level=3,
+                    chunk_role="leaf",
+                    filename=canonical,
+                    file_path=file_path,
+                    page_number=page_no,
+                    text=leaf_text,
+                    retrieval_text=retrieval[:1000],
+                    block_type="figure",
+                    page_start=page_no,
+                    page_end=max(page_nos) if page_nos else page_no,
+                    figure_id=fa.figure_id,
+                    figure_role=figure_role,
+                )
+            )
+    else:
+        chunks.append(
+            _make_chunk(
+                chunk_id=f"{parent_id}_leaf_0",
+                parent_chunk_id=parent_id,
+                root_chunk_id=parent_id,
+                chunk_level=3,
+                chunk_role="leaf",
+                filename=canonical,
+                file_path=file_path,
+                page_number=page_no,
+                text=parent_text,
+                retrieval_text=leaf_prefix + parent_text[:500],
+                block_type="figure",
+                page_start=page_no,
+                page_end=max(page_nos) if page_nos else page_no,
+                figure_id=fa.figure_id,
+                figure_role=figure_role,
+            )
+        )
 
     return chunks
 

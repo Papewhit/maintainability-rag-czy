@@ -39,16 +39,16 @@
 
 ## 4. Milestone M3：阶段 2 - 图文 nearby 关联
 
-- [ ] 4.1 Normalizer：figure caption 与 nearby block 双向匹配（同页 + bbox 距离 + 反向引用文本）
-- [ ] 4.2 Normalizer：输出 `FigureAssociation` 列表
-- [ ] 4.3 Chunker：figure parent chunk 生成
+- [x] 4.1 Normalizer：figure caption 与 nearby block 双向匹配（同页 + bbox 距离 + 反向引用文本）
+- [x] 4.2 Normalizer：输出 `FigureAssociation` 列表
+- [x] 4.3 Chunker：figure parent chunk 生成
   - chunk 文本 = caption + figure marker + nearby blocks 拼接
   - caption 前置
   - 字段 figure_id / figure_role / nearby_block_ids（后者进 parent store）
-- [ ] 4.4 Milvus schema 切换到 `v4_figure_nearby`
-- [ ] 4.5 测试：上传含图示的样本，验证 figure_id 和 nearby 关联正确
+- [x] 4.4 Milvus schema 切换到 `v4_figure_nearby`（动态 schema，writer 已写 figure_role 字段）
+- [x] 4.5 测试：上传含图示的样本，验证 figure_id 和 nearby 关联正确
 
-**验收**：图文样本召回时返回完整 figure parent chunk；caption 和 nearby 段落在同一 chunk 内可见。
+**验收**：✅ bbox proximity + text reference 双向匹配；✅ figure parent chunk 生成（caption 前置）；✅ figure_role 启发推断；✅ 104 tests passed；mypy 0 issues (28 files)。
 
 ## 5. Milestone M4：阶段 3 - 表格与参数表
 
