@@ -12,6 +12,9 @@ from backend.infra.embedding import embedding_service
 from backend.infra.vector_store.parent_chunk_store import ParentChunkStore
 from backend.rag.profiles import current_index_profile
 from backend.shared.filename_normalization import raw_filename_basename
+from backend.documents.parse_adapter.base import UnsupportedFileType, ParseError
+from backend.documents.parse_adapter.registry import get_registry
+from backend.documents.parse_adapter.converters import parsed_to_chunks
 
 
 class DocumentProcessingError(RuntimeError):
@@ -37,6 +40,8 @@ class DocumentService:
         parent_store: ParentChunkStore,
         upload_dir: Path,
         embedding,
+        *,
+        registry=None,
     ):
         self._loader = loader
         self._milvus = milvus_manager
@@ -44,6 +49,7 @@ class DocumentService:
         self._parent = parent_store
         self._upload_dir = upload_dir
         self._embedding = embedding
+        self._registry = registry  # None → use get_registry() lazily
         self._index_profile = current_index_profile()
 
     @classmethod
@@ -79,6 +85,42 @@ class DocumentService:
         texts = [r.get("text") or "" for r in rows]
         self._embedding.increment_remove_documents(texts)
 
+    def _load_via_adapter(
+        self, file_path: str, filename: str, *, final_path: str | None = None,
+    ) -> list[dict[str, object]]:
+        """Try the ParseAdapter pipeline for this file.
+
+        If an adapter is registered for the file type, it is the sole
+        parse path — failure raises ``DocumentProcessingError`` immediately
+        (no fallback to the legacy ``DocumentLoader`` for PDF/DOCX/XLSX).
+
+        Only unregistered extensions (e.g. ``.txt``, ``.csv``) still go
+        through the legacy loader.
+
+        Args:
+            file_path: Path to the file on disk (may be a temp / pending path).
+            filename: Canonical filename for chunk identity.
+            final_path: Final on-disk path for chunk ``file_path`` metadata.
+                Defaults to *file_path* when not given.
+        """
+        registry = (self._registry or get_registry())
+        try:
+            adapter = registry.get_adapter(filename)
+        except UnsupportedFileType:
+            # No adapter for this extension — use legacy loader
+            return self._loader.load_document(file_path, filename)
+
+        try:
+            parsed = adapter.parse(file_path)
+        except Exception as exc:
+            raise DocumentProcessingError(
+                f"Failed to parse {filename} with {type(adapter).__name__}"
+            ) from exc
+
+        # Use canonical filename + final path for chunk identity
+        chunk_path = final_path or file_path
+        return parsed_to_chunks(parsed, chunk_path, filename=filename)  # type: ignore[no-any-return]
+
     def upload_document(self, filename: str, content: bytes) -> dict[str, Any]:
         filename = raw_filename_basename(filename)
         if not filename:
@@ -96,7 +138,9 @@ class DocumentService:
         pending_path.write_bytes(content)
 
         try:
-            new_docs = self._loader.load_document(str(pending_path), filename)
+            new_docs = self._load_via_adapter(
+                str(pending_path), filename, final_path=str(file_path),
+            )
         except Exception as doc_err:
             pending_path.unlink(missing_ok=True)
             raise DocumentProcessingError(f"Failed to load document: {doc_err}") from doc_err
