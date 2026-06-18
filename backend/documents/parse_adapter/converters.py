@@ -55,23 +55,29 @@ def parsed_to_chunks(
     # ── Normalize + step-protected chunking (M2 pipeline) ──
     from backend.documents.normalizer.pipeline import run_normalizer
     from backend.documents.chunker.step_chunker import chunk_normalized
+    from backend.rag.profiles import current_index_profile
 
+    profile = current_index_profile()
     normalized = run_normalizer(doc)
     chunks.extend(
         chunk_normalized(
             normalized, str(path), filename=canonical_name,
             leaf_tokens=leaf_tokens, root_tokens=root_tokens,
+            profile=profile,
         )
     )
 
-    # ── Tables (M4: validated + parameter-aware) ──
+    # ── Tables (M4: validated + parameter-aware, gated by profile) ──
+    from backend.documents.chunker.step_chunker import _profile_allows
     from backend.documents.normalizer.table_normalizer import validate_and_enrich_tables
-    enriched_tables = validate_and_enrich_tables(doc.tables)
+
+    if _profile_allows(profile, "v4_table_aware"):
+        enriched_tables = validate_and_enrich_tables(doc.tables)
+    else:
+        enriched_tables = doc.tables
 
     for ti, table in enumerate(enriched_tables):
-        table_text = table.cells_markdown or "\n".join(
-            ";".join(r) for r in table.cells_structured
-        )
+        table_text = _build_table_text(table)
         if not table_text.strip():
             continue
 
@@ -84,6 +90,11 @@ def parsed_to_chunks(
         if param_keys:
             extras["parameter_keys"] = param_keys
 
+        # Caption prepended to parent text (spec: caption + markdown)
+        parent_text = table_text
+        if table.caption:
+            parent_text = f"{table.caption}\n{table_text}"
+
         table_id = f"{canonical_name}_table_{ti}"
         root_tbl = _make_chunk(
             chunk_id=table_id,
@@ -94,7 +105,7 @@ def parsed_to_chunks(
             filename=canonical_name,
             file_path=str(path),
             page_number=table.page_no,
-            text=table_text,
+            text=parent_text,
             retrieval_text="",
             block_type="table",
             table_id=table.table_id,
@@ -103,25 +114,54 @@ def parsed_to_chunks(
         )
         chunks.append(root_tbl)
 
-        leaf_tbl = _make_chunk(
-            chunk_id=f"{table_id}_leaf",
-            parent_chunk_id=table_id,
-            root_chunk_id=table_id,
-            chunk_level=3,
-            chunk_role="leaf",
-            filename=canonical_name,
-            file_path=str(path),
-            page_number=table.page_no,
-            text=table_text,
-            retrieval_text=(
-                table.cells_markdown or table_text[:500]
-            ),
-            block_type="table",
-            table_id=table.table_id,
-            table_role=table_role,
-            parent_extras={"table_markdown": table.cells_markdown},
-        )
-        chunks.append(leaf_tbl)
+        # Row-based leaf splitting (spec: header + N data rows per leaf)
+        if table.cells_structured and len(table.cells_structured) > 1:
+            header_row = table.cells_structured[0]
+            data_rows = table.cells_structured[1:]
+            rows_per_leaf = max(1, leaf_tokens // max(1, len(header_row)))
+            for li in range(0, len(data_rows), rows_per_leaf):
+                chunk_rows = [header_row] + data_rows[li:li + rows_per_leaf]
+                leaf_md = _rows_to_markdown(chunk_rows)
+                leaf_text = "\n".join(";".join(r) for r in chunk_rows)
+                retrieval = f"{table.caption}\n{leaf_md[:500]}" if table.caption else leaf_md[:500]
+                chunks.append(
+                    _make_chunk(
+                        chunk_id=f"{table_id}_leaf_{li // rows_per_leaf}",
+                        parent_chunk_id=table_id,
+                        root_chunk_id=table_id,
+                        chunk_level=3,
+                        chunk_role="leaf",
+                        filename=canonical_name,
+                        file_path=str(path),
+                        page_number=table.page_no,
+                        text=leaf_text,
+                        retrieval_text=retrieval,
+                        block_type="table",
+                        table_id=table.table_id,
+                        table_role=table_role,
+                        parent_extras={"table_markdown": leaf_md},
+                    )
+                )
+        else:
+            # Fallback single leaf
+            retrieval = f"{table.caption}\n{table.cells_markdown[:500]}" if table.caption else (table.cells_markdown or table_text[:500])
+            leaf_tbl = _make_chunk(
+                chunk_id=f"{table_id}_leaf_0",
+                parent_chunk_id=table_id,
+                root_chunk_id=table_id,
+                chunk_level=3,
+                chunk_role="leaf",
+                filename=canonical_name,
+                file_path=str(path),
+                page_number=table.page_no,
+                text=table_text,
+                retrieval_text=retrieval,
+                block_type="table",
+                table_id=table.table_id,
+                table_role=table_role,
+                parent_extras={"table_markdown": table.cells_markdown},
+            )
+            chunks.append(leaf_tbl)
 
     # ── Figures are now handled by chunk_normalized via FigureAssociations.
     # The legacy figure-caption leaf loop is removed to avoid duplicate entries.
@@ -267,6 +307,28 @@ _PARAM_HEADER_PATTERNS = [
     re.compile(r"(单位|Unit)", re.IGNORECASE),
     re.compile(r"(范围|Range|取值)", re.IGNORECASE),
 ]
+
+
+def _rows_to_markdown(rows: list[list[str]]) -> str:
+    if not rows:
+        return ""
+    max_cols = max((len(r) for r in rows), default=0)
+    lines: list[str] = []
+    for i, row in enumerate(rows):
+        padded = list(row) + [""] * (max_cols - len(row))
+        lines.append("| " + " | ".join(padded) + " |")
+        if i == 0:
+            lines.append("| " + " | ".join("---" for _ in range(max_cols)) + " |")
+    return "\n".join(lines)
+
+
+def _build_table_text(table) -> str:
+    """Build table text from cells_markdown or cells_structured."""
+    if table.cells_markdown:
+        return table.cells_markdown
+    if table.cells_structured:
+        return "\n".join(";".join(r) for r in table.cells_structured)
+    return ""
 
 
 def _detect_parameter_table(table) -> tuple[str, list[str]]:

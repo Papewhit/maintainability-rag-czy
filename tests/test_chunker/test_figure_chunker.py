@@ -74,6 +74,6 @@ class TestChunkFigure:
                 FigureAssociation(figure_id="f_0", caption="图 1-1 示意", page_no=1, nearby_block_ids=["b1", "b2"]),
             ],
         )
-        chunks = chunk_normalized(doc, "/tmp/test.pdf")
+        chunks = chunk_normalized(doc, "/tmp/test.pdf", profile="v4_full")
         fig_chunks = [c for c in chunks if c["block_type"] == "figure"]
         assert len(fig_chunks) >= 2  # root + at least 1 leaf

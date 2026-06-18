@@ -1,0 +1,18 @@
+Reading prompt from stdin...
+2026-06-18T12:01:01.863463Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 3.2 seconds
+Output:
+[31;1mGet-Content: [0m
+[31;1m[36;1mLine |[0m
+[31;1m[36;1m[36;1m   2 | [0m [36;1mGet-Content -Raw C:\Users\Papewhit\.codex\skills\superpowers\using-su[0m …[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCannot find path 'C:\Users\Papewhit\.codex\skills\superpowers\using-superpowers\SKILL.md' because it does not exist.[0m
+
+2026-06-18T12:02:04.361991Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 5.2 seconds
+Output:
+
+2026-06-18T12:07:06.244069Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 3.5 seconds
+Output:
+

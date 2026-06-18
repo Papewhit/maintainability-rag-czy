@@ -57,11 +57,17 @@ def chunk_normalized(
     filename: str | None = None,
     leaf_tokens: int = 500,
     root_tokens: int = 2000,
+    profile: str = "",
 ) -> list[dict]:
     """Convert a NormalizedDocument into chunk dicts ready for indexing.
 
     Step-protected list groups are chunked as atomic units; non-list blocks
     are chunked as in the original parsed_to_chunks.
+
+    *profile* gates stage-specific features (spec §阶段化 profile 支持):
+    - "" or "legacy" → list-group fields only (M2)
+    - "v4_figure_nearby" → list + figure fields (M2+M3)
+    - "v4_table_aware" / "v4_full" → all fields (M2+M3+M4)
     """
     path = Path(file_path)
     canonical = filename or path.name
@@ -89,15 +95,16 @@ def chunk_normalized(
         )
         chunks.extend(lg_chunks)
 
-    # ── Process FigureAssociations (M3) ──
+    # ── Process FigureAssociations (M3) — gated behind profile ──
     figure_block_ids: set[str] = set()
-    for fa in doc.figure_associations:
-        fig_chunks = _chunk_figure(
-            fa, canonical, str(path),
-            doc.normalized_blocks, root_tokens, leaf_tokens,
-        )
-        chunks.extend(fig_chunks)
-        figure_block_ids.update(fa.nearby_block_ids)
+    if _profile_allows(profile, "v4_figure_nearby"):
+        for fa in doc.figure_associations:
+            fig_chunks = _chunk_figure(
+                fa, canonical, str(path),
+                doc.normalized_blocks, root_tokens, leaf_tokens,
+            )
+            chunks.extend(fig_chunks)
+            figure_block_ids.update(fa.nearby_block_ids)
 
     # Merge figure_block_ids into grouped_block_ids so nearby blocks
     # included in figure chunks aren't also chunked as standalone blocks
@@ -414,7 +421,7 @@ def _split_by_toplevel(
     """Split items at the minimum level in the group, keeping children
     (higher levels) with their parent item.
 
-    Example: [1.(L1), a(L2), b(L2), 2.(L1), a(L2)] →
+    Example: [1.(L1), a(L2), b(L2), 2.(L1), a(L2)] ->
              [[1., a, b], [2., a]]
     """
     if not items:
@@ -462,3 +469,24 @@ def _split_paragraph_by_actions(text: str) -> list[str]:
     if buf:
         merged.append(buf)
     return merged if merged else [text]
+
+
+# ── Profile gating (spec §阶段化 profile 支持) ──
+
+_PROFILE_STAGES: dict[str, int] = {
+    "": 2,               # default: step protection only (M2)
+    "legacy": 2,
+    "v4_step_protection": 2,
+    "v4_figure_nearby": 3,
+    "v4_table_aware": 4,
+    "v4_full": 4,
+}
+
+
+def _profile_allows(current: str, minimum: str) -> bool:
+    """True if *current* profile is at least *minimum* stage."""
+    cur_stage = _PROFILE_STAGES.get(
+        (current or "").strip(), 2,
+    )
+    min_stage = _PROFILE_STAGES.get(minimum.strip(), 2)
+    return cur_stage >= min_stage

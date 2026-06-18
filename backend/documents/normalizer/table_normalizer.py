@@ -7,7 +7,11 @@ Two passes:
 
 from __future__ import annotations
 
+import logging
+
 from backend.documents.parse_adapter.base import ParsedTable
+
+logger = logging.getLogger(__name__)
 
 
 def validate_and_enrich_tables(tables: list[ParsedTable]) -> list[ParsedTable]:
@@ -27,10 +31,12 @@ def validate_and_enrich_tables(tables: list[ParsedTable]) -> list[ParsedTable]:
             col_count = len(cells_struct[0]) if cells_struct else 0
             for ri, row in enumerate(cells_struct):
                 if len(row) != col_count:
-                    warnings.append(
+                    msg = (
                         f"table {table.table_id} row {ri}: "
                         f"expected {col_count} cols, got {len(row)}"
                     )
+                    warnings.append(msg)
+                    logger.debug(msg)
 
         # ── 5.2: Markdown fallback ──
         if not cells_md and cells_struct:
