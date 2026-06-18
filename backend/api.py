@@ -4,9 +4,13 @@ from backend.routers.auth import router as auth_router
 from backend.routers.chat import router as chat_router
 from backend.routers.documents import router as documents_router
 from backend.routers.sessions import router as sessions_router
+from backend.routers.admin_documents import router as admin_documents_router
+from backend.routers.admin_terminology import router as admin_terminology_router
 
 router = APIRouter()
 router.include_router(auth_router)
 router.include_router(chat_router)
 router.include_router(sessions_router)
 router.include_router(documents_router)
+router.include_router(admin_documents_router)
+router.include_router(admin_terminology_router)

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.infra.db.database import Base
@@ -65,8 +65,9 @@ class DocumentParseMeta(Base):
     parse_engine_version: Mapped[str] = mapped_column(String(20), default="", nullable=False)
     parse_duration_ms: Mapped[float] = mapped_column(Integer, default=0, nullable=False)
     total_pages: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    watermark_filter_ratio: Mapped[float | None] = mapped_column(Integer, nullable=True)
-    ocr_confidence_avg: Mapped[float | None] = mapped_column(Integer, nullable=True)
+    watermark_filter_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ocr_confidence_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hierarchy_validation_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     parse_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     hierarchy_validation_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=local_now, nullable=False)

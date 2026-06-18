@@ -1,15 +1,325 @@
-2026-06-18T12:56:59.192658Z ERROR codex_core::tools::router: error=Exit code: 1
-Wall time: 10.3 seconds
+2026-06-18T13:32:00.612358Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 4.3 seconds
 Output:
+[31;1mGet-Content: [0m
+[31;1m[36;1mLine |[0m
+[31;1m[36;1m[36;1m   2 | [0m [36;1mGet-Content -Raw openspec\changes\rag-maintainability-chunker\specs\r[0m …[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCannot find path 'F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\openspec\changes\rag-maintainability-chunker\specs\rag-ingestion\spec.md' because it does not exist.[0m
 
-no tests ran in 0.01s
+2026-06-18T13:32:47.244775Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 3.2 seconds
+Output:
+openspec\changes\rag-maintainability-chunker\design.md:51:    ocr_confidence: float | None
+openspec\changes\rag-maintainability-chunker\design.md:80:    parse_meta: ParseMeta             # 解析引擎、版本、警告、统计信息
+openspec\changes\rag-maintainability-chunker\design.md:161:决定：水印过滤在 DeepDoc 内部完成，输出的 ParsedBlock 已是过滤后的内容。Normalizer 和 Chunker 不感知水印。水印过滤统计（filter_ratio）落到 `document.parse_meta`。
+openspec\changes\rag-maintainability-chunker\proposal.md:47:   - Document 级 parse_meta（水印过滤比、OCR 置信度分布、parser 版本）落 DB 表
+openspec\changes\rag-maintainability-chunker\proposal.md:89:- 数据库新增 `document_parse_meta` 表存 parse engine 元数据
+openspec\changes\rag-maintainability-chunker\proposal.md:93:- 上传文档 API 行为兼容（输入参数不变）；响应中可选增加 `parse_engine` 和 `parse_warnings` 字段
+openspec\changes\rag-maintainability-chunker\tasks.md:79:## 7. Milestone M6：parse_meta 与管理工具
+openspec\changes\rag-maintainability-chunker\tasks.md:81:- [x] 7.1 数据库新增 `document_parse_meta` 表（SQLAlchemy model + PG/SQLite migration）
+openspec\changes\rag-maintainability-chunker\tasks.md:82:- [x] 7.2 document_service 上传完成后写入 parse_meta（best-effort, non-critical）
+openspec\changes\rag-maintainability-chunker\tasks.md:83:- [x] 7.3 管理员 API：`GET /admin/documents/{id}/parse_meta` 查看解析元数据
+openspec\changes\rag-maintainability-chunker\tasks.md:87:**验收**：✅ DocumentParseMeta model + migration；✅ parse_meta 持久化（upload 后 best-effort 写入）；✅ admin 查询 API；✅ batch reindex stub。
+backend\services\document_service.py:88:    def _persist_parse_meta(self, filename: str, meta: dict) -> None:
+backend\services\document_service.py:89:        """Write parse metadata to document_parse_meta table."""
+backend\services\document_service.py:104:                    "parse_warnings": meta.get("parse_warnings"),
+backend\services\document_service.py:120:            pass  # best-effort; parse_meta is non-critical for retrieval
+backend\services\document_service.py:134:        Returns (chunks, parse_meta_dict_or_None).
+backend\services\document_service.py:152:        parse_meta_dict = _parse_meta_to_dict(parsed.parse_meta)
+backend\services\document_service.py:153:        return chunks, parse_meta_dict  # type: ignore[return-value]
+backend\services\document_service.py:172:            new_docs, parse_meta_dict = self._load_via_adapter(
+backend\services\document_service.py:197:        if parse_meta_dict:
+backend\services\document_service.py:198:            self._persist_parse_meta(filename, parse_meta_dict)
+backend\services\document_service.py:228:def _parse_meta_to_dict(meta) -> dict:
+backend\services\document_service.py:235:        "parse_warnings": meta.parse_warnings,
+backend\services\document_service.py:236:        "watermark_filter_ratio": meta.watermark_filter_ratio,
+backend\services\document_service.py:237:        "ocr_confidence_avg": meta.ocr_confidence_avg,
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:23:- **THEN** ParsedDocument.parse_meta 记录 `parse_engine="deepdoc"`、版本号、内部降级路径（如有）、警告列表
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:32:#### Scenario: 水印过滤统计落到 parse_meta
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:34:- **THEN** ParseMeta 中 `watermark_filter_ratio` 字段记录过滤比例；具体哪些 token 被过滤不在 ParsedBlock 中暴露
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:38:- **THEN** ParseMeta 中 `watermark_filter_ratio = 0` 或 null；不报告水印相关警告
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:41:PDF 来源的 ParsedBlock SHALL 在 DeepDoc 走 OCR 路径时携带 bbox 和 ocr_confidence 字段。DOCX/Excel 来源或 DeepDoc 原生文本路径下的 block 这些字段 MAY 为 null。
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:45:- **THEN** 每个 ParsedBlock 的 bbox 和 ocr_confidence 字段填充；ParseMeta 中 `ocr_confidence_avg` 反映全文均值
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:49:- **THEN** ParsedBlock.bbox = null、ocr_confidence = null；ParseMeta 标记 `parse_path="native_text"`
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:52:每次文档解析完成后，ParsedDocument.parse_meta MUST 落到 `document_parse_meta` 数据库表，供管理员审计和评测使用。
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:54:#### Scenario: 写入 parse_meta
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:56:- **THEN** `document_parse_meta` 表中新增一行，包含 document_id、parse_engine、parse_engine_version、watermark_filter_ratio、ocr_confidence_avg、hierarchy_validation_warnings、parse_warnings、parse_duration_ms
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:59:- **WHEN** 管理员调用 `GET /admin/documents/{id}/parse_meta`
+openspec\changes\rag-maintainability-chunker\specs\rag-document-parsing\spec.md:60:- **THEN** API 返回该文档的完整 parse_meta JSON
+openspec\changes\rag-maintainability-chunker\specs\rag-structure-normalization\spec.md:4:Normalizer SHALL attempt 从 ParsedBlock 流中识别标题块并构建层级树。当 DeepDoc 已提供标题结构时 SHALL 只做验证; 当解析层级提取失败时 MUST NOT 阻断分块流程, 至多在 parse_meta 中记录警告并降级到无层级模式。每个非标题 block SHOULD 尽可能标注所属的 section_path 和 section_title。
+openspec\changes\rag-maintainability-chunker\specs\rag-structure-normalization\spec.md:16:- **THEN** 在 parse_meta.hierarchy_validation_warnings 中记录警告；不阻断处理；按实际深度继续构建
+openspec\changes\rag-maintainability-chunker\specs\rag-structure-normalization\spec.md:61:- **THEN** 在 parse_meta.parse_warnings 中记录；该 table 标记为 invalid，不进入 chunker
+backend\documents\parse_adapter\base.py:47:    ocr_confidence: float | None = None
+backend\documents\parse_adapter\base.py:136:    parse_warnings: list[str] = field(default_factory=list)
+backend\documents\parse_adapter\base.py:139:    ocr_confidence_avg: float | None = None
+backend\documents\parse_adapter\base.py:141:    # Proportion of watermark-like tokens filtered during parsing.
+backend\documents\parse_adapter\base.py:142:    watermark_filter_ratio: float | None = None
+backend\documents\parse_adapter\base.py:160:    parse_meta: ParseMeta
+backend\routers\admin_documents.py:1:"""Admin endpoints for document diagnostics (parse_meta, reindex)."""
+backend\routers\admin_documents.py:10:router = APIRouter(prefix="/admin/documents", tags=["admin"])
+backend\routers\admin_documents.py:13:@router.get("/{document_id}/parse_meta")
+backend\routers\admin_documents.py:14:async def get_parse_meta(document_id: str):
+backend\routers\admin_documents.py:29:            "parse_warnings": row.parse_warnings or [],
+backend\routers\admin_documents.py:35:@router.post("/reindex")
+backend\routers\admin_documents.py:36:async def batch_reindex(
+backend\routers\admin_documents.py:40:    """Trigger a batch reindex for the given filenames (M6.4).
+backend\routers\admin_documents.py:42:    This is a stub — the reindex infrastructure requires async task
+backend\routers\admin_documents.py:48:        "message": "Batch reindex not yet implemented — requires async task support",
+backend\documents\parse_adapter\excel.py:104:            parse_warnings=warnings,
+backend\documents\parse_adapter\excel.py:112:            parse_meta=meta,
+tests\test_chunker\test_figure_chunker.py:66:                parse_meta=ParseMeta(parse_engine="test"),
+backend\documents\parse_adapter\deepdoc\adapter.py:101:            parse_warnings=warnings,
+backend\documents\parse_adapter\deepdoc\adapter.py:110:            parse_meta=meta,
+backend\documents\parse_adapter\deepdoc\adapter.py:161:            parse_warnings=warnings,
+backend\documents\parse_adapter\deepdoc\adapter.py:169:            parse_meta=meta,
+tests\test_chunker\test_step_chunker.py:78:                parse_meta=ParseMeta(parse_engine="test"),
+tests\test_chunker\test_step_chunker.py:106:                parse_meta=ParseMeta(parse_engine="test"),
+tests\test_chunker\test_step_chunker.py:131:                parse_meta=ParseMeta(parse_engine="test"),
+backend\infra\db\models.py:59:class DocumentParseMeta(Base):
+backend\infra\db\models.py:60:    __tablename__ = "document_parse_meta"
+backend\infra\db\models.py:68:    watermark_filter_ratio: Mapped[float | None] = mapped_column(Integer, nullable=True)
+backend\infra\db\models.py:69:    ocr_confidence_avg: Mapped[float | None] = mapped_column(Integer, nullable=True)
+backend\infra\db\models.py:70:    parse_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+backend\infra\db\models.py:71:    hierarchy_validation_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+backend\infra\db\database.py:78:                "CREATE TABLE IF NOT EXISTS document_parse_meta (document_id VARCHAR(256) PRIMARY KEY, parse_engine VARCHAR(50) NOT NULL DEFAULT '', parse_engine_version VARCHAR(20) NOT NULL DEFAULT '', parse_duration_ms INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, watermark_filter_ratio INTEGER, ocr_confidence_avg INTEGER, parse_warnings JSON, hierarchy_validation_warnings JSON, created_at TIMESTAMP NOT NULL DEFAULT NOW())",
+backend\infra\db\database.py:99:                "CREATE TABLE IF NOT EXISTS document_parse_meta (document_id VARCHAR(256) PRIMARY KEY, parse_engine VARCHAR(50) NOT NULL DEFAULT '', parse_engine_version VARCHAR(20) NOT NULL DEFAULT '', parse_duration_ms INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, watermark_filter_ratio INTEGER, ocr_confidence_avg INTEGER, parse_warnings JSON, hierarchy_validation_warnings JSON, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+backend\documents\normalizer\pipeline.py:28:            text=b.text, bbox=b.bbox, ocr_confidence=b.ocr_confidence,
+backend\documents\normalizer\list_normalizer.py:123:                ocr_confidence=block.ocr_confidence,
+backend\documents\normalizer\list_normalizer.py:173:                bbox=block.bbox, ocr_confidence=block.ocr_confidence,
+backend\documents\normalizer\list_normalizer.py:209:                bbox=gb.bbox, ocr_confidence=gb.ocr_confidence,
+backend\documents\normalizer\heading_normalizer.py:133:            ocr_confidence=block.ocr_confidence,
+tests\test_document_service.py:34:            parse_meta=ParseMeta(parse_engine="fake"),
+tests\test_document_service.py:237:        parse_meta=ParseMeta(parse_engine="test"),
+tests\test_evaluate_rag_matrix.py:733:        fingerprint = _build_fingerprint(args, variants, reindex_events=[])
+tests\test_evaluate_rag_matrix.py:761:        fingerprint = _build_fingerprint(args, ["K2"], reindex_events=[])
+tests\test_evaluate_rag_matrix.py:814:        fingerprint = _build_fingerprint(args, ["GS3"], reindex_events=[])
+tests\test_evaluate_rag_matrix.py:844:        fingerprint = _build_fingerprint(args, ["K2"], reindex_events=[])
+tests\test_evaluate_rag_matrix.py:979:            validate_variant_order(["B1"], skip_reindex=False)
+tests\test_evaluate_rag_matrix.py:981:        validate_variant_order(["B1"], skip_reindex=True)
+tests\test_evaluate_rag_matrix.py:982:        validate_variant_order(["A1", "B1", "G1"], skip_reindex=False)
+tests\test_normalizer\test_base.py:66:        pd = ParsedDocument(filename="x.pdf", file_type="pdf", parse_meta=ParseMeta(parse_engine="test"))
+tests\test_normalizer\test_base.py:75:        pd = ParsedDocument(filename="x.pdf", file_type="pdf", parse_meta=ParseMeta(parse_engine="test"))
+tests\test_parse_adapter\test_base.py:27:        assert b.ocr_confidence is None
+tests\test_parse_adapter\test_base.py:94:        assert m.parse_warnings == []
+tests\test_parse_adapter\test_base.py:102:            parse_warnings=["low ocr confidence on page 3"],
+tests\test_parse_adapter\test_base.py:103:            ocr_confidence_avg=0.85,
+tests\test_parse_adapter\test_base.py:106:        assert len(m.parse_warnings) == 1
+tests\test_parse_adapter\test_base.py:111:        d = ParsedDocument(filename="test.pdf", file_type="pdf", parse_meta=ParseMeta(parse_engine="test"))
+tests\test_parse_adapter\test_base.py:116:        assert d.parse_meta.parse_engine == "test"
+tests\test_parse_adapter\test_base.py:119:        d = ParsedDocument(filename="x.pdf", file_type="pdf", parse_meta=ParseMeta(parse_engine="test"))
+tests\test_parse_adapter\test_deepdoc_integration.py:98:        assert doc.parse_meta is not None
+tests\test_parse_adapter\test_deepdoc_integration.py:99:        assert doc.parse_meta.parse_engine == "deepdoc"
+tests\test_parse_adapter\test_deepdoc_integration.py:100:        assert doc.parse_meta.parse_duration_ms > 0
+tests\test_parse_adapter\test_deepdoc_integration.py:101:        assert doc.parse_meta.total_pages >= 1
+tests\test_parse_adapter\test_deepdoc_integration.py:102:        assert isinstance(doc.parse_meta.parse_warnings, list)
+tests\test_parse_adapter\test_deepdoc_integration.py:151:        assert doc.parse_meta.parse_engine == "deepdoc"
+tests\test_parse_adapter\test_deepdoc_integration.py:152:        assert doc.parse_meta.parse_duration_ms > 0
+tests\test_parse_adapter\test_deepdoc_integration.py:183:        assert doc.parse_meta.parse_engine == "excel_openpyxl"
+tests\test_parse_adapter\test_deepdoc_integration.py:184:        assert doc.parse_meta.total_pages >= 1
+tests\test_parse_adapter\test_deepdoc_integration.py:185:        assert doc.parse_meta.parse_duration_ms > 0
+tests\test_parse_adapter\test_deepdoc_integration.py:206:            parse_meta=ParseMeta(parse_engine="test"),
+tests\test_parse_adapter\test_deepdoc_integration.py:232:            parse_meta=ParseMeta(parse_engine="test"),
+tests\test_parse_adapter\test_registry.py:17:            parse_meta=ParseMeta(parse_engine="fake"),
+tests\test_parse_adapter\test_excel_adapter.py:43:        assert doc.parse_meta is not None
+tests\test_parse_adapter\test_excel_adapter.py:44:        assert doc.parse_meta.parse_engine == "excel_openpyxl"
+tests\test_parse_adapter\test_excel_adapter.py:45:        assert doc.parse_meta.total_pages == 1
+tests\test_parse_adapter\test_excel_adapter.py:61:            assert doc.parse_meta is not None
+tests\test_parse_adapter\test_excel_adapter.py:62:            assert doc.parse_meta.total_pages == 2
+rg: alembic: 系统找不到指定的文件。 (os error 2)
+rg: migrations: 系统找不到指定的文件。 (os error 2)
+
+2026-06-18T13:33:25.885607Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 3.8 seconds
+Output:
+[31;1mGet-Content: [0m
+[31;1m[36;1mLine |[0m
+[31;1m[36;1m[36;1m   2 | [0m $i=0; [36;1mGet-Content backend\main.py[0m | ForEach-Object { $i++; if ($i -le …[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m       ~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCannot find path 'F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\main.py' because it does not exist.[0m
+
+2026-06-18T13:34:12.169839Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 16.8 seconds
+Output:
+................................FFFFFFFFF...............FF............   [100%]
+================================== FAILURES ===================================
+_________ TestTerminologyPreflight.test_returns_none_when_not_loaded __________
+
+self = <test_terminology_m3.TestTerminologyPreflight object at 0x000001CB13901EE0>
+
+    def test_returns_none_when_not_loaded(self) -> None:
+        set_terminology_table(TerminologyTable())
+>       from backend.rag.query_plan import terminology_preflight
+E       ImportError: cannot import name 'terminology_preflight' from 'backend.rag.query_plan' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\rag\query_plan.py)
+
+tests\test_terminology_m3.py:43: ImportError
+___________ TestTerminologyPreflight.test_returns_data_when_loaded ____________
+
+self = <test_terminology_m3.TestTerminologyPreflight object at 0x000001CB139021B0>
+_load_table = <backend.rag.terminology.table.TerminologyTable object at 0x000001CB15958560>
+
+    def test_returns_data_when_loaded(self, _load_table: TerminologyTable) -> None:
+>       from backend.rag.query_plan import terminology_preflight
+E       ImportError: cannot import name 'terminology_preflight' from 'backend.rag.query_plan' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\rag\query_plan.py)
+
+tests\test_terminology_m3.py:47: ImportError
+_________ TestTerminologyPreflight.test_returns_none_for_table_error __________
+
+self = <test_terminology_m3.TestTerminologyPreflight object at 0x000001CB13902480>
+
+    def test_returns_none_for_table_error(self) -> None:
+        """When table singleton is None, should return None gracefully."""
+        from backend.rag.terminology.table import _terminology_table
+        import backend.rag.terminology.table as tbl
+        old = _terminology_table
+        try:
+            tbl._terminology_table = None
+>           from backend.rag.query_plan import terminology_preflight
+E           ImportError: cannot import name 'terminology_preflight' from 'backend.rag.query_plan' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\rag\query_plan.py)
+
+tests\test_terminology_m3.py:67: ImportError
+________________ TestTerminologyPreflight.test_no_terms_query _________________
+
+self = <test_terminology_m3.TestTerminologyPreflight object at 0x000001CB13902750>
+_load_table = <backend.rag.terminology.table.TerminologyTable object at 0x000001CB1595B7A0>
+
+    def test_no_terms_query(self, _load_table: TerminologyTable) -> None:
+>       from backend.rag.query_plan import terminology_preflight
+E       ImportError: cannot import name 'terminology_preflight' from 'backend.rag.query_plan' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\rag\query_plan.py)
+
+tests\test_terminology_m3.py:73: ImportError
+__________________ TestScanTerminology.test_annotates_chunks __________________
+
+self = <test_terminology_m4.TestScanTerminology object at 0x000001CB139030B0>
+_load_table = <backend.rag.terminology.table.TerminologyTable object at 0x000001CB13902240>
+
+    def test_annotates_chunks(self, _load_table: TerminologyTable) -> None:
+>       from backend.documents.loader import _scan_terminology
+E       ImportError: cannot import name '_scan_terminology' from 'backend.documents.loader' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\documents\loader.py)
+
+tests\test_terminology_m4.py:36: ImportError
+_______________ TestScanTerminology.test_empty_chunk_no_errors ________________
+
+self = <test_terminology_m4.TestScanTerminology object at 0x000001CB139033E0>
+_load_table = <backend.rag.terminology.table.TerminologyTable object at 0x000001CB19187470>
+
+    def test_empty_chunk_no_errors(self, _load_table: TerminologyTable) -> None:
+>       from backend.documents.loader import _scan_terminology
+E       ImportError: cannot import name '_scan_terminology' from 'backend.documents.loader' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\documents\loader.py)
+
+tests\test_terminology_m4.py:56: ImportError
+_________________ TestScanTerminology.test_no_terms_in_chunk __________________
+
+self = <test_terminology_m4.TestScanTerminology object at 0x000001CB13903710>
+_load_table = <backend.rag.terminology.table.TerminologyTable object at 0x000001CB155D18E0>
+
+    def test_no_terms_in_chunk(self, _load_table: TerminologyTable) -> None:
+>       from backend.documents.loader import _scan_terminology
+E       ImportError: cannot import name '_scan_terminology' from 'backend.documents.loader' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\documents\loader.py)
+
+tests\test_terminology_m4.py:63: ImportError
+______________ TestScanTerminology.test_no_table_loaded_graceful ______________
+
+self = <test_terminology_m4.TestScanTerminology object at 0x000001CB13903A10>
+
+    def test_no_table_loaded_graceful(self) -> None:
+        """When no terminology table is loaded, chunks pass through unchanged."""
+        from backend.rag.terminology.table import _terminology_table
+        import backend.rag.terminology.table as tbl
+>       from backend.documents.loader import _scan_terminology
+E       ImportError: cannot import name '_scan_terminology' from 'backend.documents.loader' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\documents\loader.py)
+
+tests\test_terminology_m4.py:83: ImportError
+______ TestParentChunkStoreTermFields.test_payload_includes_term_fields _______
+
+self = <test_terminology_m4.TestParentChunkStoreTermFields object at 0x000001CB139038F0>
+
+    def test_payload_includes_term_fields(self) -> None:
+        from backend.infra.vector_store.parent_chunk_store import ParentChunkStore
+        from datetime import datetime, timezone, timedelta
+    
+        store = ParentChunkStore(index_profile="I3")
+        doc = {
+            "chunk_id": "test-chunk-abc",
+            "text": "text",
+            "filename": "f.pdf",
+            "term_matches": [{"surface": "MRG", "canonical": "主减速齿轮箱", "entity_type": "component", "start": 0, "end": 3}],
+            "protected_tokens": ["MRG"],
+        }
+        now = datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
+        payload = store._payload_from_doc(doc, now)
+>       assert payload["term_matches"] == doc["term_matches"]
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'term_matches'
+
+tests\test_terminology_m4.py:110: KeyError
+__________ TestTerminologySeedLoading.test_seed_csv_parses_correctly __________
+
+self = <test_terminology_integration.TestTerminologySeedLoading object at 0x000001CB15959430>
+
+    def test_seed_csv_parses_correctly(self) -> None:
+        """Verify the seed CSV is well-formed and contains expected data."""
+        from pathlib import Path
+        import csv
+    
+        seed_path = Path(__file__).resolve().parent.parent / "data" / "terminology_seed.csv"
+>       assert seed_path.is_file(), f"Seed file not found at {seed_path}"
+E       AssertionError: Seed file not found at F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\data\terminology_seed.csv
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = WindowsPath('F:/dev/llm/SuperHermes/.claude/worktrees/maintainability-chunker/data/terminology_seed.csv').is_file
+
+tests\test_terminology_integration.py:104: AssertionError
+_____________ TestTerminologySeedLoading.test_seed_loads_into_db ______________
+
+self = <test_terminology_integration.TestTerminologySeedLoading object at 0x000001CB15959640>
+_ensure_db = None
+
+    def test_seed_loads_into_db(self, _ensure_db: None) -> None:
+        """Test that seed CSV can be loaded into the DB."""
+        from pathlib import Path
+        import csv
+    
+>       from backend.application.main import _load_seed_csv
+E       ImportError: cannot import name '_load_seed_csv' from 'backend.application.main' (F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\backend\application\main.py)
+
+tests\test_terminology_integration.py:128: ImportError
+=========================== short test summary info ===========================
+FAILED tests/test_terminology_m3.py::TestTerminologyPreflight::test_returns_none_when_not_loaded
+FAILED tests/test_terminology_m3.py::TestTerminologyPreflight::test_returns_data_when_loaded
+FAILED tests/test_terminology_m3.py::TestTerminologyPreflight::test_returns_none_for_table_error
+FAILED tests/test_terminology_m3.py::TestTerminologyPreflight::test_no_terms_query
+FAILED tests/test_terminology_m4.py::TestScanTerminology::test_annotates_chunks
+FAILED tests/test_terminology_m4.py::TestScanTerminology::test_empty_chunk_no_errors
+FAILED tests/test_terminology_m4.py::TestScanTerminology::test_no_terms_in_chunk
+FAILED tests/test_terminology_m4.py::TestScanTerminology::test_no_table_loaded_graceful
+FAILED tests/test_terminology_m4.py::TestParentChunkStoreTermFields::test_payload_includes_term_fields
+FAILED tests/test_terminology_integration.py::TestTerminologySeedLoading::test_seed_csv_parses_correctly
+FAILED tests/test_terminology_integration.py::TestTerminologySeedLoading::test_seed_loads_into_db
+11 failed, 59 passed in 8.53s
 F:\dev\llm\SuperHermes\.claude\worktrees\maintainability-chunker\.venv\Lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.4.3)/charset_normalizer (3.4.6) doesn't match a supported version!
   warnings.warn(
-ERROR: file or directory not found: tests/test_terminology_m1.py
 
+2026-06-18T13:35:16.203846Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 4.9 seconds
+Output:
+[31;1mParserError: [0m
+[31;1m[36;1mLine |[0m
+[31;1m[36;1m[36;1m   2 | [0m uv run python - <[36;1m<[0m'PY'[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                  ~[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mMissing file specification after redirection operator.[0m
 
-2026-06-18T12:57:01.824675Z ERROR codex_core::tools::router: error=Exit code: 1
-Wall time: 12.5 seconds
+2026-06-18T13:35:16.607802Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 5.3 seconds
+Output:
+[31;1mParserError: [0m
+[31;1m[36;1mLine |[0m
+[31;1m[36;1m[36;1m   2 | [0m uv run python - <[36;1m<[0m'PY'[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                  ~[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mMissing file specification after redirection operator.[0m
+
+2026-06-18T13:35:21.987428Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 10.7 seconds
 Output:
 backend\infra\db\models.py:17: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
 backend\infra\db\models.py:17: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
@@ -23,15 +333,18 @@ backend\infra\db\models.py:45: error: Invalid base class "Base"  [misc]
 backend\infra\db\models.py:59: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
 backend\infra\db\models.py:59: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
 backend\infra\db\models.py:59: error: Invalid base class "Base"  [misc]
-backend\infra\db\models.py:76: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
-backend\infra\db\models.py:76: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
-backend\infra\db\models.py:76: error: Invalid base class "Base"  [misc]
-backend\infra\db\models.py:91: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
-backend\infra\db\models.py:91: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
-backend\infra\db\models.py:91: error: Invalid base class "Base"  [misc]
-backend\infra\db\models.py:104: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
-backend\infra\db\models.py:104: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
-backend\infra\db\models.py:104: error: Invalid base class "Base"  [misc]
+backend\infra\db\models.py:75: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
+backend\infra\db\models.py:75: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
+backend\infra\db\models.py:75: error: Invalid base class "Base"  [misc]
+backend\infra\db\models.py:92: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
+backend\infra\db\models.py:92: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
+backend\infra\db\models.py:92: error: Invalid base class "Base"  [misc]
+backend\infra\db\models.py:107: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
+backend\infra\db\models.py:107: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
+backend\infra\db\models.py:107: error: Invalid base class "Base"  [misc]
+backend\infra\db\models.py:120: error: Variable "backend.infra.db.database.Base" is not valid as a type  [valid-type]
+backend\infra\db\models.py:120: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
+backend\infra\db\models.py:120: error: Invalid base class "Base"  [misc]
 backend\rag\terminology\table.py:69: error: Invalid index type "tuple[EntityType, str]" for "dict[str, TerminologyEntry]"; expected type "str"  [index]
 backend\rag\terminology\table.py:115: error: No overload variant of "get" of "dict" matches argument type "tuple[EntityType, str]"  [call-overload]
 backend\rag\terminology\table.py:115: note: Possible overload variants:
@@ -44,12 +357,12 @@ backend\rag\terminology\table.py:167: note: Possible overload variants:
 backend\rag\terminology\table.py:167: note:     def get(self, str, /) -> TerminologyEntry | None
 backend\rag\terminology\table.py:167: note:     def get(self, str, TerminologyEntry, /) -> TerminologyEntry
 backend\rag\terminology\table.py:167: note:     def [_T] get(self, str, _T, /) -> TerminologyEntry | _T
-Found 18 errors in 2 files (checked 27 source files)
+Found 20 errors in 2 files (checked 27 source files)
 
-2026-06-18T12:58:43.620492Z ERROR codex_core::tools::router: error=Exit code: 1
-Wall time: 8.8 seconds
+2026-06-18T13:35:46.914243Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 6.5 seconds
 Output:
 Traceback (most recent call last):
-  File "<stdin>", line 7, in <module>
-TypeError: TerminologyTable.__init__() takes 1 positional argument but 2 were given
+  File "<stdin>", line 5, in <module>
+AttributeError: 'TerminologyTable' object has no attribute 'load_entries'. Did you mean: 'all_entries'?
 

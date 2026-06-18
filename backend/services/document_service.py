@@ -12,7 +12,7 @@ from backend.infra.embedding import embedding_service
 from backend.infra.vector_store.parent_chunk_store import ParentChunkStore
 from backend.rag.profiles import current_index_profile
 from backend.shared.filename_normalization import raw_filename_basename
-from backend.documents.parse_adapter.base import UnsupportedFileType, ParseError
+from backend.documents.parse_adapter.base import UnsupportedFileType
 from backend.documents.parse_adapter.registry import get_registry
 from backend.documents.parse_adapter.converters import parsed_to_chunks
 
@@ -102,6 +102,9 @@ class DocumentService:
                     "parse_duration_ms": int(meta.get("parse_duration_ms", 0) or 0),
                     "total_pages": int(meta.get("total_pages", 0) or 0),
                     "parse_warnings": meta.get("parse_warnings"),
+                    "watermark_filter_ratio": meta.get("watermark_filter_ratio"),
+                    "ocr_confidence_avg": meta.get("ocr_confidence_avg"),
+                    "hierarchy_validation_warnings": meta.get("hierarchy_validation_warnings"),
                 }
                 is_pg = db.get_bind().dialect.name == "postgresql"
                 stmt = (
