@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -70,4 +71,5 @@ class ParentChunk(Base):
     root_chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     chunk_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     chunk_idx: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    parent_extras: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=local_now, nullable=False)

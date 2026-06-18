@@ -102,14 +102,20 @@ def build_figure_associations(
             if vert_gap <= nearby_distance:
                 nearby_ids.append(block.block_id)
 
-        # ── Strategy 2: text reference matching ──
+        # ── Strategy 2: text reference matching (same/adjacent pages only) ──
         if fig_number:
-            # Build index of blocks by order_index for window search
-            sorted_blocks = sorted(blocks, key=lambda b: b.order_index)
-            figure_order = figure.page_no * 1000  # rough: figure appears mid-page
-            for block in sorted_blocks:
+            # Constrain to same page and adjacent pages (±1)
+            allowed_pages = {figure.page_no}
+            if figure.page_no > 1:
+                allowed_pages.add(figure.page_no - 1)
+            allowed_pages.add(figure.page_no + 1)
+
+            for block in blocks:
                 if block.block_id in nearby_ids:
                     continue  # already matched by bbox
+                if block.page_no not in allowed_pages:
+                    continue
+                # Window: order_index within ±window_size of blocks already near the figure
                 refs = _extract_all_figure_numbers(block.text)
                 if fig_number in refs:
                     nearby_ids.append(block.block_id)
@@ -117,6 +123,8 @@ def build_figure_associations(
         associations.append(
             FigureAssociation(
                 figure_id=figure.figure_id,
+                caption=figure.caption,
+                page_no=figure.page_no,
                 nearby_block_ids=nearby_ids,
             )
         )

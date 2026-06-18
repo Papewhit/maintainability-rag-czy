@@ -58,9 +58,14 @@ class FigureAssociation:
     """A figure and its associated nearby blocks.
 
     Created during the 'figure-nearby' normalizer pass (M3).
+
+    *caption* and *page_no* are carried through from the parsed figure
+    anchor so the chunker has an authoritative source of truth.
     """
 
     figure_id: str
+    caption: str = ""
+    page_no: int = 1
     nearby_block_ids: list[str] = field(default_factory=list)
 
 

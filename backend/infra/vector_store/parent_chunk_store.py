@@ -64,6 +64,7 @@ class ParentChunkStore:
             "chunk_level": int(doc.get("chunk_level", 0) or 0),
             "chunk_idx": int(doc.get("chunk_idx", 0) or 0),
             "updated_at": updated_at,
+            "parent_extras": doc.get("parent_extras") or None,
         }
 
     def _cache_payload(self, payload: dict) -> dict:

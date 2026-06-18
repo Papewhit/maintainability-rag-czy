@@ -47,6 +47,8 @@ class TestBuildFigureAssociations:
         ]
         assocs = build_figure_associations(figures, blocks, nearby_distance=200)
         assert len(assocs) == 1
+        assert assocs[0].caption == "图1-1"  # from anchor
+        assert assocs[0].page_no == 1        # from anchor
         assert "b1" in assocs[0].nearby_block_ids
         assert "b2" not in assocs[0].nearby_block_ids  # too far
         assert "b3" not in assocs[0].nearby_block_ids  # different page

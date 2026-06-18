@@ -292,10 +292,12 @@ def _chunk_figure(
     """Generate a figure parent chunk + optional leaf chunks.
 
     Spec: chunk text = caption (first line) + figure marker + nearby blocks.
+    Caption and page_no come from the ParsedFigureAnchor (carried through
+    FigureAssociation) as the authoritative source of truth.
     """
     block_by_id = {b.block_id: b for b in blocks}
     nearby_texts: list[str] = []
-    page_nos: set[int] = set()
+    page_nos: set[int] = {fa.page_no}
 
     for bid in fa.nearby_block_ids:
         blk = block_by_id.get(bid)
@@ -303,18 +305,11 @@ def _chunk_figure(
             nearby_texts.append(blk.text)
             page_nos.add(blk.page_no)
 
-    # Determine caption from matching block text or the figure_id
-    caption = ""
-    figure_role = "diagram"
-    for bid in fa.nearby_block_ids:
-        blk = block_by_id.get(bid)
-        if blk and blk.block_type in ("figure_caption", "paragraph"):
-            if "图" in blk.text or "Fig" in blk.text:
-                caption = blk.text.split("\n")[0][:200]
-                figure_role = _infer_figure_role(caption)
-                break
+    # Authoritative caption from the figure anchor (not guessed)
+    caption = fa.caption[:200] if fa.caption else ""
+    figure_role = _infer_figure_role(caption) if caption else "diagram"
 
-    # Build parent text: caption + nearby blocks
+    # Build parent text: caption (first line) + figure marker + nearby blocks
     parent_lines: list[str] = []
     if caption:
         parent_lines.append(caption)
@@ -322,7 +317,7 @@ def _chunk_figure(
     parent_lines.extend(nearby_texts)
     parent_text = "\n\n".join(parent_lines)
 
-    page_no = min(page_nos) if page_nos else 1
+    page_no = fa.page_no or min(page_nos) if page_nos else 1
     parent_id = f"{canonical}_{fa.figure_id}"
 
     chunks: list[dict] = [

@@ -114,27 +114,8 @@ def parsed_to_chunks(
         )
         chunks.append(leaf_tbl)
 
-    # ── Figures (unchanged: pass-through as before) ──
-    for fi, figure in enumerate(doc.figures):
-        if not figure.caption:
-            continue
-        fig_id = f"{canonical_name}_figure_{fi}"
-        fig_chunk = _make_chunk(
-            chunk_id=fig_id,
-            parent_chunk_id=fig_id,
-            root_chunk_id=fig_id,
-            chunk_level=3,
-            chunk_role="leaf",
-            filename=canonical_name,
-            file_path=str(path),
-            page_number=figure.page_no,
-            text=figure.caption,
-            retrieval_text=figure.caption,
-            block_type="figure_caption",
-            figure_id=figure.figure_id,
-        )
-        chunks.append(fig_chunk)
-
+    # ── Figures are now handled by chunk_normalized via FigureAssociations.
+    # The legacy figure-caption leaf loop is removed to avoid duplicate entries.
     return chunks
 
 
