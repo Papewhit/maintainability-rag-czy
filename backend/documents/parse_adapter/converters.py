@@ -166,6 +166,11 @@ def parsed_to_chunks(
 
     # ── Figures are now handled by chunk_normalized via FigureAssociations.
     # The legacy figure-caption leaf loop is removed to avoid duplicate entries.
+
+    # ── Terminology scan (M5: v4_full profile) ──
+    if _profile_allows(profile, "v4_full"):
+        _scan_terminology_on_chunks(chunks)
+
     return chunks
 
 
@@ -363,3 +368,55 @@ def _detect_parameter_table(table) -> tuple[str, list[str]]:
         role = "parameter"
 
     return role, keys[:20]
+
+
+# ── Terminology scanning (M5) ──
+
+
+def _scan_terminology_on_chunks(chunks: list[dict]) -> None:
+    """Post-process chunks to annotate terminology metadata (spec §索引时术语扫描).
+
+    Scans each chunk's retrieval_text for domain terms and writes
+    entity_types, term_match_count, term_matches, and protected_tokens.
+    Silently returns if the terminology table is not loaded or empty.
+    """
+    try:
+        from backend.rag.terminology.table import get_terminology_table
+        table = get_terminology_table()
+    except RuntimeError:
+        return
+    if not table.is_loaded or table.entry_count() == 0:
+        return
+
+    for chunk in chunks:
+        retrieval_text = chunk.get("retrieval_text", "")
+        if not retrieval_text:
+            chunk.setdefault("entity_types", [])
+            chunk["term_match_count"] = 0
+            chunk.setdefault("term_matches", [])
+            chunk.setdefault("protected_tokens", [])
+            continue
+
+        matches = table.scan_text(retrieval_text)
+        entity_types: list[str] = []
+        term_matches: list[dict] = []
+        protected_tokens: list[str] = []
+        seen_types: set[str] = set()
+        for m in matches:
+            if m.entity_type not in seen_types:
+                seen_types.add(m.entity_type)
+                entity_types.append(m.entity_type)
+            term_matches.append({
+                "surface": m.surface,
+                "canonical": m.canonical,
+                "entity_type": m.entity_type,
+                "start": m.start,
+                "end": m.end,
+            })
+            if len(m.surface) >= 2 and m.surface not in protected_tokens:
+                protected_tokens.append(m.surface)
+
+        chunk["entity_types"] = entity_types
+        chunk["term_match_count"] = len(term_matches)
+        chunk["term_matches"] = term_matches
+        chunk["protected_tokens"] = protected_tokens

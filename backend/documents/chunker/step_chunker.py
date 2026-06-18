@@ -479,7 +479,7 @@ _PROFILE_STAGES: dict[str, int] = {
     "v4_step_protection": 2,
     "v4_figure_nearby": 3,
     "v4_table_aware": 4,
-    "v4_full": 4,
+    "v4_full": 5,        # + terminology (M5)
 }
 
 

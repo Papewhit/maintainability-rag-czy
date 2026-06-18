@@ -68,13 +68,13 @@
 
 ## 6. Milestone M5：阶段 4 - 术语标注集成
 
-- [ ] 6.1 等待 `rag-terminology-module` 上线（依赖项）
-- [ ] 6.2 Chunker：每个 chunk 生成后调用 `terminology_matcher.scan_text(chunk.retrieval_text)`
-- [ ] 6.3 写入 metadata：`entity_types`、`term_match_count`（Milvus）、`term_matches`、`protected_tokens`（parent store）
-- [ ] 6.4 Milvus schema 切换到 `v4_full`
-- [ ] 6.5 测试：含术语的样本 chunk 正确写入 entity_types 列表
+- [x] 6.1 等待 `rag-terminology-module` 上线（依赖项已满足）
+- [x] 6.2 Chunker：每个 chunk 生成后调用 `terminology_matcher.scan_text(chunk.retrieval_text)`
+- [x] 6.3 写入 metadata：`entity_types`、`term_match_count`（Milvus）、`term_matches`、`protected_tokens`（parent store）
+- [x] 6.4 Milvus schema 切换到 `v4_full`（profile stage 5，writer 已有字段）
+- [x] 6.5 测试：含术语的样本 chunk 正确写入 entity_types 列表
 
-**验收**：术语模块上线后，所有新索引的 chunk 都带 entity_types 字段；rerank 模块可使用 term_match_count 作为信号。
+**验收**：✅ _scan_terminology_on_chunks 在 parsed_to_chunks 末端调用（v4_full profile）；✅ 扫描结果写入 entity_types/term_match_count/term_matches/protected_tokens（复用 loader.py 模式）。
 
 ## 7. Milestone M6：parse_meta 与管理工具
 
