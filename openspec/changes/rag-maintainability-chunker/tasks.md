@@ -33,7 +33,7 @@
   - 维修动作词作为 chunk 边界辅助信号（"拆卸/检查/更换/安装/复验"等）
 - [x] 3.6 Chunker：生成 parent + leaf chunk，写入 list_group_id / list_order / list_marker / list_level / list_complete
 - [x] 3.7 Milvus schema 切换到新 profile `v4_step_protection`（动态 schema，writer 已写 list/table/figure 字段）
-- [ ] 3.8 端到端测试：上传含维修步骤的样本文档，验证步骤组不被截断；现有 RAG 流程对新 chunk 仍可工作
+- [x] 3.8 端到端测试：上传含维修步骤的样本文档，验证步骤组不被截断；现有 RAG 流程对新 chunk 仍可工作
 
 **验收**：✅ heading_tree 构建正确；✅ list_item 检测 + ListGroup 聚合 + parent_group_id；✅ 步骤保护规则（min_level 切分 + 子步骤跟随父步骤 + 维修动作词边界）；✅ Milvus writer 已写 M2 字段。
 
