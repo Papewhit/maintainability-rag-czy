@@ -121,23 +121,27 @@ def build_figure_associations(
                 allowed_pages.add(figure.page_no - 1)
             allowed_pages.add(figure.page_no + 1)
 
-            # Find the order_index range on allowed pages to anchor the window
-            allowed_orders = [b.order_index for b in blocks if b.page_no in allowed_pages]
-            if allowed_orders:
-                anchor = min(allowed_orders)
-                order_max = anchor + window_size * 50  # generous per-page span
+            # Anchor the window on bbox-matched blocks (Strategy 1 results).
+            # If no bbox anchor exists, skip the order window entirely
+            # (the page constraint alone is sufficient).
+            anchor_orders = [
+                b.order_index for b in blocks
+                if b.block_id in nearby_ids
+            ]
+            use_window = len(anchor_orders) > 0
+            anchor = sorted(anchor_orders)[len(anchor_orders) // 2] if use_window else 0
 
-                for block in blocks:
-                    if block.block_id in nearby_ids:
-                        continue  # already matched by bbox
-                    if block.page_no not in allowed_pages:
-                        continue
-                    # Within order_index window of the figure's vicinity
-                    if block.order_index > order_max:
-                        continue
-                    refs = _extract_all_figure_numbers(block.text)
-                    if fig_number in refs:
-                        nearby_ids.append(block.block_id)
+            for block in blocks:
+                if block.block_id in nearby_ids:
+                    continue  # already matched by bbox
+                if block.page_no not in allowed_pages:
+                    continue
+                # Within ±window_size of the bbox-anchor in reading order
+                if use_window and abs(block.order_index - anchor) > window_size:
+                    continue
+                refs = _extract_all_figure_numbers(block.text)
+                if fig_number in refs:
+                    nearby_ids.append(block.block_id)
 
         associations.append(
             FigureAssociation(
