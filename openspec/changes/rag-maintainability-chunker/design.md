@@ -134,19 +134,19 @@ class MaintenanceChunk:
 
 每层只接受上一层的输出作为输入；不能跨层引用（例如 chunker 不直接读 ParsedDocument，必须通过 NormalizedDocument）。
 
-### 决策 3：软边界条目（待 DeepDoc 源代码核对后精确分离）
+### 决策 3：软边界条目（M7 已澄清）
 
-下列能力的归属暂时模糊，因为 DeepDoc 内部覆盖范围未明：
+经过 M0-M6 实现，下列能力归属已明确（详见 M7 软边界澄清表）：
 
-| 能力 | 当前归属 | 待澄清 |
-|------|---------|--------|
-| 标题层级构建 | Normalizer 主导 | DeepDoc 是否已识别？Normalizer 是否只做验证？ |
-| 表头识别合并 | DeepDoc 主导 | DeepDoc 有启发式合并，Normalizer 只补漏 |
-| 表格 markdown 转换 | DeepDoc 主导 | Normalizer 验证 cells 完整性 |
-| Figure caption 提取 | DeepDoc 主导 | Normalizer 验证精度，必要时重做 |
-| ParsedBlock order_index | DeepDoc 主导 | 多列版面下需 Normalizer 验证 |
+| 能力 | 归属层 | 说明 |
+|------|--------|------|
+| 标题层级构建 | Normalizer (heading_normalizer) | 端口 DocumentLoader 逻辑，DeepDoc 不识别标题 |
+| 表头识别合并 | DeepDoc (TSR) + Normalizer (table_normalizer) 验证 | DeepDoc 主导，Normalizer 补漏 |
+| 表格 markdown 转换 | DeepDoc (TSR) 主导 + Normalizer (table_normalizer) 兜底 | cells_markdown 已有则跳过，缺失则从 cells_structured 生成 |
+| Figure caption 提取 | DeepDoc (Layout) 主导 + Normalizer (figure_normalizer) 关联 | 提取由 adapter 完成，Normalizer 做 nearby 关联 |
+| ParsedBlock order_index | Parse Adapter 主导 | DeepDoc 提供 order_index，Normalizer 不做二次排序 |
 
-实施时：
+实施时（已落实）：
 - 阶段 1 完成后，组织一次 DeepDoc 源代码 review，把上述条目精确分配到 Parse Adapter 或 Normalizer
 - 软边界条目在 design.md 中显式标注（不假装已决定）
 - 一旦确定，更新 design.md 并修改对应实现

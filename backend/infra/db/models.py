@@ -69,7 +69,6 @@ class DocumentParseMeta(Base):
     ocr_confidence_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
     hierarchy_validation_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     parse_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
-    hierarchy_validation_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=local_now, nullable=False)
 
 

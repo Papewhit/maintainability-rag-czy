@@ -238,4 +238,5 @@ def _parse_meta_to_dict(meta) -> dict:
         "parse_warnings": meta.parse_warnings,
         "watermark_filter_ratio": meta.watermark_filter_ratio,
         "ocr_confidence_avg": meta.ocr_confidence_avg,
+        "hierarchy_validation_warnings": meta.hierarchy_validation_warnings,
     }

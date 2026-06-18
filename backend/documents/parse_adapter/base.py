@@ -141,6 +141,9 @@ class ParseMeta:
     # Proportion of watermark-like tokens filtered during parsing.
     watermark_filter_ratio: float | None = None
 
+    # Warnings from heading tree validation (M6).
+    hierarchy_validation_warnings: list[str] = field(default_factory=list)
+
 
 # ---------------------------------------------------------------------------
 # ParsedDocument — the unified parse output
