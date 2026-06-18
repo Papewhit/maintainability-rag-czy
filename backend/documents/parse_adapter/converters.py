@@ -383,8 +383,8 @@ def _scan_terminology_on_chunks(chunks: list[dict]) -> None:
     try:
         from backend.rag.terminology.table import get_terminology_table
         table = get_terminology_table()
-    except RuntimeError:
-        return
+    except Exception:
+        return  # terminology module not available in this environment
     if not table.is_loaded or table.entry_count() == 0:
         return
 
