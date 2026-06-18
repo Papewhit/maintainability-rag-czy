@@ -56,6 +56,22 @@ class ChatMessage(Base):
     session = relationship("ChatSession", back_populates="messages")
 
 
+class DocumentParseMeta(Base):
+    __tablename__ = "document_parse_meta"
+    __table_args__ = {"extend_existing": True}
+
+    document_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    parse_engine: Mapped[str] = mapped_column(String(50), default="", nullable=False)
+    parse_engine_version: Mapped[str] = mapped_column(String(20), default="", nullable=False)
+    parse_duration_ms: Mapped[float] = mapped_column(Integer, default=0, nullable=False)
+    total_pages: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    watermark_filter_ratio: Mapped[float | None] = mapped_column(Integer, nullable=True)
+    ocr_confidence_avg: Mapped[float | None] = mapped_column(Integer, nullable=True)
+    parse_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    hierarchy_validation_warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=local_now, nullable=False)
+
+
 class TerminologyEntryModel(Base):
     __tablename__ = "terminology_entries"
     __table_args__ = (

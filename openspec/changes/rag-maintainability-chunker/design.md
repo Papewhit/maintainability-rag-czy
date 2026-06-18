@@ -278,3 +278,21 @@ v1 倾向内嵌，理由：项目规模未到必须微服务化的程度，运�
 - **被 `rag-multilevel-fallback` 间接依赖**：Level 2 scope relax 利用 entity_types 做精确 → 模糊降级
 
 实施顺序建议：阶段 1（step protection）可独立先行；阶段 2-3 可与 evidence change 协同推进；阶段 4 等 terminology change 上线后再做。
+
+## M7 软边界澄清（2026-06-18）
+
+经过 M0-M6 实现，以下归属已明确：
+
+| 能力 | 归属层 | 说明 |
+|------|--------|------|
+| 标题树构建 | Normalizer (heading_normalizer) | 端口 DocumentLoader._build_structured_chunks |
+| 列表检测 | Normalizer (list_normalizer) | 通用层，无领域信号 |
+| 维修动作词边界 | Chunker (step_chunker) | 领域信号，可选启用 |
+| 图文关联 | Normalizer (figure_normalizer) + Chunker (_chunk_figure) | 两层协作 |
+| 表格校验+兜底 | Normalizer (table_normalizer) | Markdown fallback |
+| 参数表识别 | converters.py (_detect_parameter_table) | 启发式，无需额外 Normalizer pass |
+| 术语扫描 | converters.py (_scan_terminology_on_chunks) | 后置处理，接入 TerminologyTable |
+| 水印过滤 | Parse Adapter (DeepDoc) | 由 _filter_forpages 处理，Normalizer 不重复 |
+| figure caption 关联 | Normalizer (figure_normalizer) | bbox proximity + text reference |
+
+已移除的设计模糊条目：无。所有此前标注 "待 DeepDoc 源代码核对" 的能力已在实现中明确归属。

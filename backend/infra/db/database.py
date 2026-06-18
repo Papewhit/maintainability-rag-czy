@@ -75,6 +75,7 @@ def _ensure_runtime_indexes() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_chat_messages_session_id_order ON chat_messages (session_ref_id, id)",
                 "CREATE INDEX IF NOT EXISTS ix_parent_chunks_filename_chunk ON parent_chunks (filename, chunk_id)",
                 "CREATE INDEX IF NOT EXISTS ix_parent_chunks_profile_filename ON parent_chunks (index_profile, filename)",
+                "CREATE TABLE IF NOT EXISTS document_parse_meta (document_id VARCHAR(256) PRIMARY KEY, parse_engine VARCHAR(50) NOT NULL DEFAULT '', parse_engine_version VARCHAR(20) NOT NULL DEFAULT '', parse_duration_ms INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, watermark_filter_ratio INTEGER, ocr_confidence_avg INTEGER, parse_warnings JSON, hierarchy_validation_warnings JSON, created_at TIMESTAMP NOT NULL DEFAULT NOW())",
             ]
         )
     elif engine.dialect.name == "sqlite":
@@ -95,6 +96,7 @@ def _ensure_runtime_indexes() -> None:
             [
                 "CREATE INDEX IF NOT EXISTS ix_parent_chunks_filename_chunk ON parent_chunks (filename, chunk_id)",
                 "CREATE INDEX IF NOT EXISTS ix_parent_chunks_profile_filename ON parent_chunks (index_profile, filename)",
+                "CREATE TABLE IF NOT EXISTS document_parse_meta (document_id VARCHAR(256) PRIMARY KEY, parse_engine VARCHAR(50) NOT NULL DEFAULT '', parse_engine_version VARCHAR(20) NOT NULL DEFAULT '', parse_duration_ms INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, watermark_filter_ratio INTEGER, ocr_confidence_avg INTEGER, parse_warnings JSON, hierarchy_validation_warnings JSON, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
             ]
         )
     else:

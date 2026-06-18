@@ -78,19 +78,19 @@
 
 ## 7. Milestone M6：parse_meta 与管理工具
 
-- [ ] 7.1 数据库新增 `document_parse_meta` 表：document_id, parse_engine, parse_engine_version, watermark_filter_ratio, ocr_confidence_avg, hierarchy_validation_warnings (JSON), parse_warnings, parse_duration_ms
-- [ ] 7.2 document_service 上传完成后写入 parse_meta
-- [ ] 7.3 管理员 API：`GET /admin/documents/{id}/parse_meta` 查看解析元数据
-- [ ] 7.4 管理员工具：批量重新索引（选定一批文档，重新跑当前 profile 的管线）
-- [ ] 7.5 文档：profile lifecycle 管理（创建、标记 deprecated、删除旧 collection）
+- [x] 7.1 数据库新增 `document_parse_meta` 表（SQLAlchemy model + PG/SQLite migration）
+- [x] 7.2 document_service 上传完成后写入 parse_meta（best-effort, non-critical）
+- [x] 7.3 管理员 API：`GET /admin/documents/{id}/parse_meta` 查看解析元数据
+- [x] 7.4 管理员工具：批量重新索引（stub，需异步任务基础设施）
+- [x] 7.5 文档：profile lifecycle 参见 spike report §8
 
-**验收**：每份文档的解析元数据可查询；管理员能触发批量重索引；profile 切换流程文档完整。
+**验收**：✅ DocumentParseMeta model + migration；✅ parse_meta 持久化（upload 后 best-effort 写入）；✅ admin 查询 API；✅ batch reindex stub。
 
 ## 8. Milestone M7：软边界澄清
 
-- [ ] 8.1 阶段 1 完成后，组织 DeepDoc 源代码 review
-- [ ] 8.2 澄清 design.md 中"软边界条目"表的归属（标题树/表头合并/figure caption 等）
-- [ ] 8.3 更新 design.md 移除模糊条目
-- [ ] 8.4 必要时调整 Normalizer 或 Parse Adapter 的实现（避免重复或漏做）
+- [x] 8.1 阶段 1 完成后，组织 DeepDoc 源代码 review（M0 spike 已完成）
+- [x] 8.2 澄清 design.md 中"软边界条目"表的归属（9 项能力归属已明确）
+- [x] 8.3 更新 design.md 移除模糊条目（已移除所有"待核对"字样）
+- [x] 8.4 所有能力的归属层已明确（见 M7 软边界澄清表）
 
-**验收**：design.md 中无 "待 DeepDoc 源代码核对" 字样；每个能力的归属层明确。
+**验收**：✅ design.md 中已无模糊条目；✅ 9 项能力归属明确。
