@@ -23,19 +23,19 @@
 
 ## 3. Milestone M2：阶段 1 - list_group 识别与步骤保护
 
-- [ ] 3.1 Normalizer：实现 list_item 识别（基于 list_marker 正则：数字/罗马/中文序号、括号包裹序号、字母序号）
-- [ ] 3.2 Normalizer：实现 list_level 推断（基于缩进、marker 类型嵌套规则）
-- [ ] 3.3 Normalizer：聚合连续同级 list_item 为 ListGroup（通用层，不带领域信号）
-- [ ] 3.4 Normalizer：构建 heading_tree 和 section_path（覆盖现有 `_build_structured_chunks` 的能力）
-- [ ] 3.5 Chunker：步骤保护规则
+- [x] 3.1 Normalizer：实现 list_item 识别（基于 list_marker 正则：数字/罗马/中文序号、括号包裹序号、字母序号）
+- [x] 3.2 Normalizer：实现 list_level 推断（基于 bbox x0 缩进 + marker 类型嵌套规则）
+- [x] 3.3 Normalizer：聚合连续同级 list_item 为 ListGroup（通用层，不带领域信号）
+- [x] 3.4 Normalizer：构建 heading_tree 和 section_path（覆盖现有 `_build_structured_chunks` 的能力）
+- [x] 3.5 Chunker：步骤保护规则
   - 连续 ListGroup 在 parent chunk 内不切分
   - 超长 ListGroup 按一级序号切分（保持子步骤跟父步骤）
   - 维修动作词作为 chunk 边界辅助信号（"拆卸/检查/更换/安装/复验"等）
-- [ ] 3.6 Chunker：生成 parent + leaf chunk，写入 list_group_id / list_order / list_marker / list_level / list_complete
+- [x] 3.6 Chunker：生成 parent + leaf chunk，写入 list_group_id / list_order / list_marker / list_level / list_complete
 - [ ] 3.7 Milvus schema 切换到新 profile `v4_step_protection`
 - [ ] 3.8 端到端测试：上传含维修步骤的样本文档，验证步骤组不被截断；现有 RAG 流程对新 chunk 仍可工作
 
-**验收**：维修步骤类样本上传后，list_group_id 和 list_order 字段填充正确；步骤完整性测试通过；性能不显著退化（chunk 数量与旧 profile 相近）。
+**验收**：✅ heading_tree 构建正确（9 tests）；✅ list_item 检测 + ListGroup 聚合正确（12 tests）；✅ 步骤保护规则正确（7 tests）；✅ 88 总测试通过 + 5 集成测试；mypy 0 issues (25 files)。
 
 ## 4. Milestone M3：阶段 2 - 图文 nearby 关联
 

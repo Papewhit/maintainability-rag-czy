@@ -1,0 +1,253 @@
+"""Step-protected chunker — consumes NormalizedDocument, produces MaintenanceChunks.
+
+Step protection rules (per M2):
+  1. Continuous ListGroup stays together in a parent chunk (up to token budget).
+  2. Long ListGroup splits by top-level items (list_level=0).  Child items
+     (level >= 1) follow their parent — never split between parent and children.
+  3. Maintenance action words (拆卸/检查/更换/...) start new semantic step groups.
+"""
+
+from __future__ import annotations
+
+import uuid
+from pathlib import Path
+
+from backend.documents.chunker.base import MaintenanceChunk
+from backend.documents.normalizer.base import ListGroup, NormalizedBlock, NormalizedDocument
+from backend.documents.parse_adapter.converters import _make_chunk, _split_text_into_chunks
+
+# ── Maintenance action words (step boundary signals) ──
+
+_MAINTENANCE_ACTIONS = {
+    "拆卸", "检查", "更换", "安装", "复验", "调试", "校准",
+    "清理", "润滑", "紧固", "调整", "更换件", "备件",
+    "分解", "组装", "测试", "测量", "记录", "确认",
+    "拆解", "修复", "替换", "接通", "断开", "标记",
+}
+
+
+def _starts_with_maintenance_action(text: str) -> bool:
+    head = text.strip()[:8]
+    return any(head.startswith(w) for w in _MAINTENANCE_ACTIONS)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token count: Chinese ~1 char/token, English ~4 char/token."""
+    return max(1, len(text) // 2)
+
+
+# ── Main chunker ──
+
+
+def chunk_normalized(
+    doc: NormalizedDocument,
+    file_path: str,
+    *,
+    filename: str | None = None,
+    leaf_tokens: int = 500,
+    root_tokens: int = 2000,
+) -> list[dict]:
+    """Convert a NormalizedDocument into chunk dicts ready for indexing.
+
+    Step-protected list groups are chunked as atomic units; non-list blocks
+    are chunked as in the original parsed_to_chunks.
+    """
+    path = Path(file_path)
+    canonical = filename or path.name
+    chunks: list[dict] = []
+
+    # Track which blocks belong to a ListGroup (to avoid double-chunking)
+    grouped_block_ids: set[str] = set()
+    for lg in doc.list_groups:
+        for item in lg.items:
+            grouped_block_ids.add(item.block_id)
+
+    # ── Process ListGroups (step-protected path) ──
+    for g_idx, group in enumerate(doc.list_groups):
+        lg_chunks = _chunk_list_group(
+            group, g_idx, canonical, str(path), root_tokens, leaf_tokens,
+        )
+        chunks.extend(lg_chunks)
+
+    # ── Process non-list blocks ──
+    for block in doc.normalized_blocks:
+        if block.block_id in grouped_block_ids:
+            continue
+        if not block.text.strip():
+            continue
+
+        root_id = f"{canonical}_root_{block.block_id}"
+        root_chunk = _make_chunk(
+            chunk_id=root_id,
+            parent_chunk_id=root_id,
+            root_chunk_id=root_id,
+            chunk_level=1,
+            chunk_role="root",
+            filename=canonical,
+            file_path=str(path),
+            page_number=block.page_no,
+            text=block.text,
+            retrieval_text="",
+            block_type=block.block_type,
+            section_title=block.section_title,
+            section_path=block.section_path,
+            anchor_id=block.anchor_id,
+            page_start=block.page_no,
+            page_end=block.page_no,
+        )
+        chunks.append(root_chunk)
+
+        leaves = _split_text_into_chunks(block.text, max_tokens=leaf_tokens)
+        for li, leaf_text in enumerate(leaves):
+            chunks.append(
+                _make_chunk(
+                    chunk_id=f"{canonical}_{block.block_id}_leaf_{li}",
+                    parent_chunk_id=root_id,
+                    root_chunk_id=root_id,
+                    chunk_level=3,
+                    chunk_role="leaf",
+                    filename=canonical,
+                    file_path=str(path),
+                    page_number=block.page_no,
+                    text=leaf_text,
+                    retrieval_text=leaf_text,
+                    block_type=block.block_type,
+                    section_title=block.section_title,
+                    section_path=block.section_path,
+                    anchor_id=block.anchor_id,
+                    page_start=block.page_no,
+                    page_end=block.page_no,
+                )
+            )
+
+    return chunks
+
+
+def _chunk_list_group(
+    group: ListGroup,
+    group_idx: int,
+    canonical: str,
+    file_path: str,
+    root_tokens: int,
+    leaf_tokens: int,
+) -> list[dict]:
+    """Chunk a single ListGroup with step protection."""
+    items = group.items
+    if not items:
+        return []
+
+    # ── Decide if the group needs splitting ──
+    full_text = "\n".join(it.text for it in items)
+    if _estimate_tokens(full_text) <= root_tokens:
+        sub_groups = [items]
+    else:
+        # Split by maintenance action boundaries first
+        sub_groups = _split_by_maintenance_actions(items)
+        # If still too large, split by top-level items
+        final_subs: list[list[NormalizedBlock]] = []
+        for sg in sub_groups:
+            sg_text = "\n".join(it.text for it in sg)
+            if _estimate_tokens(sg_text) <= root_tokens:
+                final_subs.append(sg)
+            else:
+                final_subs.extend(_split_by_toplevel(sg))
+        sub_groups = final_subs
+
+    chunks: list[dict] = []
+    for sg_idx, sub_items in enumerate(sub_groups):
+        # Parent chunk for this sub-group
+        parent_text = "\n".join(it.text for it in sub_items)
+        parent_id = f"{canonical}_lg{group_idx}_sg{sg_idx}"
+        page_numbers = {it.page_no for it in sub_items}
+
+        chunk_data = _make_chunk(
+            chunk_id=parent_id,
+            parent_chunk_id=parent_id,
+            root_chunk_id=parent_id,
+            chunk_level=1,
+            chunk_role="root",
+            filename=canonical,
+            file_path=file_path,
+            page_number=min(page_numbers),
+            text=parent_text,
+            retrieval_text="",
+            block_type="list_item",
+            page_start=min(page_numbers),
+            page_end=max(page_numbers),
+            list_group_id=group.group_id,
+            list_complete=(len(sub_groups) == 1),
+        )
+        chunk_data.setdefault("parent_extras", {})["list_group_items"] = len(sub_items)
+        chunks.append(chunk_data)
+
+        # Leaf chunks — one per item
+        for li, item in enumerate(sub_items):
+            chunk_data_leaf = _make_chunk(
+                chunk_id=f"{parent_id}_leaf_{li}",
+                parent_chunk_id=parent_id,
+                root_chunk_id=parent_id,
+                chunk_level=3,
+                chunk_role="leaf",
+                filename=canonical,
+                file_path=file_path,
+                page_number=item.page_no,
+                text=item.text,
+                retrieval_text=item.text,
+                block_type="list_item",
+                section_title=item.section_title or "",
+                section_path=item.section_path or "",
+                anchor_id=item.anchor_id or "",
+                page_start=item.page_no,
+                page_end=item.page_no,
+                list_group_id=group.group_id,
+                list_order=item.list_item_index,
+                list_marker=item.list_marker or "",
+                list_level=item.list_level,
+                list_complete=(len(sub_groups) == 1),
+            )
+            chunks.append(chunk_data_leaf)
+
+    return chunks
+
+
+def _split_by_maintenance_actions(
+    items: list[NormalizedBlock],
+) -> list[list[NormalizedBlock]]:
+    """Split items at maintenance action word boundaries."""
+    if not items:
+        return []
+    sub_groups: list[list[NormalizedBlock]] = []
+    current: list[NormalizedBlock] = [items[0]]
+
+    for item in items[1:]:
+        if _starts_with_maintenance_action(item.text):
+            sub_groups.append(current)
+            current = [item]
+        else:
+            current.append(item)
+    sub_groups.append(current)
+    return sub_groups
+
+
+def _split_by_toplevel(
+    items: list[NormalizedBlock],
+) -> list[list[NormalizedBlock]]:
+    """Split items at top-level (list_level=0) boundaries, keeping children
+    with their parent."""
+    if not items:
+        return []
+    # Find top-level cut points
+    sub_groups: list[list[NormalizedBlock]] = []
+    current: list[NormalizedBlock] = []
+
+    for item in items:
+        level = item.list_level or 0
+        if level == 0 and current:
+            sub_groups.append(current)
+            current = [item]
+        else:
+            current.append(item)
+
+    if current:
+        sub_groups.append(current)
+    return sub_groups

@@ -5,6 +5,7 @@ Public API:
     ListGroup           — contiguous run of same-level list items
     FigureAssociation   — figure ↔ nearby-block links
     NormalizedDocument  — full normalizer output
+    run_normalizer      — pipeline: ParsedDocument → NormalizedDocument
 """
 
 from backend.documents.normalizer.base import (
@@ -13,10 +14,12 @@ from backend.documents.normalizer.base import (
     NormalizedBlock,
     NormalizedDocument,
 )
+from backend.documents.normalizer.pipeline import run_normalizer
 
 __all__ = [
     "FigureAssociation",
     "ListGroup",
     "NormalizedBlock",
     "NormalizedDocument",
+    "run_normalizer",
 ]

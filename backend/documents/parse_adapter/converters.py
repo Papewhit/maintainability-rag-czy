@@ -10,7 +10,6 @@ will replace this once complete.
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 from backend.documents.parse_adapter.base import (
@@ -52,55 +51,19 @@ def parsed_to_chunks(
     canonical_name = filename or path.name
     chunks: list[dict] = []
 
-    # ── Text blocks ──
-    for block in doc.blocks:
-        if not block.text.strip():
-            continue
+    # ── Normalize + step-protected chunking (M2 pipeline) ──
+    from backend.documents.normalizer.pipeline import run_normalizer
+    from backend.documents.chunker.step_chunker import chunk_normalized
 
-        block_id = block.block_id or str(uuid.uuid4())[:8]
-        root_id = f"{canonical_name}_root_{block_id}"
-        leaf_id_base = f"{canonical_name}_{block_id}"
-
-        # Root chunk — full block text
-        root_chunk = _make_chunk(
-            chunk_id=root_id,
-            parent_chunk_id=root_id,
-            root_chunk_id=root_id,
-            chunk_level=1,
-            chunk_role="root",
-            filename=canonical_name,
-            file_path=str(path),
-            page_number=block.page_no,
-            text=block.text,
-            retrieval_text="",
-            block_type=block.block_type,
-            section_title=_extract_block_title(block),
-            page_start=block.page_no,
-            page_end=block.page_no,
+    normalized = run_normalizer(doc)
+    chunks.extend(
+        chunk_normalized(
+            normalized, str(path), filename=canonical_name,
+            leaf_tokens=leaf_tokens, root_tokens=root_tokens,
         )
-        chunks.append(root_chunk)
+    )
 
-        # Leaf chunks — split long blocks into token-sized slices
-        leaves = _split_text_into_chunks(block.text, max_tokens=leaf_tokens)
-        for li, leaf_text in enumerate(leaves):
-            leaf_chunk = _make_chunk(
-                chunk_id=f"{leaf_id_base}_leaf_{li}",
-                parent_chunk_id=root_id,
-                root_chunk_id=root_id,
-                chunk_level=3,
-                chunk_role="leaf",
-                filename=canonical_name,
-                file_path=str(path),
-                page_number=block.page_no,
-                text=leaf_text,
-                retrieval_text=leaf_text,
-                block_type=block.block_type,
-                page_start=block.page_no,
-                page_end=block.page_no,
-            )
-            chunks.append(leaf_chunk)
-
-    # ── Tables ──
+    # ── Tables (unchanged: pass-through as before) ──
     for ti, table in enumerate(doc.tables):
         table_text = (
             table.cells_markdown
@@ -151,7 +114,7 @@ def parsed_to_chunks(
         )
         chunks.append(leaf_tbl)
 
-    # ── Figures ──
+    # ── Figures (unchanged: pass-through as before) ──
     for fi, figure in enumerate(doc.figures):
         if not figure.caption:
             continue
@@ -196,6 +159,11 @@ def _make_chunk(
     table_id: str | None = None,
     table_role: str | None = None,
     figure_id: str | None = None,
+    list_group_id: str | None = None,
+    list_order: int | None = None,
+    list_marker: str | None = None,
+    list_level: int | None = None,
+    list_complete: bool | None = None,
     entity_types: list | None = None,
     term_match_count: int = 0,
     term_matches: list | None = None,
@@ -208,6 +176,8 @@ def _make_chunk(
         extras["section_path"] = section_path
     if anchor_id:
         extras["anchor_id"] = anchor_id
+    if list_group_id:
+        extras["list_group_id"] = list_group_id
 
     return {
         "chunk_id": chunk_id,
@@ -231,6 +201,11 @@ def _make_chunk(
         "table_id": table_id or "",
         "table_role": table_role or "",
         "figure_id": figure_id or "",
+        "list_group_id": list_group_id or "",
+        "list_order": list_order,
+        "list_marker": list_marker or "",
+        "list_level": list_level,
+        "list_complete": list_complete if list_complete is not None else True,
         "entity_types": entity_types or [],
         "term_match_count": term_match_count,
         "term_matches": term_matches or [],
