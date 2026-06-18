@@ -18,6 +18,10 @@ _RETRIEVAL_OUTPUT_FIELDS = [
     "chunk_id", "parent_chunk_id", "root_chunk_id",
     "chunk_level", "chunk_role", "chunk_idx",
     "section_title", "section_type", "section_path", "anchor_id",
+    "block_type",
+    "list_group_id", "list_order", "list_marker", "list_level", "list_complete",
+    "table_id", "table_role",
+    "figure_id", "figure_role",
     "entity_types", "term_match_count",
 ]
 AnnSearchRequest: Any = None
@@ -174,8 +178,6 @@ class MilvusManager:
             schema.add_field("chunk_level", DataType.INT64)
             schema.add_field("chunk_role", DataType.VARCHAR, max_length=32)
             schema.add_field("index_profile", DataType.VARCHAR, max_length=120)
-            schema.add_field("entity_types", DataType.VARCHAR, max_length=512)
-            schema.add_field("term_match_count", DataType.INT64)
 
             index_params = client.prepare_index_params()
             index_params.add_index(

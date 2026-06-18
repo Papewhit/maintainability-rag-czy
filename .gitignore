@@ -48,3 +48,4 @@ worktrees/
 
 # BM25 backups
 *.bak-*
+bash.exe.stackdump

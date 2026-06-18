@@ -134,19 +134,19 @@ class MaintenanceChunk:
 
 每层只接受上一层的输出作为输入；不能跨层引用（例如 chunker 不直接读 ParsedDocument，必须通过 NormalizedDocument）。
 
-### 决策 3：软边界条目（待 DeepDoc 源代码核对后精确分离）
+### 决策 3：软边界条目（M7 已澄清）
 
-下列能力的归属暂时模糊，因为 DeepDoc 内部覆盖范围未明：
+经过 M0-M6 实现，下列能力归属已明确（详见 M7 软边界澄清表）：
 
-| 能力 | 当前归属 | 待澄清 |
-|------|---------|--------|
-| 标题层级构建 | Normalizer 主导 | DeepDoc 是否已识别？Normalizer 是否只做验证？ |
-| 表头识别合并 | DeepDoc 主导 | DeepDoc 有启发式合并，Normalizer 只补漏 |
-| 表格 markdown 转换 | DeepDoc 主导 | Normalizer 验证 cells 完整性 |
-| Figure caption 提取 | DeepDoc 主导 | Normalizer 验证精度，必要时重做 |
-| ParsedBlock order_index | DeepDoc 主导 | 多列版面下需 Normalizer 验证 |
+| 能力 | 归属层 | 说明 |
+|------|--------|------|
+| 标题层级构建 | Normalizer (heading_normalizer) | 端口 DocumentLoader 逻辑，DeepDoc 不识别标题 |
+| 表头识别合并 | DeepDoc (TSR) + Normalizer (table_normalizer) 验证 | DeepDoc 主导，Normalizer 补漏 |
+| 表格 markdown 转换 | DeepDoc (TSR) 主导 + Normalizer (table_normalizer) 兜底 | cells_markdown 已有则跳过，缺失则从 cells_structured 生成 |
+| Figure caption 提取 | DeepDoc (Layout) 主导 + Normalizer (figure_normalizer) 关联 | 提取由 adapter 完成，Normalizer 做 nearby 关联 |
+| ParsedBlock order_index | Parse Adapter 主导 | DeepDoc 提供 order_index，Normalizer 不做二次排序 |
 
-实施时：
+实施时（已落实）：
 - 阶段 1 完成后，组织一次 DeepDoc 源代码 review，把上述条目精确分配到 Parse Adapter 或 Normalizer
 - 软边界条目在 design.md 中显式标注（不假装已决定）
 - 一旦确定，更新 design.md 并修改对应实现
@@ -278,3 +278,21 @@ v1 倾向内嵌，理由：项目规模未到必须微服务化的程度，运�
 - **被 `rag-multilevel-fallback` 间接依赖**：Level 2 scope relax 利用 entity_types 做精确 → 模糊降级
 
 实施顺序建议：阶段 1（step protection）可独立先行；阶段 2-3 可与 evidence change 协同推进；阶段 4 等 terminology change 上线后再做。
+
+## M7 软边界澄清（2026-06-18）
+
+经过 M0-M6 实现，以下归属已明确：
+
+| 能力 | 归属层 | 说明 |
+|------|--------|------|
+| 标题树构建 | Normalizer (heading_normalizer) | 端口 DocumentLoader._build_structured_chunks |
+| 列表检测 | Normalizer (list_normalizer) | 通用层，无领域信号 |
+| 维修动作词边界 | Chunker (step_chunker) | 领域信号，可选启用 |
+| 图文关联 | Normalizer (figure_normalizer) + Chunker (_chunk_figure) | 两层协作 |
+| 表格校验+兜底 | Normalizer (table_normalizer) | Markdown fallback |
+| 参数表识别 | converters.py (_detect_parameter_table) | 启发式，无需额外 Normalizer pass |
+| 术语扫描 | converters.py (_scan_terminology_on_chunks) | 后置处理，接入 TerminologyTable |
+| 水印过滤 | Parse Adapter (DeepDoc) | 由 _filter_forpages 处理，Normalizer 不重复 |
+| figure caption 关联 | Normalizer (figure_normalizer) | bbox proximity + text reference |
+
+已移除的设计模糊条目：无。所有此前标注 "待 DeepDoc 源代码核对" 的能力已在实现中明确归属。

@@ -1,8 +1,6 @@
 """Write chunk documents into Milvus with dense and sparse embeddings."""
 from __future__ import annotations
 
-import json
-
 from backend.infra.cache import cache
 from backend.infra.embedding import EmbeddingService, embedding_service as _default_embedding_service
 from backend.infra.vector_store.milvus_client import MilvusManager
@@ -60,7 +58,17 @@ class MilvusWriter:
                     "section_type": doc.get("section_type", ""),
                     "section_path": doc.get("section_path", ""),
                     "anchor_id": doc.get("anchor_id", ""),
-                    "entity_types": json.dumps(doc.get("entity_types") or []),
+                    "block_type": doc.get("block_type", "paragraph"),
+                    "list_group_id": doc.get("list_group_id", ""),
+                    "list_order": doc.get("list_order"),
+                    "list_marker": doc.get("list_marker", ""),
+                    "list_level": doc.get("list_level"),
+                    "list_complete": doc.get("list_complete", True),
+                    "table_id": doc.get("table_id", ""),
+                    "table_role": doc.get("table_role", ""),
+                    "figure_id": doc.get("figure_id", ""),
+                    "figure_role": doc.get("figure_role", ""),
+                    "entity_types": doc.get("entity_types", []),
                     "term_match_count": doc.get("term_match_count", 0),
                 }
                 for doc, dense_emb, sparse_emb in prepared_batch

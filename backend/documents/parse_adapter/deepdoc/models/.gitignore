@@ -1,0 +1,10 @@
+# DeepDoc ONNX model files (~250 MB).
+# These are downloaded from HuggingFace InfiniFlow/deepdoc
+# or provided via DEEPDOC_MODEL_DIR env var.
+*.onnx
+updown_concat_xgb.model
+
+# Keep the README and gitattributes
+!README.md
+!.gitattributes
+!.gitignore

@@ -1,0 +1,6 @@
+*
+!.gitignore
+!output_rev1.xlsx
+!test_docx.docx
+!maintenance_chunker_edge_cases.docx
+!国电电力.pdf

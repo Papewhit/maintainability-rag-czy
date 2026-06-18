@@ -70,10 +70,12 @@ def _ensure_runtime_indexes() -> None:
         statements.extend(
             [
                 "ALTER TABLE parent_chunks ADD COLUMN IF NOT EXISTS index_profile VARCHAR(120) NOT NULL DEFAULT 'legacy'",
+                "ALTER TABLE parent_chunks ADD COLUMN IF NOT EXISTS parent_extras JSON",
                 "CREATE INDEX IF NOT EXISTS ix_chat_sessions_user_updated ON chat_sessions (user_id, updated_at DESC)",
                 "CREATE INDEX IF NOT EXISTS ix_chat_messages_session_id_order ON chat_messages (session_ref_id, id)",
                 "CREATE INDEX IF NOT EXISTS ix_parent_chunks_filename_chunk ON parent_chunks (filename, chunk_id)",
                 "CREATE INDEX IF NOT EXISTS ix_parent_chunks_profile_filename ON parent_chunks (index_profile, filename)",
+                "CREATE TABLE IF NOT EXISTS document_parse_meta (document_id VARCHAR(256) PRIMARY KEY, parse_engine VARCHAR(50) NOT NULL DEFAULT '', parse_engine_version VARCHAR(20) NOT NULL DEFAULT '', parse_duration_ms INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, watermark_filter_ratio FLOAT, ocr_confidence_avg FLOAT, parse_warnings JSON, hierarchy_validation_warnings JSON, created_at TIMESTAMP NOT NULL DEFAULT NOW())",
             ]
         )
     elif engine.dialect.name == "sqlite":
@@ -86,10 +88,15 @@ def _ensure_runtime_indexes() -> None:
                 connection.execute(
                     text("ALTER TABLE parent_chunks ADD COLUMN index_profile VARCHAR(120) NOT NULL DEFAULT 'legacy'")
                 )
+            if "parent_extras" not in columns:
+                connection.execute(
+                    text("ALTER TABLE parent_chunks ADD COLUMN parent_extras JSON")
+                )
         statements.extend(
             [
                 "CREATE INDEX IF NOT EXISTS ix_parent_chunks_filename_chunk ON parent_chunks (filename, chunk_id)",
                 "CREATE INDEX IF NOT EXISTS ix_parent_chunks_profile_filename ON parent_chunks (index_profile, filename)",
+                "CREATE TABLE IF NOT EXISTS document_parse_meta (document_id VARCHAR(256) PRIMARY KEY, parse_engine VARCHAR(50) NOT NULL DEFAULT '', parse_engine_version VARCHAR(20) NOT NULL DEFAULT '', parse_duration_ms INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, watermark_filter_ratio FLOAT, ocr_confidence_avg FLOAT, parse_warnings JSON, hierarchy_validation_warnings JSON, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
             ]
         )
     else:

@@ -23,8 +23,16 @@ uv run pytest tests/test_rag_pipeline.py -q
 
 # Static checks
 uv run python -m compileall backend tests
+# M1 modules only (full backend has pre-existing errors — see openspec for scope)
+uv run mypy backend/documents/parse_adapter/ backend/documents/normalizer/ backend/documents/chunker/ --ignore-missing-imports
 node --check frontend/script.js
 node frontend/ui-redesign.test.mjs
+
+# Run only fast unit tests (skip slow DeepDoc integration)
+uv run pytest tests/ -m "not slow" -q
+
+# Run slow tests (requires vendored DeepDoc models or DEEPDOC_MODEL_DIR)
+uv run pytest tests/ -m "slow" -v
 ```
 
 ## Architecture
@@ -119,3 +127,24 @@ Single-page static app in `frontend/` (index.html, script.js, style.css). Uses V
 - Env vars are read at module level (not lazily) in `config.py` and `runtime_config.py`
 - Tests use pytest; test files that need env var isolation should set them before importing backend modules
 - The following directories are local-only (gitignored): `data/`, `docs/`, `eval/`, `scripts/`, `volumes/`
+
+## Current Stage
+
+This project is currently under a domain migration from general-purpose to maintainability-focused.
+
+Refer to `docs/superpowers/specs/2026-05-20-rag-fusion-design.md` for domain background and high-level fusion design.
+
+Refer to `openspec/` for specs, designs and tasks. You may refer to OpenSpec skills and CLI for better understanding of the directory strucure.
+
+Refer to `docs/superhermes-docs` for implementation details of the legacy system.
+
+### Documentation precendence
+
+`openspec/` → `docs/superpowers/specs/` → code → legacy documentation. Former ones take precendence.
+
+### Presentation guidelines
+
+Present this project as a fully migrated maintainability RAG system. State its final stage, not the ongoing dev stage.
+
+Bring up technical details that serve maintainability document retrieval when **asked about** this project,
+show details in current code implementation that controverts design docs only under a **dev session**.
