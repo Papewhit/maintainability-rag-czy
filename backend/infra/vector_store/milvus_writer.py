@@ -68,6 +68,8 @@ class MilvusWriter:
                     "table_role": doc.get("table_role", ""),
                     "figure_id": doc.get("figure_id", ""),
                     "figure_role": doc.get("figure_role", ""),
+                    "entity_types": doc.get("entity_types", []),
+                    "term_match_count": doc.get("term_match_count", 0),
                 }
                 for doc, dense_emb, sparse_emb in prepared_batch
             ]

@@ -31,6 +31,11 @@ def _starts_with_maintenance_action(text: str) -> bool:
     return any(head.startswith(w) for w in _MAINTENANCE_ACTIONS)
 
 
+def _contains_action_word(text: str) -> bool:
+    """True if *text* contains any maintenance action word (spec: 包含)."""
+    return any(w in text for w in _MAINTENANCE_ACTIONS)
+
+
 def _estimate_tokens(text: str) -> int:
     """Rough token count: Chinese ~1 char/token, English ~4 char/token."""
     return max(1, len(text) // 2)
@@ -62,10 +67,19 @@ def chunk_normalized(
         for item in lg.items:
             grouped_block_ids.add(item.block_id)
 
+    # Build parent → children index
+    children_of: dict[str, list[ListGroup]] = {}
+    for lg in doc.list_groups:
+        if lg.parent_group_id:
+            children_of.setdefault(lg.parent_group_id, []).append(lg)
+
     # ── Process ListGroups (step-protected path) ──
     for g_idx, group in enumerate(doc.list_groups):
+        if group.parent_group_id:
+            continue  # child groups merged into parent below
         lg_chunks = _chunk_list_group(
             group, g_idx, canonical, str(path), root_tokens, leaf_tokens,
+            child_groups=children_of.get(group.group_id),
         )
         chunks.extend(lg_chunks)
 
@@ -97,9 +111,10 @@ def chunk_normalized(
         )
         chunks.append(root_chunk)
 
-        # For long paragraphs, use maintenance action words as soft boundary hints
+        # For long paragraphs, use maintenance action words as soft boundary hints.
+        # Spec: 包含 (not just 以...开头) action words → boundary signal.
         text_to_split = block.text
-        if _estimate_tokens(text_to_split) > leaf_tokens and _starts_with_maintenance_action(text_to_split):
+        if _estimate_tokens(text_to_split) > leaf_tokens and _contains_action_word(text_to_split):
             # Action word detected → prefer splitting at action boundaries
             parts = _split_paragraph_by_actions(text_to_split)
             if len(parts) > 1:
@@ -143,9 +158,29 @@ def _chunk_list_group(
     file_path: str,
     root_tokens: int,
     leaf_tokens: int,
+    *,
+    child_groups: list[ListGroup] | None = None,
 ) -> list[dict]:
-    """Chunk a single ListGroup with step protection."""
-    items = group.items
+    """Chunk a ListGroup with step protection, merging child groups."""
+    # Merge child items into parent items (child items follow their parent)
+    items = list(group.items)
+    if child_groups:
+        # Build a flat merged list: parent items interleaved with their children
+        merged: list[NormalizedBlock] = []
+        child_by_parent: dict[int, list[NormalizedBlock]] = {}
+        for cg in child_groups:
+            # Child group belongs to the parent item that precedes it
+            # (child items have higher list_level)
+            pass  # items are already ordered by order_index in the document
+        for item in items:
+            merged.append(item)
+        for cg in child_groups:
+            for ci in cg.items:
+                merged.append(ci)
+        # Re-sort by order_index to maintain document order
+        merged.sort(key=lambda b: b.order_index)
+        items = merged
+
     if not items:
         return []
 

@@ -18,6 +18,11 @@ _RETRIEVAL_OUTPUT_FIELDS = [
     "chunk_id", "parent_chunk_id", "root_chunk_id",
     "chunk_level", "chunk_role", "chunk_idx",
     "section_title", "section_type", "section_path", "anchor_id",
+    "block_type",
+    "list_group_id", "list_order", "list_marker", "list_level", "list_complete",
+    "table_id", "table_role",
+    "figure_id", "figure_role",
+    "entity_types", "term_match_count",
 ]
 AnnSearchRequest: Any = None
 DataType: Any = None

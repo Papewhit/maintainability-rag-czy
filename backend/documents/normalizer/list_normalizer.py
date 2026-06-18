@@ -21,9 +21,9 @@ _LIST_MARKER_PATTERNS: list[tuple[str, int]] = [
     (r"^第[零一二三四五六七八九十百\d]+[章节条]", 0),
     # Chinese ordinal + separator
     (r"^[零一二三四五六七八九十百]+[、]", 0),
-    # Parenthesized: (1) （一） (a) (iv)
-    (r"^[\(（][零一二三四五六七八九十百\d]+[）\)]\s*", 1),
-    (r"^[\(（][a-zA-Z]{1,2}[）\)]\s*", 2),
+    # Parenthesized: (1) （一） → level 2 under "1." style (spec §list_group)
+    (r"^[\(（][零一二三四五六七八九十百\d]+[）\)]\s*", 2),
+    (r"^[\(（][a-zA-Z]{1,2}[）\)]\s*", 3),
     # Multi-level numbers: 1.1  or 1.1.1
     (r"^\d+\.\d+(?:\.\d+)?\s+", 1),
     # Single number + separator: 1、 1. 1） 1)
