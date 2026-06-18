@@ -70,6 +70,8 @@ def _ensure_runtime_indexes() -> None:
         statements.extend(
             [
                 "ALTER TABLE parent_chunks ADD COLUMN IF NOT EXISTS index_profile VARCHAR(120) NOT NULL DEFAULT 'legacy'",
+                "ALTER TABLE parent_chunks ADD COLUMN IF NOT EXISTS term_matches JSON",
+                "ALTER TABLE parent_chunks ADD COLUMN IF NOT EXISTS protected_tokens JSON",
                 "ALTER TABLE parent_chunks ADD COLUMN IF NOT EXISTS parent_extras JSON",
                 "CREATE INDEX IF NOT EXISTS ix_chat_sessions_user_updated ON chat_sessions (user_id, updated_at DESC)",
                 "CREATE INDEX IF NOT EXISTS ix_chat_messages_session_id_order ON chat_messages (session_ref_id, id)",
@@ -91,6 +93,14 @@ def _ensure_runtime_indexes() -> None:
             if "parent_extras" not in columns:
                 connection.execute(
                     text("ALTER TABLE parent_chunks ADD COLUMN parent_extras JSON")
+                )
+            if "term_matches" not in columns:
+                connection.execute(
+                    text("ALTER TABLE parent_chunks ADD COLUMN term_matches JSON")
+                )
+            if "protected_tokens" not in columns:
+                connection.execute(
+                    text("ALTER TABLE parent_chunks ADD COLUMN protected_tokens JSON")
                 )
         statements.extend(
             [

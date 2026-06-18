@@ -420,8 +420,3 @@ def _scan_terminology_on_chunks(chunks: list[dict]) -> None:
         chunk["term_match_count"] = len(term_matches)
         chunk["term_matches"] = term_matches
         chunk["protected_tokens"] = protected_tokens
-        # Also persist in parent_extras for ParentChunkStore round-trip
-        extras = dict(chunk.get("parent_extras", {}))
-        extras["term_matches"] = term_matches
-        extras["protected_tokens"] = protected_tokens
-        chunk["parent_extras"] = extras

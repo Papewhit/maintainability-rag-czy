@@ -42,6 +42,8 @@ class ParentChunkStore:
             "chunk_level": item.chunk_level,
             "chunk_idx": item.chunk_idx,
             "index_profile": getattr(item, "index_profile", self.index_profile) or self.index_profile,
+            "term_matches": getattr(item, "term_matches", None) or [],
+            "protected_tokens": getattr(item, "protected_tokens", None) or [],
             "parent_extras": getattr(item, "parent_extras", None),
         }
 
@@ -65,6 +67,8 @@ class ParentChunkStore:
             "chunk_level": int(doc.get("chunk_level", 0) or 0),
             "chunk_idx": int(doc.get("chunk_idx", 0) or 0),
             "updated_at": updated_at,
+            "term_matches": doc.get("term_matches") or [],
+            "protected_tokens": doc.get("protected_tokens") or [],
             "parent_extras": doc.get("parent_extras") or None,
         }
 
@@ -81,6 +85,8 @@ class ParentChunkStore:
             "chunk_level": payload["chunk_level"],
             "chunk_idx": payload["chunk_idx"],
             "index_profile": payload["index_profile"],
+            "term_matches": payload.get("term_matches") or [],
+            "protected_tokens": payload.get("protected_tokens") or [],
             "parent_extras": payload.get("parent_extras"),
         }
 

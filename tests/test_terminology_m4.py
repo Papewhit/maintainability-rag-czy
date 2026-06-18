@@ -76,6 +76,30 @@ class TestScanTerminology:
         assert c["term_matches"] == []
         assert c["protected_tokens"] == []
 
+    def test_parse_adapter_scan_keeps_term_fields_out_of_parent_extras(
+        self,
+        _load_table: TerminologyTable,
+    ) -> None:
+        from backend.documents.parse_adapter.converters import _scan_terminology_on_chunks
+
+        chunks = [
+            {
+                "chunk_id": "chunk-3",
+                "retrieval_text": "MRG 拆卸时需要使用专用扳手",
+                "text": "MRG 拆卸时需要使用专用扳手",
+                "parent_extras": {"nearby_block_ids": ["b1"]},
+            },
+        ]
+
+        _scan_terminology_on_chunks(chunks)
+
+        c = chunks[0]
+        assert c["term_matches"]
+        assert c["protected_tokens"]
+        assert "term_matches" not in c["parent_extras"]
+        assert "protected_tokens" not in c["parent_extras"]
+        assert c["parent_extras"] == {"nearby_block_ids": ["b1"]}
+
     def test_no_table_loaded_graceful(self) -> None:
         """When no terminology table is loaded, chunks pass through unchanged."""
         from backend.rag.terminology.table import _terminology_table
