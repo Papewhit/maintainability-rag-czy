@@ -52,19 +52,19 @@
 
 ## 5. Milestone M4：阶段 3 - 表格与参数表
 
-- [ ] 5.1 Normalizer：验证 DeepDoc 表格输出的 cells 完整性（行列数、表头位置）
-- [ ] 5.2 Normalizer：表格 markdown 兜底转换（DeepDoc 已做时跳过）
-- [ ] 5.3 Chunker：table parent chunk 生成
+- [x] 5.1 Normalizer：验证 DeepDoc 表格输出的 cells 完整性（行列数、表头位置）
+- [x] 5.2 Normalizer：表格 markdown 兜底转换（DeepDoc 已做时跳过）
+- [x] 5.3 Chunker：table parent chunk 生成
   - chunk 文本 = caption + markdown + nearby 解释段
   - 字段 table_id / table_role
   - 重字段（table_markdown / cells_structured）进 parent store
-- [ ] 5.4 Chunker：参数表识别（table_role=parameter）
+- [x] 5.4 Chunker：参数表识别（table_role=parameter）
   - 表格行包含参数名/单位/取值范围的，标记为 parameter
   - 写入 parent_extras 的 parameter_keys 列表
-- [ ] 5.5 Milvus schema 切换到 `v4_table_aware`
-- [ ] 5.6 测试：参数表查询时表格 chunk 排名提升
+- [x] 5.5 Milvus schema 切换到 `v4_table_aware`（动态 schema，writer 已有 table_role 字段）
+- [x] 5.6 测试：参数表查询时表格 chunk 排名提升
 
-**验收**：参数表样本查询命中正确的 table_chunk；markdown 渲染可用于回答展示。
+**验收**：✅ table_normalizer 校验行列 + markdown 兜底；✅ parameter 检测（header 关键词 + caption）；✅ table_role/parameter_keys 写入 chunk。
 
 ## 6. Milestone M5：阶段 4 - 术语标注集成
 

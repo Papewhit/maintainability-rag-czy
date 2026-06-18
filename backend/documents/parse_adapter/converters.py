@@ -10,6 +10,7 @@ will replace this once complete.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from backend.documents.parse_adapter.base import (
@@ -63,14 +64,25 @@ def parsed_to_chunks(
         )
     )
 
-    # ── Tables (unchanged: pass-through as before) ──
-    for ti, table in enumerate(doc.tables):
-        table_text = (
-            table.cells_markdown
-            or "\n".join(";".join(r) for r in table.cells_structured)
+    # ── Tables (M4: validated + parameter-aware) ──
+    from backend.documents.normalizer.table_normalizer import validate_and_enrich_tables
+    enriched_tables = validate_and_enrich_tables(doc.tables)
+
+    for ti, table in enumerate(enriched_tables):
+        table_text = table.cells_markdown or "\n".join(
+            ";".join(r) for r in table.cells_structured
         )
         if not table_text.strip():
             continue
+
+        # Parameter table detection (M4.4)
+        table_role, param_keys = _detect_parameter_table(table)
+        extras: dict = {
+            "table_markdown": table.cells_markdown,
+            "cells_structured": table.cells_structured,
+        }
+        if param_keys:
+            extras["parameter_keys"] = param_keys
 
         table_id = f"{canonical_name}_table_{ti}"
         root_tbl = _make_chunk(
@@ -86,11 +98,8 @@ def parsed_to_chunks(
             retrieval_text="",
             block_type="table",
             table_id=table.table_id,
-            table_role="data",
-            parent_extras={
-                "table_markdown": table.cells_markdown,
-                "cells_structured": table.cells_structured,
-            },
+            table_role=table_role,
+            parent_extras=extras,
         )
         chunks.append(root_tbl)
 
@@ -109,7 +118,7 @@ def parsed_to_chunks(
             ),
             block_type="table",
             table_id=table.table_id,
-            table_role="data",
+            table_role=table_role,
             parent_extras={"table_markdown": table.cells_markdown},
         )
         chunks.append(leaf_tbl)
@@ -247,3 +256,47 @@ def _split_text_into_chunks(text: str, max_tokens: int = 500) -> list[str]:
         return result
 
     return _split_recursive(text, separators)
+
+
+# ── Parameter table detection (M4) ──
+
+_PARAM_HEADER_PATTERNS = [
+    re.compile(r"(参数|Parameter)", re.IGNORECASE),
+    re.compile(r"(名称|Name)", re.IGNORECASE),
+    re.compile(r"(值|Value)", re.IGNORECASE),
+    re.compile(r"(单位|Unit)", re.IGNORECASE),
+    re.compile(r"(范围|Range|取值)", re.IGNORECASE),
+]
+
+
+def _detect_parameter_table(table) -> tuple[str, list[str]]:
+    """Detect if a table is a parameter table and extract parameter keys.
+
+    Returns (table_role, parameter_keys).
+    """
+    role = "data"
+    keys: list[str] = []
+
+    if not table.cells_structured:
+        return role, keys
+
+    # Check header row for parameter-like column names
+    header = [str(c).strip() for c in table.cells_structured[0]]
+    header_text = " ".join(header)
+
+    param_hits = sum(1 for p in _PARAM_HEADER_PATTERNS if p.search(header_text))
+    if param_hits >= 2:
+        role = "parameter"
+
+    # Check first data rows for parameter-name patterns
+    for row in table.cells_structured[1:6]:
+        if row and str(row[0]).strip():
+            keys.append(str(row[0]).strip())
+
+    # Also check caption
+    if table.caption and any(
+        w in table.caption for w in ("参数", "parameter", "规格", "spec")
+    ):
+        role = "parameter"
+
+    return role, keys[:20]
