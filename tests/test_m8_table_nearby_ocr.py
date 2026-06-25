@@ -8,6 +8,11 @@
 
 from __future__ import annotations
 
+import os
+import time
+from pathlib import Path
+
+import numpy as np
 import pytest
 
 from backend.documents.normalizer.base import NormalizedBlock
@@ -22,6 +27,31 @@ from backend.documents.parse_adapter.converters import parsed_to_chunks
 from backend.documents.parse_adapter.deepdoc.adapter import (
     DeepDocAdapter,
     _summarize_pdf_parse_path,
+)
+
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+
+_MODEL_DIR = os.environ.get("DEEPDOC_MODEL_DIR") or str(
+    Path(__file__).resolve().parents[1]
+    / "backend"
+    / "documents"
+    / "parse_adapter"
+    / "deepdoc"
+    / "models"
+)
+_REQUIRED_MODELS = ["det.onnx", "rec.onnx", "layout.onnx", "tsr.onnx"]
+
+
+def _models_available() -> bool:
+    model_path = Path(_MODEL_DIR)
+    if not model_path.is_dir():
+        return False
+    return all((model_path / f).exists() for f in _REQUIRED_MODELS)
+
+
+needs_models_skip = pytest.mark.skipif(
+    not _models_available(),
+    reason=f"DeepDoc ONNX models not found at {_MODEL_DIR}. Required: {_REQUIRED_MODELS}.",
 )
 
 
@@ -222,6 +252,27 @@ def test_converter_uses_normalizer_table_nearby_output():
     assert table_roots[0]["parent_extras"]["nearby_block_ids"] == ["b1"]
 
 
+@pytest.mark.slow
+@needs_models_skip
+def test_scm_table_pdf_v4_full_populates_table_nearby_blocks():
+    """Real SCM table PDF produces table roots enriched with nearby paragraphs."""
+    pdf_path = ASSETS_DIR / "节选表格_SCM优化方案.pdf"
+    if not pdf_path.exists():
+        pytest.skip(f"Sample PDF not found: {pdf_path}")
+
+    doc = DeepDocAdapter().parse(str(pdf_path))
+    chunks = parsed_to_chunks(doc, str(pdf_path), profile="v4_full")
+    table_roots = [
+        c for c in chunks
+        if c["block_type"] == "table" and c["chunk_level"] == 1
+    ]
+    table5_root = next(c for c in table_roots if "表5" in c["text"])
+
+    assert table5_root["parent_extras"]["nearby_block_ids"]
+    assert "<table><caption>表5" in table5_root["text"]
+    assert "节点关键属性定义如表5 所示" in table5_root["text"]
+
+
 def test_parse_meta_parse_path():
     """验证 parse_path 字段"""
     meta_native = ParseMeta(
@@ -289,6 +340,107 @@ def test_deepdoc_convert_text_blocks_reads_score_and_source_tags():
     assert blocks[0].style["parse_sources"] == ["ocr"]
     assert blocks[1].ocr_confidence is None
     assert blocks[1].style["parse_sources"] == ["native_text"]
+
+
+def test_deepdoc_convert_tables_extracts_html_caption_and_preserves_html():
+    """DeepDoc HTML table captions are promoted without changing table HTML."""
+    html = (
+        "<table><caption>表5 统一源图节点关键属性定义</caption>"
+        "<tr><th>字段</th></tr><tr><td>node_id</td></tr></table>"
+    )
+
+    tables, figures = DeepDocAdapter._convert_tables_figures([(None, html)])
+
+    assert figures == []
+    assert len(tables) == 1
+    assert tables[0].caption == "表5 统一源图节点关键属性定义"
+    assert tables[0].cells_markdown == html
+
+
+def test_deepdoc_convert_tables_maps_first_position_to_bbox_anchor():
+    """DeepDoc positioned table items populate bbox from the first table region."""
+    html = (
+        "<table><caption>表6 统一源图边关键属性定义</caption>"
+        "<tr><td>A</td></tr></table>"
+    )
+    positioned_item = ((None, html), [(0, 12.5, 240.0, 32.0, 98.5)])
+
+    tables, _ = DeepDocAdapter._convert_tables_figures([positioned_item])
+
+    assert tables[0].page_no == 1
+    assert tables[0].bbox == (12.5, 240.0, 32.0, 98.5)
+
+
+def test_deepdoc_convert_tables_accepts_numpy_position_scalars():
+    """Real DeepDoc positions may contain NumPy scalar coordinates."""
+    html = "<table><caption>表6 统一源图边关键属性定义</caption><tr><td>A</td></tr></table>"
+    positioned_item = (
+        (None, html),
+        [(np.int64(0), np.float32(12.5), np.float64(240.0), np.float32(32.0), np.float64(98.5))],
+    )
+
+    tables, _ = DeepDocAdapter._convert_tables_figures([positioned_item])
+
+    assert tables[0].caption == "表6 统一源图边关键属性定义"
+    assert tables[0].bbox == (12.5, 240.0, 32.0, 98.5)
+
+
+def test_deepdoc_convert_tables_leaves_bbox_none_without_position():
+    """DeepDoc table conversion degrades cleanly when no position is available."""
+    tables, _ = DeepDocAdapter._convert_tables_figures(
+        [(None, "<table><caption>表7 字段定义</caption><tr><td>A</td></tr></table>")]
+    )
+
+    assert tables[0].caption == "表7 字段定义"
+    assert tables[0].bbox is None
+
+
+def test_deepdoc_convert_tables_uses_only_explicit_non_html_caption():
+    """Non-HTML content is not guessed as a caption unless DeepDoc provides one."""
+    explicit = {
+        "content": "A;B\n1;2",
+        "caption": "表8 显式标题",
+        "position": (0, 1.0, 2.0, 3.0, 4.0),
+    }
+
+    explicit_tables, _ = DeepDocAdapter._convert_tables_figures([(None, explicit)])
+    guessed_tables, _ = DeepDocAdapter._convert_tables_figures(
+        [(None, "表9 看起来像标题但只是普通非 HTML 内容")]
+    )
+
+    assert explicit_tables[0].caption == "表8 显式标题"
+    assert explicit_tables[0].bbox == (1.0, 2.0, 3.0, 4.0)
+    assert guessed_tables[0].caption == ""
+
+
+def test_deepdoc_parse_pdf_requests_table_positions(monkeypatch):
+    """The PDF adapter requests DeepDoc table positions for nearby anchoring."""
+    captured: dict[str, object] = {}
+
+    class FakeParser:
+        total_page = 1
+
+        def __call__(
+            self,
+            file_path,
+            *,
+            need_image=True,
+            zoomin=3,
+            return_html=False,
+            need_position=False,
+        ):
+            captured["need_position"] = need_position
+            html = "<table><caption>表5 属性定义</caption><tr><td>A</td></tr></table>"
+            return "说明@@1\t1\t2\t3\t4\t1.0\t1##", [((None, html), [(0, 1, 2, 3, 4)])]
+
+    import backend.documents.parse_adapter.deepdoc._pdf_parser as pdf_parser
+
+    monkeypatch.setattr(pdf_parser, "RAGFlowPdfParser", FakeParser)
+
+    doc = DeepDocAdapter()._parse_pdf("fake.pdf", time.perf_counter())
+
+    assert captured["need_position"] is True
+    assert doc.tables[0].bbox == (1.0, 2.0, 3.0, 4.0)
 
 
 def test_summarize_pdf_parse_path_uses_converted_blocks():

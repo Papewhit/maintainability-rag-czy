@@ -81,6 +81,28 @@ class TestDeepDocIntegrationPDF:
 
     @slow
     @needs_models_skip
+    def test_parse_scm_table_pdf_promotes_captions_and_positions(self) -> None:
+        """SCM table sample exposes DeepDoc table captions and bbox anchors."""
+        pdf_path = ASSETS_DIR / "节选表格_SCM优化方案.pdf"
+        if not pdf_path.exists():
+            pytest.skip(f"Sample PDF not found: {pdf_path}")
+
+        from backend.documents.parse_adapter.deepdoc.adapter import DeepDocAdapter
+
+        adapter = DeepDocAdapter()
+        doc = adapter.parse(str(pdf_path))
+
+        captions = [table.caption for table in doc.tables if table.caption]
+
+        assert captions
+        assert any(
+            any(table_no in caption for table_no in ("表5", "表6", "表7"))
+            for caption in captions
+        )
+        assert any(table.bbox is not None for table in doc.tables)
+
+    @slow
+    @needs_models_skip
     def test_parse_sample_pdf(self) -> None:
         """Parse the sample Chinese PDF and verify output structure."""
         pdf_path = ASSETS_DIR / "国电电力.pdf"

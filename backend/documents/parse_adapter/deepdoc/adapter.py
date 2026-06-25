@@ -10,7 +10,10 @@ from __future__ import annotations
 import os
 import re
 import time
+from html import unescape
+from numbers import Real
 from pathlib import Path
+from typing import Any
 
 from backend.documents.parse_adapter.base import (
     ParsedBlock,
@@ -86,7 +89,13 @@ class DeepDocAdapter:
         from ._pdf_parser import RAGFlowPdfParser
 
         parser = RAGFlowPdfParser()
-        text_output, tbls_output = parser(str(file_path), need_image=False, zoomin=3, return_html=True)
+        text_output, tbls_output = parser(
+            str(file_path),
+            need_image=False,
+            zoomin=3,
+            return_html=True,
+            need_position=True,
+        )
 
         warnings: list[str] = []
         blocks = self._convert_text_blocks(text_output, warnings)
@@ -274,38 +283,61 @@ class DeepDocAdapter:
         figures: list[ParsedFigureAnchor] = []
 
         for idx, item in enumerate(tbls_output):
-            # item is (PIL_Image | None, content) where content is str or list[str]
-            if isinstance(item, (list, tuple)) and len(item) == 2:
-                img, content = item
-            else:
+            # Supported shapes:
+            # - legacy DeepDoc: (PIL_Image | None, content)
+            # - positioned DeepDoc: ((PIL_Image | None, content), positions)
+            parsed_item = _split_table_figure_item(item)
+            if parsed_item is None:
                 continue
+            _, content, position_payload = parsed_item
 
             content_str = ""
             cells_md = ""
             cells_structured: list[list[str]] = []
+            caption = ""
 
+            if isinstance(content, dict):
+                caption = _explicit_caption(content)
+                if position_payload is None:
+                    position_payload = (
+                        content.get("position")
+                        or content.get("positions")
+                        or content.get("bbox")
+                    )
+                content = (
+                    content.get("html")
+                    or content.get("content")
+                    or content.get("text")
+                    or content.get("rows")
+                    or ""
+                )
             if isinstance(content, str):
                 content_str = content
+                caption = caption or _extract_html_table_caption(content)
                 # If HTML table, use as markdown
-                if content.startswith("<table"):
+                if _is_html_table(content):
                     cells_md = content
                 else:
                     cells_md = content
             elif isinstance(content, list) and content:
                 content_str = "\n".join(str(r) for r in content)
-                cells_md = _rows_to_markdown(
-                    [[c for c in str(r).split(";")] for r in content]
-                )
-                cells_structured = [[c for c in str(r).split(";")] for r in content]
+                cells_structured = _coerce_rows(content)
+                cells_md = _rows_to_markdown(cells_structured)
 
             # Heuristic: if content looks like a chart, treat as figure; otherwise table.
-            page_no = _extract_page_from_content(content_str, fallback=idx)
-            if _looks_like_chart(content_str):
+            position_page_no, bbox = _extract_first_position(position_payload)
+            page_no = (
+                position_page_no
+                if position_page_no is not None
+                else _extract_page_from_content(content_str, fallback=idx)
+            )
+            if _looks_like_chart(content_str) and not _is_html_table(content_str):
                 figures.append(
                     ParsedFigureAnchor(
                         figure_id=f"f_{idx}",
                         page_no=page_no,
                         caption=content_str[:200],
+                        bbox=bbox,
                     )
                 )
             else:
@@ -313,9 +345,10 @@ class DeepDocAdapter:
                     ParsedTable(
                         table_id=f"t_{idx}",
                         page_no=page_no,
-                        caption="",
+                        caption=caption,
                         cells_markdown=cells_md,
                         cells_structured=cells_structured,
+                        bbox=bbox,
                     )
                 )
 
@@ -325,6 +358,124 @@ class DeepDocAdapter:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
+
+def _split_table_figure_item(item: Any) -> tuple[Any, Any, Any | None] | None:
+    """Normalize DeepDoc table/figure item shapes.
+
+    DeepDoc returns ``(image, content)`` by default and
+    ``((image, content), positions)`` when ``need_position=True``.
+    """
+    if isinstance(item, dict):
+        return None, item, item.get("position") or item.get("positions") or item.get("bbox")
+    if not isinstance(item, (list, tuple)) or len(item) != 2:
+        return None
+
+    first, second = item
+    if (
+        isinstance(first, (list, tuple))
+        and len(first) == 2
+        and _looks_like_position_payload(second)
+    ):
+        img, content = first
+        return img, content, second
+    return first, second, None
+
+
+def _looks_like_position_payload(value: Any) -> bool:
+    if _is_position_tuple(value):
+        return True
+    if isinstance(value, list) and value:
+        return _is_position_tuple(value[0]) or isinstance(value[0], dict)
+    return False
+
+
+def _is_position_tuple(value: Any) -> bool:
+    return (
+        isinstance(value, tuple)
+        and len(value) in {4, 5}
+        and all(isinstance(v, Real) for v in value)
+    )
+
+
+def _extract_first_position(
+    payload: Any,
+) -> tuple[int | None, tuple[float, float, float, float] | None]:
+    """Return ``(page_no, bbox)`` from the first DeepDoc position payload."""
+    if payload is None:
+        return None, None
+
+    position = payload
+    if isinstance(payload, list):
+        if not payload:
+            return None, None
+        position = payload[0]
+
+    if isinstance(position, dict):
+        bbox_value = position.get("bbox")
+        if bbox_value is not None:
+            _, bbox = _extract_first_position(bbox_value)
+            return _explicit_page_no(position), bbox
+        required = ("x0", "x1", "top", "bottom")
+        if all(k in position for k in required):
+            return _explicit_page_no(position), (
+                float(position["x0"]),
+                float(position["x1"]),
+                float(position["top"]),
+                float(position["bottom"]),
+            )
+        return None, None
+
+    if _is_position_tuple(position):
+        values = tuple(float(v) for v in position)
+        if len(values) == 5:
+            page_idx, x0, x1, top, bottom = values
+            return int(page_idx) + 1, (x0, x1, top, bottom)
+        x0, x1, top, bottom = values
+        return None, (x0, x1, top, bottom)
+
+    return None, None
+
+
+def _explicit_page_no(position: dict[str, Any]) -> int | None:
+    if "page_no" in position:
+        return int(position["page_no"])
+    if "page_number" in position:
+        return int(position["page_number"])
+    if "page" in position:
+        return int(position["page"]) + 1
+    return None
+
+
+def _explicit_caption(content: dict[str, Any]) -> str:
+    for key in ("caption", "table_caption", "title"):
+        value = content.get(key)
+        if isinstance(value, str) and value.strip():
+            return _normalize_caption_text(value)
+    return ""
+
+
+def _extract_html_table_caption(content: str) -> str:
+    if not _is_html_table(content):
+        return ""
+    m = re.search(r"<caption\b[^>]*>(.*?)</caption>", content, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return ""
+    return _normalize_caption_text(re.sub(r"<[^>]+>", "", m.group(1)))
+
+
+def _normalize_caption_text(value: str) -> str:
+    return re.sub(r"\s+", " ", unescape(value)).strip()
+
+
+def _is_html_table(content: str) -> bool:
+    return content.lstrip().lower().startswith("<table")
+
+
+def _coerce_rows(rows: list[Any]) -> list[list[str]]:
+    if rows and all(isinstance(row, list) for row in rows):
+        return [[str(c) for c in row] for row in rows]
+    return [[c for c in str(r).split(";")] for r in rows]
 
 
 def _classify_block_type(text: str) -> str:

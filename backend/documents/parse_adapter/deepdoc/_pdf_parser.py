@@ -1112,7 +1112,7 @@ class RAGFlowPdfParser:
         if len(self.boxes) == 0 and zoomin < 9:
             self.__images__(fnm, zoomin * 3, page_from, page_to, callback)
 
-    def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
+    def __call__(self, fnm, need_image=True, zoomin=3, return_html=False, need_position=False):
         self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
         self._table_transformer_job(zoomin)
@@ -1120,7 +1120,7 @@ class RAGFlowPdfParser:
         self._concat_downward()
         self._filter_forpages()
         tbls = self._extract_table_figure(
-            need_image, zoomin, return_html, False)
+            need_image, zoomin, return_html, need_position)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
     def remove_tag(self, txt):
