@@ -357,6 +357,44 @@ def test_deepdoc_convert_tables_extracts_html_caption_and_preserves_html():
     assert tables[0].cells_markdown == html
 
 
+def test_deepdoc_convert_tables_extracts_html_cells_structured():
+    """DeepDoc HTML table rows are mapped into ParsedTable.cells_structured."""
+    html = (
+        "<table><caption>表5 属性定义</caption>"
+        "<tr><th>字段</th><th>含义</th></tr>"
+        "<tr><td>node_id</td><td>节点唯一标识</td></tr>"
+        "</table>"
+    )
+
+    tables, _ = DeepDocAdapter._convert_tables_figures([(None, html)])
+
+    assert tables[0].caption == "表5 属性定义"
+    assert tables[0].cells_markdown == html
+    assert tables[0].cells_structured == [
+        ["字段", "含义"],
+        ["node_id", "节点唯一标识"],
+    ]
+
+
+def test_deepdoc_convert_tables_handles_unquoted_colspan_and_rowspan():
+    """HTML span attributes keep rows rectangular without horizontal text bloat."""
+    html = (
+        "<table><caption>表6 跨行跨列表</caption>"
+        "<tr><th>对象</th><th colspan=2>属性</th></tr>"
+        "<tr><td rowspan=2>node</td><td>id</td><td>唯一标识</td></tr>"
+        "<tr><td>name</td><td>名称</td></tr>"
+        "</table>"
+    )
+
+    tables, _ = DeepDocAdapter._convert_tables_figures([(None, html)])
+
+    assert tables[0].cells_structured == [
+        ["对象", "属性", ""],
+        ["node", "id", "唯一标识"],
+        ["node", "name", "名称"],
+    ]
+
+
 def test_deepdoc_convert_tables_maps_first_position_to_bbox_anchor():
     """DeepDoc positioned table items populate bbox from the first table region."""
     html = (

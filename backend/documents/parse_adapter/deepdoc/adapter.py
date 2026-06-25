@@ -11,6 +11,7 @@ import os
 import re
 import time
 from html import unescape
+from html.parser import HTMLParser
 from numbers import Real
 from pathlib import Path
 from typing import Any
@@ -313,10 +314,12 @@ class DeepDocAdapter:
                 )
             if isinstance(content, str):
                 content_str = content
-                caption = caption or _extract_html_table_caption(content)
                 # If HTML table, use as markdown
                 if _is_html_table(content):
+                    html_caption, html_rows = _parse_html_table(content)
+                    caption = caption or html_caption or _extract_html_table_caption(content)
                     cells_md = content
+                    cells_structured = html_rows
                 else:
                     cells_md = content
             elif isinstance(content, list) and content:
@@ -453,6 +456,116 @@ def _explicit_caption(content: dict[str, Any]) -> str:
         if isinstance(value, str) and value.strip():
             return _normalize_caption_text(value)
     return ""
+
+
+class _DeepDocHTMLTableParser(HTMLParser):
+    """Small HTML table parser for DeepDoc's generated table fragments."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.caption = ""
+        self.rows: list[list[str]] = []
+        self._in_caption = False
+        self._caption_parts: list[str] = []
+        self._in_row = False
+        self._row: list[str] = []
+        self._col = 0
+        self._pending_rowspans: dict[int, tuple[str, int]] = {}
+        self._cell_tag: str | None = None
+        self._cell_parts: list[str] = []
+        self._cell_colspan = 1
+        self._cell_rowspan = 1
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag == "caption":
+            self._in_caption = True
+            self._caption_parts = []
+        elif tag == "tr":
+            self._in_row = True
+            self._row = []
+            self._col = 0
+        elif tag in {"td", "th"} and self._in_row:
+            self._fill_pending_rowspans()
+            attr_map = {name.lower(): value for name, value in attrs}
+            self._cell_tag = tag
+            self._cell_parts = []
+            self._cell_colspan = _positive_int(attr_map.get("colspan"), default=1)
+            self._cell_rowspan = _positive_int(attr_map.get("rowspan"), default=1)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag == "caption":
+            self._in_caption = False
+            if not self.caption:
+                self.caption = _normalize_caption_text("".join(self._caption_parts))
+        elif tag in {"td", "th"} and self._cell_tag == tag:
+            self._append_cell()
+        elif tag == "tr" and self._in_row:
+            self._fill_pending_rowspans()
+            if any(cell.strip() for cell in self._row):
+                self.rows.append(self._row)
+            self._in_row = False
+            self._row = []
+            self._col = 0
+
+    def handle_data(self, data: str) -> None:
+        if self._in_caption:
+            self._caption_parts.append(data)
+        if self._cell_tag is not None:
+            self._cell_parts.append(data)
+
+    def _append_cell(self) -> None:
+        text = _normalize_caption_text("".join(self._cell_parts))
+        start_col = self._col
+        for offset in range(self._cell_colspan):
+            value = text if offset == 0 else ""
+            self._row.append(value)
+            if self._cell_rowspan > 1:
+                self._pending_rowspans[start_col + offset] = (
+                    value,
+                    self._cell_rowspan - 1,
+                )
+            self._col += 1
+        self._cell_tag = None
+        self._cell_parts = []
+        self._cell_colspan = 1
+        self._cell_rowspan = 1
+
+    def _fill_pending_rowspans(self) -> None:
+        while self._col in self._pending_rowspans:
+            text, remaining = self._pending_rowspans[self._col]
+            self._row.append(text)
+            if remaining <= 1:
+                del self._pending_rowspans[self._col]
+            else:
+                self._pending_rowspans[self._col] = (text, remaining - 1)
+            self._col += 1
+
+
+def _parse_html_table(content: str) -> tuple[str, list[list[str]]]:
+    parser = _DeepDocHTMLTableParser()
+    try:
+        parser.feed(content)
+        parser.close()
+    except Exception:
+        return "", []
+    return parser.caption, _pad_rows(parser.rows)
+
+
+def _positive_int(value: str | None, *, default: int) -> int:
+    try:
+        parsed = int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _pad_rows(rows: list[list[str]]) -> list[list[str]]:
+    max_cols = max((len(row) for row in rows), default=0)
+    if max_cols == 0:
+        return []
+    return [row + [""] * (max_cols - len(row)) for row in rows]
 
 
 def _extract_html_table_caption(content: str) -> str:

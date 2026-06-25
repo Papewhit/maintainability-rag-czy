@@ -100,6 +100,10 @@ class TestDeepDocIntegrationPDF:
             for caption in captions
         )
         assert any(table.bbox is not None for table in doc.tables)
+        assert any(
+            table.caption and table.bbox is not None and table.cells_structured
+            for table in doc.tables
+        )
 
     @slow
     @needs_models_skip
@@ -267,3 +271,128 @@ class TestParsedToChunks:
         tbl_chunks = [c for c in chunks if c["block_type"] == "table"]
         assert len(tbl_chunks) >= 1
         assert tbl_chunks[0]["parent_extras"]["table_markdown"]
+
+    def test_long_structured_table_leaves_respect_character_budgets(self) -> None:
+        from backend.documents.parse_adapter.base import (
+            ParsedDocument, ParsedTable, ParseMeta,
+        )
+        from backend.documents.parse_adapter.converters import parsed_to_chunks
+
+        long_cell = "字段说明" * 180
+        doc = ParsedDocument(
+            filename="long.pdf",
+            file_type="pdf",
+            parse_meta=ParseMeta(parse_engine="test"),
+            tables=[
+                ParsedTable(
+                    table_id="t_long",
+                    page_no=1,
+                    caption="表1 长表格",
+                    cells_markdown="<table>full semantic parent table</table>",
+                    cells_structured=[
+                        ["字段", "说明"],
+                        *[[f"row-{idx}", f"{long_cell}-{idx}"] for idx in range(8)],
+                    ],
+                ),
+            ],
+        )
+
+        chunks = parsed_to_chunks(doc, "/tmp/long.pdf", profile="v4_full")
+        table_root = next(
+            c for c in chunks
+            if c["block_type"] == "table"
+            and c["chunk_level"] == 1
+            and c["table_id"] == "t_long"
+        )
+        table_leaves = [
+            c for c in chunks
+            if c["block_type"] == "table"
+            and c["chunk_level"] == 3
+            and c["table_id"] == "t_long"
+        ]
+
+        assert len(table_leaves) > 1
+        assert all(len(c["text"]) <= 2000 for c in table_leaves)
+        assert all(len(c["retrieval_text"]) <= 4000 for c in table_leaves)
+        assert {c["table_id"] for c in table_leaves} == {"t_long"}
+        assert {c["parent_chunk_id"] for c in table_leaves} == {table_root["chunk_id"]}
+        assert {c["root_chunk_id"] for c in table_leaves} == {table_root["chunk_id"]}
+
+    def test_single_oversized_table_row_is_split_across_leaves(self) -> None:
+        from backend.documents.parse_adapter.base import (
+            ParsedDocument, ParsedTable, ParseMeta,
+        )
+        from backend.documents.parse_adapter.converters import parsed_to_chunks
+
+        doc = ParsedDocument(
+            filename="wide.pdf",
+            file_type="pdf",
+            parse_meta=ParseMeta(parse_engine="test"),
+            tables=[
+                ParsedTable(
+                    table_id="t_wide",
+                    page_no=1,
+                    caption="表2 超长行",
+                    cells_markdown="<table>full semantic parent table</table>",
+                    cells_structured=[
+                        ["字段", "说明"],
+                        ["row-0", "X" * 4500],
+                    ],
+                ),
+            ],
+        )
+
+        chunks = parsed_to_chunks(doc, "/tmp/wide.pdf", profile="v4_full")
+        table_root = next(
+            c for c in chunks
+            if c["block_type"] == "table"
+            and c["chunk_level"] == 1
+            and c["table_id"] == "t_wide"
+        )
+        table_leaves = [
+            c for c in chunks
+            if c["block_type"] == "table"
+            and c["chunk_level"] == 3
+            and c["table_id"] == "t_wide"
+        ]
+
+        assert len(table_leaves) > 1
+        assert all(len(c["text"]) <= 2000 for c in table_leaves)
+        assert all(len(c["retrieval_text"]) <= 4000 for c in table_leaves)
+        assert {c["parent_chunk_id"] for c in table_leaves} == {table_root["chunk_id"]}
+        assert {c["root_chunk_id"] for c in table_leaves} == {table_root["chunk_id"]}
+
+    def test_single_row_table_without_header_is_split_without_content_loss(self) -> None:
+        from backend.documents.parse_adapter.base import (
+            ParsedDocument, ParsedTable, ParseMeta,
+        )
+        from backend.documents.parse_adapter.converters import parsed_to_chunks
+
+        original_text = "X" * 4500
+        doc = ParsedDocument(
+            filename="single-row.pdf",
+            file_type="pdf",
+            parse_meta=ParseMeta(parse_engine="test"),
+            tables=[
+                ParsedTable(
+                    table_id="t_single",
+                    page_no=1,
+                    caption="表3 单行超长表",
+                    cells_markdown="<table>single row</table>",
+                    cells_structured=[[original_text]],
+                ),
+            ],
+        )
+
+        chunks = parsed_to_chunks(doc, "/tmp/single-row.pdf", profile="v4_full")
+        table_leaves = [
+            c for c in chunks
+            if c["block_type"] == "table"
+            and c["chunk_level"] == 3
+            and c["table_id"] == "t_single"
+        ]
+
+        assert len(table_leaves) > 1
+        assert all(len(c["text"]) <= 2000 for c in table_leaves)
+        assert all(len(c["retrieval_text"]) <= 4000 for c in table_leaves)
+        assert "".join(c["text"] for c in table_leaves) == original_text

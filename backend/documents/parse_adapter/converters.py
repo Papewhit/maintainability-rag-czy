@@ -20,6 +20,9 @@ from backend.documents.parse_adapter.base import (
     ParsedTable,
 )
 
+_TABLE_LEAF_TEXT_CHAR_BUDGET = 2000
+_TABLE_LEAF_RETRIEVAL_CHAR_BUDGET = 4000
+
 
 def parsed_to_chunks(
     doc: ParsedDocument,
@@ -129,54 +132,25 @@ def parsed_to_chunks(
         )
         chunks.append(root_tbl)
 
-        # Row-based leaf splitting (spec: header + N data rows per leaf)
-        if table.cells_structured and len(table.cells_structured) > 1:
-            header_row = table.cells_structured[0]
-            data_rows = table.cells_structured[1:]
-            rows_per_leaf = max(1, leaf_tokens // max(1, len(header_row)))
-            for li in range(0, len(data_rows), rows_per_leaf):
-                chunk_rows = [header_row] + data_rows[li:li + rows_per_leaf]
-                leaf_md = _rows_to_markdown(chunk_rows)
-                leaf_text = "\n".join(";".join(r) for r in chunk_rows)
-                retrieval = f"{table.caption}\n{leaf_md[:500]}" if table.caption else leaf_md[:500]
-                chunks.append(
-                    _make_chunk(
-                        chunk_id=f"{table_id}_leaf_{li // rows_per_leaf}",
-                        parent_chunk_id=table_id,
-                        root_chunk_id=table_id,
-                        chunk_level=3,
-                        chunk_role="leaf",
-                        filename=canonical_name,
-                        file_path=str(path),
-                        page_number=table.page_no,
-                        text=leaf_text,
-                        retrieval_text=retrieval,
-                        block_type="table",
-                        table_id=table.table_id,
-                        table_role=table_role,
-                        parent_extras={"table_markdown": leaf_md},
-                    )
+        for li, leaf in enumerate(_build_table_leaf_payloads(table, table_text)):
+            chunks.append(
+                _make_chunk(
+                    chunk_id=f"{table_id}_leaf_{li}",
+                    parent_chunk_id=table_id,
+                    root_chunk_id=table_id,
+                    chunk_level=3,
+                    chunk_role="leaf",
+                    filename=canonical_name,
+                    file_path=str(path),
+                    page_number=table.page_no,
+                    text=leaf["text"],
+                    retrieval_text=leaf["retrieval_text"],
+                    block_type="table",
+                    table_id=table.table_id,
+                    table_role=table_role,
+                    parent_extras={"table_markdown": leaf["table_markdown"]},
                 )
-        else:
-            # Fallback single leaf
-            retrieval = f"{table.caption}\n{table.cells_markdown[:500]}" if table.caption else (table.cells_markdown or table_text[:500])
-            leaf_tbl = _make_chunk(
-                chunk_id=f"{table_id}_leaf_0",
-                parent_chunk_id=table_id,
-                root_chunk_id=table_id,
-                chunk_level=3,
-                chunk_role="leaf",
-                filename=canonical_name,
-                file_path=str(path),
-                page_number=table.page_no,
-                text=table_text,
-                retrieval_text=retrieval,
-                block_type="table",
-                table_id=table.table_id,
-                table_role=table_role,
-                parent_extras={"table_markdown": table.cells_markdown},
             )
-            chunks.append(leaf_tbl)
 
     # ── Figures are now handled by chunk_normalized via FigureAssociations.
     # The legacy figure-caption leaf loop is removed to avoid duplicate entries.
@@ -340,6 +314,152 @@ def _rows_to_markdown(rows: list[list[str]]) -> str:
         if i == 0:
             lines.append("| " + " | ".join("---" for _ in range(max_cols)) + " |")
     return "\n".join(lines)
+
+
+def _build_table_leaf_payloads(table, table_text: str) -> list[dict[str, str]]:
+    if table.cells_structured:
+        return _build_structured_table_leaf_payloads(table)
+    return _build_fallback_table_leaf_payloads(table, table_text)
+
+
+def _build_structured_table_leaf_payloads(table) -> list[dict[str, str]]:
+    rows = [[str(c) for c in row] for row in table.cells_structured]
+    if not rows:
+        return []
+
+    header = rows[0]
+    if len(rows) == 1:
+        header_text = _rows_to_text([header])
+        if len(header_text) > _TABLE_LEAF_TEXT_CHAR_BUDGET:
+            return _split_single_row_table_payloads(table.caption, header_text)
+
+    data_rows = rows[1:] or []
+    payloads: list[dict[str, str]] = []
+    batch: list[list[str]] = []
+
+    def flush_batch() -> None:
+        nonlocal batch
+        if not batch:
+            return
+        chunk_rows = [header] + batch
+        payloads.append(_table_leaf_payload(table.caption, chunk_rows))
+        batch = []
+
+    for row in data_rows:
+        candidate = [header] + batch + [row]
+        candidate_text = _rows_to_text(candidate)
+        if len(candidate_text) <= _TABLE_LEAF_TEXT_CHAR_BUDGET:
+            batch.append(row)
+            continue
+
+        flush_batch()
+        single_row_text = _rows_to_text([header, row])
+        if len(single_row_text) <= _TABLE_LEAF_TEXT_CHAR_BUDGET:
+            batch.append(row)
+            continue
+
+        payloads.extend(_split_oversized_table_row(table.caption, header, row))
+
+    flush_batch()
+    if payloads:
+        return payloads
+    return [_table_leaf_payload(table.caption, [header])]
+
+
+def _build_fallback_table_leaf_payloads(table, table_text: str) -> list[dict[str, str]]:
+    source = table_text or table.cells_markdown
+    if not source.strip():
+        return []
+    payloads: list[dict[str, str]] = []
+    for piece in _split_by_char_budget(source, _TABLE_LEAF_TEXT_CHAR_BUDGET):
+        retrieval = _limit_text(
+            f"{table.caption}\n{piece}" if table.caption else piece,
+            _TABLE_LEAF_RETRIEVAL_CHAR_BUDGET,
+        )
+        payloads.append(
+            {
+                "text": piece,
+                "retrieval_text": retrieval,
+                "table_markdown": piece,
+            }
+        )
+    return payloads
+
+
+def _split_oversized_table_row(
+    caption: str,
+    header: list[str],
+    row: list[str],
+) -> list[dict[str, str]]:
+    header_text = _rows_to_text([header])
+    row_text = _rows_to_text([row])
+    prefix = f"{header_text}\n"
+    budget = _TABLE_LEAF_TEXT_CHAR_BUDGET - len(prefix)
+    if budget <= 0:
+        prefix = ""
+        budget = _TABLE_LEAF_TEXT_CHAR_BUDGET
+
+    payloads: list[dict[str, str]] = []
+    for piece in _split_by_char_budget(row_text, budget):
+        text = f"{prefix}{piece}" if prefix else piece
+        markdown = f"{_rows_to_markdown([header])}\n{piece}" if prefix else piece
+        retrieval = _limit_text(
+            f"{caption}\n{markdown}" if caption else markdown,
+            _TABLE_LEAF_RETRIEVAL_CHAR_BUDGET,
+        )
+        payloads.append(
+            {
+                "text": text,
+                "retrieval_text": retrieval,
+                "table_markdown": markdown,
+            }
+        )
+    return payloads
+
+
+def _split_single_row_table_payloads(caption: str, row_text: str) -> list[dict[str, str]]:
+    payloads: list[dict[str, str]] = []
+    for piece in _split_by_char_budget(row_text, _TABLE_LEAF_TEXT_CHAR_BUDGET):
+        retrieval = _limit_text(
+            f"{caption}\n{piece}" if caption else piece,
+            _TABLE_LEAF_RETRIEVAL_CHAR_BUDGET,
+        )
+        payloads.append(
+            {
+                "text": piece,
+                "retrieval_text": retrieval,
+                "table_markdown": piece,
+            }
+        )
+    return payloads
+
+
+def _table_leaf_payload(caption: str, rows: list[list[str]]) -> dict[str, str]:
+    text = _limit_text(_rows_to_text(rows), _TABLE_LEAF_TEXT_CHAR_BUDGET)
+    markdown = _rows_to_markdown(rows)
+    retrieval = _limit_text(
+        f"{caption}\n{markdown}" if caption else markdown,
+        _TABLE_LEAF_RETRIEVAL_CHAR_BUDGET,
+    )
+    return {
+        "text": text,
+        "retrieval_text": retrieval,
+        "table_markdown": markdown,
+    }
+
+
+def _rows_to_text(rows: list[list[str]]) -> str:
+    return "\n".join(";".join(str(c) for c in row) for row in rows)
+
+
+def _split_by_char_budget(text: str, budget: int) -> list[str]:
+    if budget <= 0:
+        return []
+    return [text[i:i + budget] for i in range(0, len(text), budget)] or [""]
+
+
+def _limit_text(text: str, budget: int) -> str:
+    return text[:budget]
 
 
 def _build_table_text(table) -> str:
