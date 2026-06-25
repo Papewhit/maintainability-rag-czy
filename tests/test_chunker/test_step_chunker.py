@@ -124,6 +124,33 @@ class TestChunkNormalized:
         assert leaf[0]["list_marker"] == "1."
         assert leaf[0]["list_order"] == 0
 
+    def test_long_chinese_list_item_leaf_respects_milvus_byte_budget(self) -> None:
+        item_text = "6.4.3 沿用、改进软件变更关联功能优化需求符合性\n" + ("该需求强调多型号软件变更同步关联。" * 120)
+        doc = NormalizedDocument(
+            parsed=ParsedDocument(
+                filename="test.pdf", file_type="pdf",
+                parse_meta=ParseMeta(parse_engine="test"),
+            ),
+            normalized_blocks=[
+                _block("b1", text=item_text, level=1, marker="6.4.3", index=0),
+            ],
+            list_groups=[
+                ListGroup(
+                    group_id="lg_1", list_level=1,
+                    items=[
+                        _block("b1", text=item_text, level=1, marker="6.4.3", index=0),
+                    ],
+                ),
+            ],
+        )
+
+        chunks = chunk_normalized(doc, "/tmp/test.pdf", profile="v4_full")
+        leaves = [c for c in chunks if c["chunk_role"] == "leaf"]
+
+        assert len(leaves) > 1
+        assert all(len(c["text"].encode("utf-8")) <= 2000 for c in leaves)
+        assert all(len(c["retrieval_text"].encode("utf-8")) <= 4000 for c in leaves)
+
     def test_non_list_block_still_chunked(self) -> None:
         doc = NormalizedDocument(
             parsed=ParsedDocument(

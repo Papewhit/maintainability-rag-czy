@@ -20,8 +20,8 @@ from backend.documents.parse_adapter.base import (
     ParsedTable,
 )
 
-_TABLE_LEAF_TEXT_CHAR_BUDGET = 2000
-_TABLE_LEAF_RETRIEVAL_CHAR_BUDGET = 4000
+_MILVUS_TEXT_UTF8_BUDGET = 2000
+_MILVUS_RETRIEVAL_UTF8_BUDGET = 4000
 
 
 def parsed_to_chunks(
@@ -289,7 +289,11 @@ def _split_text_into_chunks(text: str, max_tokens: int = 500) -> list[str]:
                 result.append(part.strip()[: max_tokens * 2])
         return result
 
-    return _split_recursive(text, separators)
+    chunks = _split_recursive(text, separators)
+    byte_safe_chunks: list[str] = []
+    for chunk in chunks:
+        byte_safe_chunks.extend(_split_by_utf8_budget(chunk, _MILVUS_TEXT_UTF8_BUDGET))
+    return byte_safe_chunks
 
 
 # ── Parameter table detection (M4) ──
@@ -330,7 +334,7 @@ def _build_structured_table_leaf_payloads(table) -> list[dict[str, str]]:
     header = rows[0]
     if len(rows) == 1:
         header_text = _rows_to_text([header])
-        if len(header_text) > _TABLE_LEAF_TEXT_CHAR_BUDGET:
+        if _utf8_len(header_text) > _MILVUS_TEXT_UTF8_BUDGET:
             return _split_single_row_table_payloads(table.caption, header_text)
 
     data_rows = rows[1:] or []
@@ -348,13 +352,13 @@ def _build_structured_table_leaf_payloads(table) -> list[dict[str, str]]:
     for row in data_rows:
         candidate = [header] + batch + [row]
         candidate_text = _rows_to_text(candidate)
-        if len(candidate_text) <= _TABLE_LEAF_TEXT_CHAR_BUDGET:
+        if _utf8_len(candidate_text) <= _MILVUS_TEXT_UTF8_BUDGET:
             batch.append(row)
             continue
 
         flush_batch()
         single_row_text = _rows_to_text([header, row])
-        if len(single_row_text) <= _TABLE_LEAF_TEXT_CHAR_BUDGET:
+        if _utf8_len(single_row_text) <= _MILVUS_TEXT_UTF8_BUDGET:
             batch.append(row)
             continue
 
@@ -371,10 +375,10 @@ def _build_fallback_table_leaf_payloads(table, table_text: str) -> list[dict[str
     if not source.strip():
         return []
     payloads: list[dict[str, str]] = []
-    for piece in _split_by_char_budget(source, _TABLE_LEAF_TEXT_CHAR_BUDGET):
-        retrieval = _limit_text(
+    for piece in _split_by_utf8_budget(source, _MILVUS_TEXT_UTF8_BUDGET):
+        retrieval = _limit_utf8(
             f"{table.caption}\n{piece}" if table.caption else piece,
-            _TABLE_LEAF_RETRIEVAL_CHAR_BUDGET,
+            _MILVUS_RETRIEVAL_UTF8_BUDGET,
         )
         payloads.append(
             {
@@ -394,18 +398,18 @@ def _split_oversized_table_row(
     header_text = _rows_to_text([header])
     row_text = _rows_to_text([row])
     prefix = f"{header_text}\n"
-    budget = _TABLE_LEAF_TEXT_CHAR_BUDGET - len(prefix)
+    budget = _MILVUS_TEXT_UTF8_BUDGET - _utf8_len(prefix)
     if budget <= 0:
         prefix = ""
-        budget = _TABLE_LEAF_TEXT_CHAR_BUDGET
+        budget = _MILVUS_TEXT_UTF8_BUDGET
 
     payloads: list[dict[str, str]] = []
-    for piece in _split_by_char_budget(row_text, budget):
+    for piece in _split_by_utf8_budget(row_text, budget):
         text = f"{prefix}{piece}" if prefix else piece
         markdown = f"{_rows_to_markdown([header])}\n{piece}" if prefix else piece
-        retrieval = _limit_text(
+        retrieval = _limit_utf8(
             f"{caption}\n{markdown}" if caption else markdown,
-            _TABLE_LEAF_RETRIEVAL_CHAR_BUDGET,
+            _MILVUS_RETRIEVAL_UTF8_BUDGET,
         )
         payloads.append(
             {
@@ -419,10 +423,10 @@ def _split_oversized_table_row(
 
 def _split_single_row_table_payloads(caption: str, row_text: str) -> list[dict[str, str]]:
     payloads: list[dict[str, str]] = []
-    for piece in _split_by_char_budget(row_text, _TABLE_LEAF_TEXT_CHAR_BUDGET):
-        retrieval = _limit_text(
+    for piece in _split_by_utf8_budget(row_text, _MILVUS_TEXT_UTF8_BUDGET):
+        retrieval = _limit_utf8(
             f"{caption}\n{piece}" if caption else piece,
-            _TABLE_LEAF_RETRIEVAL_CHAR_BUDGET,
+            _MILVUS_RETRIEVAL_UTF8_BUDGET,
         )
         payloads.append(
             {
@@ -435,11 +439,11 @@ def _split_single_row_table_payloads(caption: str, row_text: str) -> list[dict[s
 
 
 def _table_leaf_payload(caption: str, rows: list[list[str]]) -> dict[str, str]:
-    text = _limit_text(_rows_to_text(rows), _TABLE_LEAF_TEXT_CHAR_BUDGET)
+    text = _limit_utf8(_rows_to_text(rows), _MILVUS_TEXT_UTF8_BUDGET)
     markdown = _rows_to_markdown(rows)
-    retrieval = _limit_text(
+    retrieval = _limit_utf8(
         f"{caption}\n{markdown}" if caption else markdown,
-        _TABLE_LEAF_RETRIEVAL_CHAR_BUDGET,
+        _MILVUS_RETRIEVAL_UTF8_BUDGET,
     )
     return {
         "text": text,
@@ -452,14 +456,32 @@ def _rows_to_text(rows: list[list[str]]) -> str:
     return "\n".join(";".join(str(c) for c in row) for row in rows)
 
 
-def _split_by_char_budget(text: str, budget: int) -> list[str]:
+def _utf8_len(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def _split_by_utf8_budget(text: str, budget: int) -> list[str]:
     if budget <= 0:
         return []
-    return [text[i:i + budget] for i in range(0, len(text), budget)] or [""]
+    pieces: list[str] = []
+    current: list[str] = []
+    current_size = 0
+    for char in text:
+        char_size = _utf8_len(char)
+        if current and current_size + char_size > budget:
+            pieces.append("".join(current))
+            current = []
+            current_size = 0
+        current.append(char)
+        current_size += char_size
+    if current:
+        pieces.append("".join(current))
+    return pieces or [""]
 
 
-def _limit_text(text: str, budget: int) -> str:
-    return text[:budget]
+def _limit_utf8(text: str, budget: int) -> str:
+    pieces = _split_by_utf8_budget(text, budget)
+    return pieces[0] if pieces else ""
 
 
 def _build_table_text(table) -> str:

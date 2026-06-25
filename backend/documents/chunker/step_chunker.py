@@ -20,7 +20,11 @@ from backend.documents.normalizer.base import (
     NormalizedDocument,
 )
 from backend.documents.normalizer.figure_normalizer import _infer_figure_role
-from backend.documents.parse_adapter.converters import _make_chunk, _split_text_into_chunks
+from backend.documents.parse_adapter.converters import (
+    _make_chunk,
+    _split_text_into_chunks,
+    _utf8_len,
+)
 
 # ── Maintenance action words (step boundary signals) ──
 
@@ -255,32 +259,35 @@ def _chunk_list_group(
         chunk_data.setdefault("parent_extras", {})["list_group_items"] = len(sub_items)
         chunks.append(chunk_data)
 
-        # Leaf chunks — one per item
-        for li, item in enumerate(sub_items):
-            chunk_data_leaf = _make_chunk(
-                chunk_id=f"{parent_id}_leaf_{li}",
-                parent_chunk_id=parent_id,
-                root_chunk_id=parent_id,
-                chunk_level=3,
-                chunk_role="leaf",
-                filename=canonical,
-                file_path=file_path,
-                page_number=item.page_no,
-                text=item.text,
-                retrieval_text=item.text,
-                block_type="list_item",
-                section_title=item.section_title or "",
-                section_path=item.section_path or "",
-                anchor_id=item.anchor_id or "",
-                page_start=item.page_no,
-                page_end=item.page_no,
-                list_group_id=group.group_id,
-                list_order=item.list_item_index,
-                list_marker=item.list_marker or "",
-                list_level=item.list_level,
-                list_complete=(len(sub_groups) == 1),
-            )
-            chunks.append(chunk_data_leaf)
+        # Leaf chunks — split oversized items without breaking parent grouping.
+        leaf_idx = 0
+        for item in sub_items:
+            for leaf_text in _split_text_into_chunks(item.text, max_tokens=leaf_tokens):
+                chunk_data_leaf = _make_chunk(
+                    chunk_id=f"{parent_id}_leaf_{leaf_idx}",
+                    parent_chunk_id=parent_id,
+                    root_chunk_id=parent_id,
+                    chunk_level=3,
+                    chunk_role="leaf",
+                    filename=canonical,
+                    file_path=file_path,
+                    page_number=item.page_no,
+                    text=leaf_text,
+                    retrieval_text=leaf_text,
+                    block_type="list_item",
+                    section_title=item.section_title or "",
+                    section_path=item.section_path or "",
+                    anchor_id=item.anchor_id or "",
+                    page_start=item.page_no,
+                    page_end=item.page_no,
+                    list_group_id=group.group_id,
+                    list_order=item.list_item_index,
+                    list_marker=item.list_marker or "",
+                    list_level=item.list_level,
+                    list_complete=(len(sub_groups) == 1),
+                )
+                chunks.append(chunk_data_leaf)
+                leaf_idx += 1
 
     return chunks
 
@@ -350,7 +357,7 @@ def _chunk_figure(
 
     # Leaf chunks — caption + figure marker prepended to each leaf
     leaf_prefix = f"{caption}\n[Figure: {fa.figure_id}]\n" if caption else f"[Figure: {fa.figure_id}]\n"
-    if _estimate_tokens(parent_text) > leaf_tokens:
+    if _estimate_tokens(parent_text) > leaf_tokens or _utf8_len(parent_text) > 2000:
         for li, leaf_text in enumerate(_split_text_into_chunks(parent_text, max_tokens=leaf_tokens)):
             retrieval = leaf_prefix + leaf_text
             chunks.append(

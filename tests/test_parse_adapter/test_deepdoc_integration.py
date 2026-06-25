@@ -312,8 +312,8 @@ class TestParsedToChunks:
         ]
 
         assert len(table_leaves) > 1
-        assert all(len(c["text"]) <= 2000 for c in table_leaves)
-        assert all(len(c["retrieval_text"]) <= 4000 for c in table_leaves)
+        assert all(len(c["text"].encode("utf-8")) <= 2000 for c in table_leaves)
+        assert all(len(c["retrieval_text"].encode("utf-8")) <= 4000 for c in table_leaves)
         assert {c["table_id"] for c in table_leaves} == {"t_long"}
         assert {c["parent_chunk_id"] for c in table_leaves} == {table_root["chunk_id"]}
         assert {c["root_chunk_id"] for c in table_leaves} == {table_root["chunk_id"]}
@@ -357,8 +357,8 @@ class TestParsedToChunks:
         ]
 
         assert len(table_leaves) > 1
-        assert all(len(c["text"]) <= 2000 for c in table_leaves)
-        assert all(len(c["retrieval_text"]) <= 4000 for c in table_leaves)
+        assert all(len(c["text"].encode("utf-8")) <= 2000 for c in table_leaves)
+        assert all(len(c["retrieval_text"].encode("utf-8")) <= 4000 for c in table_leaves)
         assert {c["parent_chunk_id"] for c in table_leaves} == {table_root["chunk_id"]}
         assert {c["root_chunk_id"] for c in table_leaves} == {table_root["chunk_id"]}
 
@@ -393,6 +393,34 @@ class TestParsedToChunks:
         ]
 
         assert len(table_leaves) > 1
-        assert all(len(c["text"]) <= 2000 for c in table_leaves)
-        assert all(len(c["retrieval_text"]) <= 4000 for c in table_leaves)
+        assert all(len(c["text"].encode("utf-8")) <= 2000 for c in table_leaves)
+        assert all(len(c["retrieval_text"].encode("utf-8")) <= 4000 for c in table_leaves)
         assert "".join(c["text"] for c in table_leaves) == original_text
+
+    def test_chinese_paragraph_leaf_text_respects_milvus_byte_budget(self) -> None:
+        from backend.documents.parse_adapter.base import (
+            ParsedBlock, ParsedDocument, ParseMeta,
+        )
+        from backend.documents.parse_adapter.converters import parsed_to_chunks
+
+        doc = ParsedDocument(
+            filename="cn.pdf",
+            file_type="pdf",
+            parse_meta=ParseMeta(parse_engine="test"),
+            blocks=[
+                ParsedBlock(
+                    block_id="b_cn",
+                    page_no=1,
+                    block_type="paragraph",
+                    text="供应链优化方案" * 180,
+                    order_index=0,
+                ),
+            ],
+        )
+
+        chunks = parsed_to_chunks(doc, "/tmp/cn.pdf", profile="v4_full")
+        leaves = [c for c in chunks if c["chunk_level"] == 3]
+
+        assert len(leaves) > 1
+        assert all(len(c["text"].encode("utf-8")) <= 2000 for c in leaves)
+        assert all(len(c["retrieval_text"].encode("utf-8")) <= 4000 for c in leaves)

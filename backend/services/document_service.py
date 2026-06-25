@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import gc
 from pathlib import Path
 from typing import Any
 
@@ -183,8 +184,8 @@ class DocumentService:
             pending_path.unlink(missing_ok=True)
             raise DocumentProcessingError("Document processing failed: no content extracted")
 
-        parent_docs = [d for d in new_docs if int(d.get("chunk_level", 0) or 0) in (1, 2)]
-        leaf_docs = [d for d in new_docs if int(d.get("chunk_level", 0) or 0) == 3]
+        parent_docs = [d for d in new_docs if _chunk_level(d) in (1, 2)]
+        leaf_docs = [d for d in new_docs if _chunk_level(d) == 3]
         if not leaf_docs:
             pending_path.unlink(missing_ok=True)
             raise DocumentProcessingError("Document processing failed: no leaf chunks generated")
@@ -193,7 +194,18 @@ class DocumentService:
         self._remove_bm25_stats(filename)
         self._milvus.delete(delete_expr)
         self._parent.delete_by_filename(filename)
-        pending_path.replace(file_path)
+        gc.collect()
+        try:
+            pending_path.replace(file_path)
+        except PermissionError:
+            # Some PDF parsers keep the pending file handle alive briefly on
+            # Windows. The original upload bytes are still available, so write
+            # the final file directly and clean up the pending file best-effort.
+            file_path.write_bytes(content)
+            try:
+                pending_path.unlink(missing_ok=True)
+            except PermissionError:
+                pass
 
         self._parent.upsert_documents(parent_docs)
         self._writer.write_documents(leaf_docs)
@@ -242,3 +254,15 @@ def _parse_meta_to_dict(meta) -> dict:
         "hierarchy_validation_warnings": meta.hierarchy_validation_warnings,
         "parse_path": meta.parse_path,  # M8
     }
+
+
+def _chunk_level(doc: dict[str, object]) -> int:
+    value = doc.get("chunk_level", 0)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
