@@ -71,9 +71,12 @@ def parsed_to_chunks(
     # ── Tables (M4: validated + parameter-aware, gated by profile) ──
     from backend.documents.chunker.step_chunker import _profile_allows
     from backend.documents.normalizer.table_normalizer import validate_and_enrich_tables
+    from backend.documents.normalizer.table_nearby import associate_nearby_blocks
 
     if _profile_allows(profile, "v4_table_aware"):
         enriched_tables = validate_and_enrich_tables(doc.tables)
+        # M8: associate nearby blocks for explanatory context
+        enriched_tables = associate_nearby_blocks(enriched_tables, normalized.normalized_blocks)
     else:
         enriched_tables = []  # tables not emitted below v4_table_aware
 
@@ -91,10 +94,25 @@ def parsed_to_chunks(
         if param_keys:
             extras["parameter_keys"] = param_keys
 
-        # Caption prepended to parent text (spec: caption + markdown)
-        parent_text = table_text
+        # M8: Build parent text with nearby explanatory blocks
+        # Format: caption + nearby_texts + table_markdown
+        parent_text_parts: list[str] = []
         if table.caption:
-            parent_text = f"{table.caption}\n{table_text}"
+            parent_text_parts.append(table.caption)
+
+        # Append nearby block texts if present
+        if table.nearby_block_ids:
+            nearby_block_map = {b.block_id: b.text for b in normalized.normalized_blocks}
+            for bid in table.nearby_block_ids:
+                if bid in nearby_block_map:
+                    parent_text_parts.append(nearby_block_map[bid])
+
+        parent_text_parts.append(table_text)
+        parent_text = "\n".join(parent_text_parts)
+
+        # Store nearby_block_ids in parent_extras for evidence builder
+        if table.nearby_block_ids:
+            extras["nearby_block_ids"] = table.nearby_block_ids
 
         table_id = f"{canonical_name}_table_{ti}"
         root_tbl = _make_chunk(

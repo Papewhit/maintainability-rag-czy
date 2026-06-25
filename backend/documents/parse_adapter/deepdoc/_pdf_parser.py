@@ -359,9 +359,11 @@ class RAGFlowPdfParser:
             if not b["text"]:
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * \
                                          ZM, b["top"] * ZM, b["bottom"] * ZM
-                b["text"] = self.ocr.recognize(np.array(img),
-                                               np.array([[left, top], [right, top], [right, bott], [left, bott]],
-                                                        dtype=np.float32))
+                text, score = self.ocr.recognize(np.array(img),
+                                                 np.array([[left, top], [right, top], [right, bott], [left, bott]],
+                                                          dtype=np.float32))
+                b["text"] = text
+                b["score"] = score
             del b["txt"]
         bxs = [b for b in bxs if b["text"]]
         if self.mean_height[-1] == 0:

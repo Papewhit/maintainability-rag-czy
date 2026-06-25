@@ -144,6 +144,10 @@ class ParseMeta:
     # Warnings from heading tree validation (M6).
     hierarchy_validation_warnings: list[str] = field(default_factory=list)
 
+    # M8: Parse path - distinguishes native text vs OCR extraction.
+    # Values: "native_text" | "ocr" | "mixed" | "unknown"
+    parse_path: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # ParsedDocument — the unified parse output

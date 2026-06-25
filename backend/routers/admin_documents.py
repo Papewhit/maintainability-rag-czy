@@ -30,6 +30,7 @@ async def get_parse_meta(document_id: str):
             "ocr_confidence_avg": row.ocr_confidence_avg,
             "parse_warnings": row.parse_warnings or [],
             "hierarchy_validation_warnings": row.hierarchy_validation_warnings or [],
+            "parse_path": row.parse_path,  # M8
         }
     finally:
         db.close()

@@ -94,3 +94,26 @@
 - [x] 8.4 所有能力的归属层已明确（见 M7 软边界澄清表）
 
 **验收**：✅ design.md 中已无模糊条目；✅ 9 项能力归属明确。
+
+## 9. Milestone M8：Table Nearby + OCR Confidence/Parse Path 补全
+
+经 Codex 最终审查，M0-M7 实现中遗留两项未完成能力，现补全实现。
+
+- [ ] 9.1 实现 `backend/documents/normalizer/table_nearby.py`（复用 figure_normalizer 双策略：bbox proximity + text reference）
+- [ ] 9.2 修改 `normalizer/pipeline.py`：在 validate_and_enrich_tables 后调用 associate_nearby_blocks
+- [ ] 9.3 修改 `normalizer/__init__.py`：导出 associate_nearby_blocks
+- [ ] 9.4 修改 `converters.py`：table parent chunk 拼接 nearby texts（caption + nearby + markdown）
+- [ ] 9.5 修改 `_ocr.py`：recognize() 返回 `(text, score)` 元组
+- [ ] 9.6 修改 `_pdf_parser.py`：__ocr() 接收并存储 score 到 b["score"]
+- [ ] 9.7 修改 `adapter.py`：_convert_text_blocks 提取 score，_parse_pdf 计算 ocr_confidence_avg 和 parse_path
+- [ ] 9.8 修改 `base.py`：ParseMeta 添加 parse_path 字段
+- [ ] 9.9 修改 `models.py`：DocumentParseMeta 添加 parse_path 列
+- [ ] 9.10 修改 `document_service.py`：持久化 parse_path
+- [ ] 9.11 修改 `admin_documents.py`：Admin API 返回 parse_path
+- [ ] 9.12 OCR 试验：上传扫描 PDF，验证 ocr_confidence_avg 和 parse_path = "ocr"
+
+**验收：**
+- ✅ Table parent chunk 包含 nearby 解释段（parent_extras["nearby_block_ids"] 非空）
+- ✅ 扫描 PDF 的 parse_path = "ocr"，ocr_confidence_avg 在 0-1 之间
+- ✅ DOCX 的 parse_path = "native_text"，ocr_confidence_avg = null
+- ✅ Admin API `/admin/documents/{id}/parse_meta` 返回 parse_path 字段

@@ -92,6 +92,29 @@ class DeepDocAdapter:
         blocks = self._convert_text_blocks(text_output, warnings)
         tables, figures = self._convert_tables_figures(tbls_output)
 
+        # M8: Extract OCR confidence scores from parser.boxes
+        # parser.boxes is a list of dicts with "text" and optional "score"
+        ocr_scores: list[float] = []
+        if hasattr(parser, 'boxes') and isinstance(parser.boxes, list):
+            for box in parser.boxes:
+                if isinstance(box, dict) and "score" in box and box.get("score") is not None:
+                    ocr_scores.append(float(box["score"]))
+
+        ocr_confidence_avg = sum(ocr_scores) / len(ocr_scores) if ocr_scores else None
+
+        # M8: Determine parse_path based on OCR ratio
+        ocr_ratio = len(ocr_scores) / len(blocks) if blocks else 0.0
+        if ocr_ratio >= 0.8:
+            parse_path = "ocr"
+        elif ocr_ratio <= 0.2:
+            parse_path = "native_text"
+        elif 0.2 < ocr_ratio < 0.8:
+            parse_path = "mixed"
+        else:
+            parse_path = "unknown"
+            if not ocr_scores and blocks:
+                warnings.append("Cannot determine parse_path — OCR confidence not available")
+
         duration_ms = (time.perf_counter() - t0) * 1000
         meta = ParseMeta(
             parse_engine="deepdoc",
@@ -99,6 +122,8 @@ class DeepDocAdapter:
             parse_duration_ms=duration_ms,
             total_pages=getattr(parser, "total_page", 0),
             parse_warnings=warnings,
+            ocr_confidence_avg=ocr_confidence_avg,
+            parse_path=parse_path,
         )
 
         return ParsedDocument(
@@ -159,6 +184,7 @@ class DeepDocAdapter:
             parse_duration_ms=duration_ms,
             total_pages=0,
             parse_warnings=warnings,
+            parse_path="native_text",  # M8: DOCX is always native text
         )
 
         return ParsedDocument(

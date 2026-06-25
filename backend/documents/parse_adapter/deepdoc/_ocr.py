@@ -601,8 +601,8 @@ class OCR(object):
         rec_res, elapse = self.text_recognizer([img_crop])
         text, score = rec_res[0]
         if score < self.drop_score:
-            return ""
-        return text
+            return "", 0.0
+        return text, score
 
     def __call__(self, img, cls=True):
         time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}

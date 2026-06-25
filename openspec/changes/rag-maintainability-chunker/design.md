@@ -296,3 +296,76 @@ v1 倾向内嵌，理由：项目规模未到必须微服务化的程度，运�
 | figure caption 关联 | Normalizer (figure_normalizer) | bbox proximity + text reference |
 
 已移除的设计模糊条目：无。所有此前标注 "待 DeepDoc 源代码核对" 的能力已在实现中明确归属。
+
+## M8 补全项（2026-06-25）
+
+经 Codex 最终审查，M0-M7 实现中遗留两项未完成能力，现补全设计并实施。
+
+### M8.1 Table Nearby 关联策略
+
+**问题：** design.md § 决策 2 中 `ParsedTable.nearby_block_ids` 字段已定义，但 DeepDoc adapter 输出时未填充，table_normalizer 也无 nearby 关联逻辑。导致表格 parent chunk 缺失解释段落。
+
+**归属层：** Normalizer (`table_nearby.py`) 新增 `associate_nearby_blocks` 函数，与 `figure_normalizer` 平行。
+
+**算法（保守版本）：**
+1. **bbox proximity：** 同页垂直距离 ≤ 150 doc units（比 figure 的 200 更严格，表格通常紧贴文本）
+2. **text reference：** 在 ±3 个 block 窗口内搜索 "表 x" / "Table x" 反向引用（比 figure 的 ±4 更小）
+3. **跨页策略：** 表格跨页时，caption 所在页为锚定页，±1 页内的引用段有效
+4. **优先级：** bbox proximity > text reference > caption 前置 block
+
+**调用时机：** `normalizer/pipeline.py` 中 `validate_and_enrich_tables()` 之后、返回 `NormalizedDocument` 之前。
+
+**Chunker 使用：** `converters.py` 构造 table parent chunk 时（95-98 行），按 `nearby_block_ids` 顺序拼接解释段：
+```python
+parent_text = caption + "\n" + nearby_texts + "\n" + table_markdown
+```
+
+**Parent store 保留：** `nearby_block_ids` 写入 `parent_extras`，供 evidence builder 使用。
+
+### M8.2 ParseMeta 扩展字段：OCR Confidence + Parse Path
+
+**问题：** 
+- `ParseMeta.ocr_confidence_avg` 字段已定义但未填充（DeepDoc OCR 模块返回 score，但 adapter 丢弃）
+- `ParseMeta.parse_path` 字段缺失，无法区分原生文本 vs OCR 路径
+
+**parse_path 字段定义：**
+
+允许值（枚举）：
+- `"native_text"` — DOCX、Excel 等原生格式，或 PDF 中的可选中文本
+- `"ocr"` — 扫描 PDF 经 OCR 识别
+- `"mixed"` — PDF 同时包含原生文本和 OCR 区域
+- `"unknown"` — 无法判断（降级行为）
+
+**判断算法（PDF）：**
+```python
+ocr_blocks = [b for b in blocks if b.ocr_confidence is not None]
+ocr_ratio = len(ocr_blocks) / len(blocks) if blocks else 0
+if ocr_ratio >= 0.8:
+    parse_path = "ocr"
+elif ocr_ratio <= 0.2:
+    parse_path = "native_text"
+elif 0.2 < ocr_ratio < 0.8:
+    parse_path = "mixed"
+else:
+    parse_path = "unknown"
+```
+
+**OCR confidence 数据来源：**
+- `_ocr.py:598` 的 `recognize()` 方法内部获取 `(text, score)`，但当前只返回 `text`（604行）
+- 修改为返回元组 `(text, score)`，向后兼容：score < drop_score 时返回 `("", 0.0)`
+- `_pdf_parser.py:362` 调用 `recognize()` 接收 `(text, score)`，存入 `b["score"]`
+- `adapter._convert_text_blocks()` 从 tag 提取 `score`，写入 `ParsedBlock.ocr_confidence`
+- `adapter._parse_pdf()` 计算 `ocr_confidence_avg`（所有 OCR block 的均值）
+
+**DOCX/Excel 路径：** `parse_path = "native_text"`，`ocr_confidence_avg = None`
+
+**降级行为：**
+- 如果 OCR 模块不返回置信度，`ocr_confidence` 保持 `None`，记录 warning：`"OCR confidence not available"`
+- 如果无法区分 native/OCR，`parse_path = "unknown"`，记录 warning：`"Cannot determine parse path"`
+
+**Schema 变更：**
+- `ParseMeta` 添加 `parse_path: str | None = None`
+- `DocumentParseMeta` 表添加列 `parse_path VARCHAR(20) NULL`
+- Admin API `/admin/documents/{document_id}/parse_meta` 返回中添加 `parse_path` 字段
+
+**实施原则：** 最小修改，不引入新依赖，不修改 DeepDoc 底层模型逻辑（只改 Python 包装层）。

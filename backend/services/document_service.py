@@ -105,6 +105,7 @@ class DocumentService:
                     "watermark_filter_ratio": meta.get("watermark_filter_ratio"),
                     "ocr_confidence_avg": meta.get("ocr_confidence_avg"),
                     "hierarchy_validation_warnings": meta.get("hierarchy_validation_warnings"),
+                    "parse_path": meta.get("parse_path"),  # M8
                 }
                 is_pg = db.get_bind().dialect.name == "postgresql"
                 stmt = (
@@ -239,4 +240,5 @@ def _parse_meta_to_dict(meta) -> dict:
         "watermark_filter_ratio": meta.watermark_filter_ratio,
         "ocr_confidence_avg": meta.ocr_confidence_avg,
         "hierarchy_validation_warnings": meta.hierarchy_validation_warnings,
+        "parse_path": meta.parse_path,  # M8
     }

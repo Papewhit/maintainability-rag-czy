@@ -102,6 +102,7 @@ class ExcelParser:
             parse_duration_ms=duration_ms,
             total_pages=len(wb.sheetnames),
             parse_warnings=warnings,
+            parse_path="native_text",  # M8: Excel is always native text
         )
 
         return ParsedDocument(
