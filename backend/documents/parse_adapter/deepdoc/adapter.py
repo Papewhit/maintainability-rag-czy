@@ -92,28 +92,7 @@ class DeepDocAdapter:
         blocks = self._convert_text_blocks(text_output, warnings)
         tables, figures = self._convert_tables_figures(tbls_output)
 
-        # M8: Extract OCR confidence scores from parser.boxes
-        # parser.boxes is a list of dicts with "text" and optional "score"
-        ocr_scores: list[float] = []
-        if hasattr(parser, 'boxes') and isinstance(parser.boxes, list):
-            for box in parser.boxes:
-                if isinstance(box, dict) and "score" in box and box.get("score") is not None:
-                    ocr_scores.append(float(box["score"]))
-
-        ocr_confidence_avg = sum(ocr_scores) / len(ocr_scores) if ocr_scores else None
-
-        # M8: Determine parse_path based on OCR ratio
-        ocr_ratio = len(ocr_scores) / len(blocks) if blocks else 0.0
-        if ocr_ratio >= 0.8:
-            parse_path = "ocr"
-        elif ocr_ratio <= 0.2:
-            parse_path = "native_text"
-        elif 0.2 < ocr_ratio < 0.8:
-            parse_path = "mixed"
-        else:
-            parse_path = "unknown"
-            if not ocr_scores and blocks:
-                warnings.append("Cannot determine parse_path — OCR confidence not available")
+        parse_path, ocr_confidence_avg = _summarize_pdf_parse_path(blocks, warnings)
 
         duration_ms = (time.perf_counter() - t0) * 1000
         meta = ParseMeta(
@@ -219,8 +198,17 @@ class DeepDocAdapter:
             tags: list[dict[str, object]] = []
             clean_text = line
             for m in re.finditer(
-                r"@@([\d-]+)\t([\d.]+)\t([\d.]+)\t([\d.]+)\t([\d.]+)##", line
+                r"@@([\d-]+)\t([\d.]+)\t([\d.]+)\t([\d.]+)\t([\d.]+)"
+                r"(?:\t(-?\d+(?:\.\d+)?))?(?:\t(-?\d+))?##",
+                line,
             ):
+                score = float(m.group(6)) if m.group(6) is not None else None
+                source_code = int(m.group(7)) if m.group(7) is not None else None
+                parse_source = (
+                    {0: "ocr", 1: "native_text"}.get(source_code)
+                    if source_code is not None
+                    else None
+                )
                 tags.append(
                     {
                         "page": m.group(1),
@@ -228,6 +216,8 @@ class DeepDocAdapter:
                         "x1": float(m.group(3)),
                         "top": float(m.group(4)),
                         "bottom": float(m.group(5)),
+                        "score": score,
+                        "parse_source": parse_source,
                     }
                 )
             clean_text = re.sub(r"@@[\d.\t-]+##", "", line).strip()
@@ -242,6 +232,20 @@ class DeepDocAdapter:
                 page_no = 1
 
             block_type = _classify_block_type(clean_text)
+            source_values = {
+                str(tag["parse_source"])
+                for tag in tags
+                if tag.get("parse_source") in {"ocr", "native_text"}
+            }
+            ocr_scores = [
+                float(str(tag["score"]))
+                for tag in tags
+                if tag.get("parse_source") == "ocr" and tag.get("score") is not None
+            ]
+            ocr_confidence = sum(ocr_scores) / len(ocr_scores) if ocr_scores else None
+            style: dict[str, object] = {}
+            if source_values:
+                style["parse_sources"] = sorted(source_values)
             block = ParsedBlock(
                 block_id=f"b_{i}",
                 page_no=page_no,
@@ -253,7 +257,9 @@ class DeepDocAdapter:
                     float(str(primary_tag["top"])),
                     float(str(primary_tag["bottom"])),
                 ),
+                ocr_confidence=ocr_confidence,
                 order_index=i,
+                style=style,
             )
             blocks.append(block)
 
@@ -358,6 +364,45 @@ def _looks_like_chart(text: str) -> bool:
     chart_markers = ["图", "同比", "%", "亿元", "万千瓦", "增长率", "下降", "上升"]
     score = sum(1 for m in chart_markers if m in text[:300])
     return score >= 2
+
+
+def _summarize_pdf_parse_path(
+    blocks: list[ParsedBlock],
+    warnings: list[str],
+) -> tuple[str, float | None]:
+    """Summarize OCR confidence and parse path from converted blocks."""
+    if not blocks:
+        warnings.append("Cannot determine parse_path — no parsed blocks")
+        return "unknown", None
+
+    known_blocks = [
+        block for block in blocks
+        if block.style.get("parse_sources")
+    ]
+    if not known_blocks:
+        warnings.append("Cannot determine parse_path — OCR confidence not available")
+        return "unknown", None
+
+    ocr_blocks = [
+        block for block in known_blocks
+        if "ocr" in set(block.style.get("parse_sources", []))
+    ]
+    ocr_scores = [
+        block.ocr_confidence for block in ocr_blocks
+        if block.ocr_confidence is not None
+    ]
+    ocr_confidence_avg = (
+        sum(ocr_scores) / len(ocr_scores)
+        if ocr_scores
+        else None
+    )
+
+    ocr_ratio = len(ocr_blocks) / len(known_blocks)
+    if ocr_ratio >= 0.8:
+        return "ocr", ocr_confidence_avg
+    if ocr_ratio <= 0.2:
+        return "native_text", ocr_confidence_avg
+    return "mixed", ocr_confidence_avg
 
 
 def _extract_page_from_content(text: str, fallback: int = 0) -> int:
