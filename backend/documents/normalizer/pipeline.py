@@ -10,7 +10,8 @@ from backend.documents.normalizer.heading_normalizer import build_heading_tree
 from backend.documents.normalizer.list_normalizer import detect_and_group_lists
 from backend.documents.normalizer.figure_normalizer import build_figure_associations
 from backend.documents.normalizer.table_normalizer import validate_and_enrich_tables
-from backend.documents.parse_adapter.base import ParsedDocument, ParsedTable
+from backend.documents.normalizer.table_nearby import associate_nearby_blocks
+from backend.documents.parse_adapter.base import ParsedDocument
 
 
 def run_normalizer(doc: ParsedDocument) -> NormalizedDocument:
@@ -34,11 +35,14 @@ def run_normalizer(doc: ParsedDocument) -> NormalizedDocument:
     normalized, heading_tree = build_heading_tree(normalized)
     normalized, list_groups = detect_and_group_lists(normalized)
     figure_associations = build_figure_associations(doc.figures, normalized)
+    normalized_tables = validate_and_enrich_tables(doc.tables)
+    normalized_tables = associate_nearby_blocks(normalized_tables, normalized)
 
     return NormalizedDocument(
         parsed=doc,
         normalized_blocks=normalized,
         list_groups=list_groups,
         figure_associations=figure_associations,
+        normalized_tables=normalized_tables,
         heading_tree=heading_tree,
     )

@@ -338,24 +338,34 @@ parent_text = caption + "\n" + nearby_texts + "\n" + table_markdown
 
 **判断算法（PDF）：**
 ```python
-ocr_blocks = [b for b in blocks if b.ocr_confidence is not None]
-ocr_ratio = len(ocr_blocks) / len(blocks) if blocks else 0
-if ocr_ratio >= 0.8:
-    parse_path = "ocr"
-elif ocr_ratio <= 0.2:
-    parse_path = "native_text"
-elif 0.2 < ocr_ratio < 0.8:
-    parse_path = "mixed"
-else:
+if not blocks:
     parse_path = "unknown"
+else:
+    known_blocks = [b for b in blocks if b.style.get("parse_sources")]
+    if not known_blocks:
+        parse_path = "unknown"
+    else:
+        ocr_blocks = [
+            b for b in known_blocks
+            if "ocr" in b.style.get("parse_sources", [])
+        ]
+        ocr_ratio = len(ocr_blocks) / len(blocks)
+        if ocr_ratio >= 0.8:
+            parse_path = "ocr"
+        elif ocr_ratio <= 0.2:
+            parse_path = "native_text"
+        else:
+            parse_path = "mixed"
 ```
 
 **OCR confidence 数据来源：**
 - `_ocr.py:598` 的 `recognize()` 方法内部获取 `(text, score)`，但当前只返回 `text`（604行）
 - 修改为返回元组 `(text, score)`，向后兼容：score < drop_score 时返回 `("", 0.0)`
 - `_pdf_parser.py:362` 调用 `recognize()` 接收 `(text, score)`，存入 `b["score"]`
-- `adapter._convert_text_blocks()` 从 tag 提取 `score`，写入 `ParsedBlock.ocr_confidence`
-- `adapter._parse_pdf()` 计算 `ocr_confidence_avg`（所有 OCR block 的均值）
+- pdfplumber 原生文本 block 标记 `parse_source="native_text"`，`score=1.0`
+- OCR 识别 block 标记 `parse_source="ocr"`，携带 OCR score
+- `adapter._convert_text_blocks()` 从 tag 提取 `score` 和 `parse_source`；仅 OCR block 写入 `ParsedBlock.ocr_confidence`
+- `adapter._parse_pdf()` 基于转换后的 `ParsedBlock` 计算 `parse_path` 和 `ocr_confidence_avg`，避免 parser.boxes 与 blocks 计数不一致
 
 **DOCX/Excel 路径：** `parse_path = "native_text"`，`ocr_confidence_avg = None`
 

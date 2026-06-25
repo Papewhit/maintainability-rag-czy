@@ -53,7 +53,7 @@ PDF 来源的 ParsedBlock SHALL 在 DeepDoc 走 OCR 路径时携带 bbox 和 ocr
 
 #### Scenario: 写入 parse_meta
 - **WHEN** document_service 完成解析阶段
-- **THEN** `document_parse_meta` 表中新增一行，包含 document_id、parse_engine、parse_engine_version、watermark_filter_ratio、ocr_confidence_avg、hierarchy_validation_warnings、parse_warnings、parse_duration_ms
+- **THEN** `document_parse_meta` 表中新增一行，包含 document_id、parse_engine、parse_engine_version、parse_path、watermark_filter_ratio、ocr_confidence_avg、hierarchy_validation_warnings、parse_warnings、parse_duration_ms
 
 #### Scenario: 管理员查询
 - **WHEN** 管理员调用 `GET /admin/documents/{id}/parse_meta`

@@ -354,6 +354,8 @@ class RAGFlowPdfParser:
                     bxs[ii]["text"] += " "
             else:
                 bxs[ii]["text"] += c["text"]
+            bxs[ii]["score"] = 1.0
+            bxs[ii]["parse_source"] = "native_text"
 
         for b in bxs:
             if not b["text"]:
@@ -364,6 +366,7 @@ class RAGFlowPdfParser:
                                                           dtype=np.float32))
                 b["text"] = text
                 b["score"] = score
+                b["parse_source"] = "ocr"
             del b["txt"]
         bxs = [b for b in bxs if b["text"]]
         if self.mean_height[-1] == 0:
@@ -920,9 +923,11 @@ class RAGFlowPdfParser:
             if pn[-1] - 1 >= page_images_cnt:
                 return ""
 
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
+        score = float(bx.get("score", -1.0))
+        source_code = {"ocr": 0, "native_text": 1}.get(bx.get("parse_source"), -1)
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.4f}\t{}##" \
             .format("-".join([str(p) for p in pn]),
-                    bx["x0"], bx["x1"], top, bott)
+                    bx["x0"], bx["x1"], top, bott, score, source_code)
 
     def __filterout_scraps(self, boxes, ZM):
 
@@ -1124,9 +1129,9 @@ class RAGFlowPdfParser:
     def crop(self, text, ZM=3, need_position=False):
         imgs = []
         poss = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
-            pn, left, right, top, bottom = tag.strip(
-                "#").strip("@").split("\t")
+        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t-]+##", text):
+            fields = tag.strip("#").strip("@").split("\t")
+            pn, left, right, top, bottom = fields[:5]
             left, right, top, bottom = float(left), float(
                 right), float(top), float(bottom)
             poss.append(([int(p) - 1 for p in pn.split("-")],

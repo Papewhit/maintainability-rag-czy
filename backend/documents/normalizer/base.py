@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from backend.documents.parse_adapter.base import ParsedBlock, ParsedDocument
+from backend.documents.parse_adapter.base import ParsedBlock, ParsedDocument, ParsedTable
 
 
 @dataclass(frozen=True)
@@ -88,6 +88,9 @@ class NormalizedDocument:
 
     # Figure ↔ nearby-block associations.
     figure_associations: list[FigureAssociation] = field(default_factory=list)
+
+    # Tables after validation/fallback and nearby-block association.
+    normalized_tables: list[ParsedTable] = field(default_factory=list)
 
     # Heading tree (concrete type defined in M2 normalizer implementation).
     heading_tree: Any = None

@@ -70,13 +70,9 @@ def parsed_to_chunks(
 
     # ── Tables (M4: validated + parameter-aware, gated by profile) ──
     from backend.documents.chunker.step_chunker import _profile_allows
-    from backend.documents.normalizer.table_normalizer import validate_and_enrich_tables
-    from backend.documents.normalizer.table_nearby import associate_nearby_blocks
 
     if _profile_allows(profile, "v4_table_aware"):
-        enriched_tables = validate_and_enrich_tables(doc.tables)
-        # M8: associate nearby blocks for explanatory context
-        enriched_tables = associate_nearby_blocks(enriched_tables, normalized.normalized_blocks)
+        enriched_tables = normalized.normalized_tables
     else:
         enriched_tables = []  # tables not emitted below v4_table_aware
 
