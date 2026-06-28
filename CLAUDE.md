@@ -16,20 +16,21 @@ uv run uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
 uv run python backend/app.py
 
 # Run core tests
-uv run pytest tests/test_application_entrypoints.py tests/test_api_routes.py tests/test_document_service.py tests/test_rag_pipeline.py -q
+uv run pytest tests/unit/backend/application tests/unit/backend/services/test_document_service.py tests/unit/backend/rag/pipeline/test_rag_pipeline.py -q
 
 # Run a single test file
-uv run pytest tests/test_rag_pipeline.py -q
+uv run pytest tests/unit/backend/rag/pipeline/test_rag_pipeline.py -q
 
 # Static checks
 uv run python -m compileall backend tests
 # M1 modules only (full backend has pre-existing errors — see openspec for scope)
 uv run mypy backend/documents/parse_adapter/ backend/documents/normalizer/ backend/documents/chunker/ --ignore-missing-imports
 node --check frontend/script.js
-node frontend/ui-redesign.test.mjs
+node tests/unit/frontend/ui-redesign.test.mjs
 
 # Run only fast unit tests (skip slow DeepDoc integration)
-uv run pytest tests/ -m "not slow" -q
+uv run pytest tests/unit -q
+uv run pytest tests/ -m "not slow and not e2e" -q
 
 # Run slow tests (requires vendored DeepDoc models or DEEPDOC_MODEL_DIR)
 uv run pytest tests/ -m "slow" -v
@@ -109,7 +110,7 @@ Thread-safe singleton agent using LangChain's `create_agent`. Two tools: `search
 
 ### Frontend
 
-Single-page static app in `frontend/` (index.html, script.js, style.css). Uses Vue 3 via CDN. FastAPI serves it as static files at `/`. Has a companion `ui-redesign.test.mjs` for Node-based testing.
+Single-page static app in `frontend/` (index.html, script.js, style.css). Uses Vue 3 via CDN. FastAPI serves it as static files at `/`. The companion Node-based test is `tests/unit/frontend/ui-redesign.test.mjs`.
 
 ## Key Design Decisions
 
@@ -126,6 +127,7 @@ Single-page static app in `frontend/` (index.html, script.js, style.css). Uses V
 - `from __future__ import annotations` in all backend modules
 - Env vars are read at module level (not lazily) in `config.py` and `runtime_config.py`
 - Tests use pytest; test files that need env var isolation should set them before importing backend modules
+- Test files are grouped by taxonomy under `tests/unit`, `tests/integration`, `tests/e2e`, `tests/eval`, and `tests/regression`; shared document samples live in `tests/fixtures/documents`
 - The following directories are local-only (gitignored): `data/`, `docs/`, `eval/`, `scripts/`, `volumes/`
 
 ## Current Stage

@@ -22,7 +22,9 @@ volumes/
 data/
 
 # Local-only design, evaluation, and maintenance materials
-docs/
+docs/*
+!docs/validation/
+!docs/validation/**
 eval/
 scripts/
 

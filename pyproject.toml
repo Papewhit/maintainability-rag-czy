@@ -61,11 +61,22 @@ study = [
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*.py" = ["E402"]
-"tests/*.py" = ["E402"]
+"tests/**/*.py" = ["E402"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
 markers = [
+    "unit: pure unit tests without external services",
+    "integration: tests requiring local infrastructure, real parsers, or heavier components",
+    "e2e: end-to-end validation against running services or full document ingestion flows",
+    "eval: evaluation dataset, qrels, and metrics tests",
+    "regression: bug or quality regression coverage",
     "slow: marks tests that are slow (e.g. DeepDoc integration)",
+    "requires_db: requires PostgreSQL or another real database service",
+    "requires_redis: requires Redis",
+    "requires_milvus: requires Milvus",
+    "requires_models: requires local model files such as DeepDoc ONNX weights",
 ]
 
 [dependency-groups]

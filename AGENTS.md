@@ -1,5 +1,37 @@
 # Repository Instructions
 
+## Test Taxonomy
+
+Tests are grouped by execution cost first and product area second. Do not add new
+test files directly under `tests/`.
+
+- `tests/unit/`: pure unit tests using fakes, mocks, temp files, or in-memory stores.
+- `tests/integration/`: cross-component tests, real document parsers, real sample files,
+  or real DB/infrastructure dependencies.
+- `tests/e2e/`: full validation scripts that require a running service or complete
+  document ingestion flow.
+- `tests/eval/`: RAG dataset, qrels, metric, and evaluation helper tests.
+- `tests/regression/`: historical bug fixes or quality drift checks.
+- `tests/fixtures/documents/`: shared PDF/DOCX/XLSX samples.
+
+Use pytest markers registered in `pyproject.toml` to state runtime requirements:
+`unit`, `integration`, `e2e`, `eval`, `regression`, `slow`, `requires_db`,
+`requires_redis`, `requires_milvus`, and `requires_models`.
+
+Common commands:
+
+```powershell
+uv run pytest tests/unit -q
+uv run pytest tests/integration -m "not slow" -q
+uv run pytest tests/eval tests/regression -q
+uv run pytest tests -m "not slow and not e2e" -q
+node tests/unit/frontend/ui-redesign.test.mjs
+```
+
+DeepDoc parse metadata validation scripts live under
+`tests/e2e/deepdoc_parse_metadata/`; do not recreate milestone-numbered
+validation scripts at the repository root.
+
 ## Review Guidelines
 
 When reviewing pull requests in this repository, use a normal code-review stance unless

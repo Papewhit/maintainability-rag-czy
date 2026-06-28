@@ -302,15 +302,23 @@ volumes/
 ```powershell
 uv run python -m compileall backend tests
 node --check frontend\script.js
-node frontend\ui-redesign.test.mjs
+node tests\unit\frontend\ui-redesign.test.mjs
 git diff --check
 ```
 
 后端核心测试可按需运行：
 
 ```powershell
-uv run pytest tests\test_application_entrypoints.py tests\test_api_routes.py tests\test_document_service.py tests\test_rag_pipeline.py -q
+uv run pytest tests\unit\backend\application tests\unit\backend\services\test_document_service.py tests\unit\backend\rag\pipeline\test_rag_pipeline.py -q
+uv run pytest tests\unit -q
+uv run pytest tests\integration -m "not slow" -q
+uv run pytest tests\eval tests\regression -q
 ```
+
+测试按执行成本和用途分层：`tests/unit/` 放纯单元测试，`tests/integration/`
+放真实解析器、真实样本文档或基础设施集成测试，`tests/e2e/` 放需要服务或完整
+摄入链路的验证脚本，`tests/eval/` 放 RAG 评测口径测试，`tests/regression/`
+放历史 bug 或指标漂移锁定。共享样本文档位于 `tests/fixtures/documents/`。
 
 手动 smoke：
 
