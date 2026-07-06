@@ -2,38 +2,35 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 
-from backend.infra.db.database import SessionLocal
+from backend.infra.db.database import get_db
 from backend.infra.db.models import DocumentParseMeta
 
 router = APIRouter(prefix="/admin/documents", tags=["admin"])
 
 
 @router.get("/{document_id}/parse_meta")
-async def get_parse_meta(document_id: str):
+async def get_parse_meta(document_id: str, db: Session = Depends(get_db)):
     """Return parse metadata for a document (M6)."""
-    db = SessionLocal()
-    try:
-        row = db.query(DocumentParseMeta).filter(
-            DocumentParseMeta.document_id == document_id
-        ).first()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Parse metadata not found")
-        return {
-            "document_id": row.document_id,
-            "parse_engine": row.parse_engine,
-            "parse_engine_version": row.parse_engine_version,
-            "parse_duration_ms": row.parse_duration_ms,
-            "total_pages": row.total_pages,
-            "watermark_filter_ratio": row.watermark_filter_ratio,
-            "ocr_confidence_avg": row.ocr_confidence_avg,
-            "parse_warnings": row.parse_warnings or [],
-            "hierarchy_validation_warnings": row.hierarchy_validation_warnings or [],
-            "parse_path": row.parse_path,  # M8
-        }
-    finally:
-        db.close()
+    row = db.query(DocumentParseMeta).filter(
+        DocumentParseMeta.document_id == document_id
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Parse metadata not found")
+    return {
+        "document_id": row.document_id,
+        "parse_engine": row.parse_engine,
+        "parse_engine_version": row.parse_engine_version,
+        "parse_duration_ms": row.parse_duration_ms,
+        "total_pages": row.total_pages,
+        "watermark_filter_ratio": row.watermark_filter_ratio,
+        "ocr_confidence_avg": row.ocr_confidence_avg,
+        "parse_warnings": row.parse_warnings or [],
+        "hierarchy_validation_warnings": row.hierarchy_validation_warnings or [],
+        "parse_path": row.parse_path,  # M8
+    }
 
 
 @router.post("/reindex")

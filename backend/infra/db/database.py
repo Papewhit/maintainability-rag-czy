@@ -4,7 +4,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,8 @@ ALLOW_DATABASE_FALLBACK = os.getenv("ALLOW_DATABASE_FALLBACK", "1").strip().lowe
 DATABASE_FALLBACK_USED = False
 DATABASE_FALLBACK_REASON: str | None = None
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 
 def _build_engine(database_url: str):
@@ -62,6 +63,14 @@ def _configure_engine(database_url: str, fallback_reason: str | None = None) -> 
 
 engine = _build_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+
+def get_db():
+    db: Session = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _ensure_runtime_indexes() -> None:

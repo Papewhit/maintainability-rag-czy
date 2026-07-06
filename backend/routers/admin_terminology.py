@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.infra.db.database import SessionLocal
+from backend.infra.db.database import get_db
 from backend.infra.db.models import TerminologyEntryModel, AuditLog
 from backend.rag.terminology.rescan import get_task_status, is_rescan_running, run_rescan
 from backend.rag.terminology.table import (
@@ -76,17 +76,6 @@ class TerminologyStats(BaseModel):
     entry_count: int
     surface_count: int
     loaded: bool
-
-
-# --- Dependencies ---
-
-
-def _get_db() -> Session:
-    db = SessionLocal()
-    try:
-        return db
-    finally:
-        db.close()
 
 
 def _rebuild_memory_table(db: Session) -> None:
@@ -165,7 +154,7 @@ def query_rescan_progress(
 def list_entries(
     entity_type: str | None = Query(None, description="Filter by entity type"),
     _: Any = Depends(require_admin),
-    db: Session = Depends(_get_db),
+    db: Session = Depends(get_db),
 ) -> list[TerminologyEntryResponse]:
     query = db.query(TerminologyEntryModel)
     if entity_type:
@@ -178,7 +167,7 @@ def list_entries(
 def get_entry(
     entry_id: int,
     _: Any = Depends(require_admin),
-    db: Session = Depends(_get_db),
+    db: Session = Depends(get_db),
 ) -> TerminologyEntryResponse:
     row = db.query(TerminologyEntryModel).filter(TerminologyEntryModel.id == entry_id).first()
     if not row:
@@ -190,7 +179,7 @@ def get_entry(
 def create_entry(
     body: TerminologyEntryRequest,
     current_user: Any = Depends(require_admin),
-    db: Session = Depends(_get_db),
+    db: Session = Depends(get_db),
 ) -> TerminologyEntryResponse:
     _check_not_rescanning()
     _validate_entry(body)
@@ -228,7 +217,7 @@ def update_entry(
     entry_id: int,
     body: TerminologyEntryRequest,
     current_user: Any = Depends(require_admin),
-    db: Session = Depends(_get_db),
+    db: Session = Depends(get_db),
 ) -> TerminologyEntryResponse:
     _check_not_rescanning()
     _validate_entry(body)
@@ -257,7 +246,7 @@ def update_entry(
 def delete_entry(
     entry_id: int,
     current_user: Any = Depends(require_admin),
-    db: Session = Depends(_get_db),
+    db: Session = Depends(get_db),
 ) -> None:
     _check_not_rescanning()
     row = db.query(TerminologyEntryModel).filter(TerminologyEntryModel.id == entry_id).first()
@@ -276,7 +265,7 @@ def delete_entry(
 def bulk_import(
     file: UploadFile,
     current_user: Any = Depends(require_admin),
-    db: Session = Depends(_get_db),
+    db: Session = Depends(get_db),
 ) -> BulkImportResult:
     """Import terminology entries from CSV or JSON file.
 
