@@ -115,7 +115,7 @@ class BootstrapTests(unittest.TestCase):
             shutil.rmtree(stub_root, ignore_errors=True)
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertIn("SuperHermes", result.stdout)
+        self.assertIn("Ragtenance", result.stdout)
 
 
 if __name__ == "__main__":

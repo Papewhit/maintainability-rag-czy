@@ -1,14 +1,14 @@
-# SuperHermes
+# Ragtenance
 
-SuperHermes 是一个面向私有文档知识库的 RAG 问答系统。项目以 FastAPI 后端为核心，连接 PostgreSQL、Redis、Milvus、Embedding 模型和 CrossEncoder reranker，提供账号认证、会话管理、文档上传索引、流式问答和可追溯检索证据。
+Ragtenance 是一个面向私有文档知识库的 RAG 问答系统。项目以 FastAPI 后端为核心，连接 PostgreSQL、Redis、Milvus、Embedding 模型和 CrossEncoder reranker，提供账号认证、会话管理、文档上传索引、流式问答和可追溯检索证据。
 
 它现在已经是独立演进的项目：核心目标不是做一个普通聊天壳，而是把“文档解析 -> 结构化索引 -> 多阶段检索 -> 证据重排 -> 可诊断回答”做成一条稳定、可评测、可维护的本地知识库流水线。
 
 ## 项目定位
 
-SuperHermes 适合这些场景：
+Ragtenance 适合这些场景：
 
-| 场景 | SuperHermes 的处理方式 |
+| 场景 | Ragtenance 的处理方式 |
 | --- | --- |
 | 私有文档问答 | 管理员上传 PDF、Word、Excel，系统自动解析并索引到 Milvus |
 | 技术手册检索 | 通过文件名、页码、标题、章节和 chunk/root 证据做多层定位 |
@@ -95,7 +95,7 @@ POST /documents/upload
 
 ## RAG 设计
 
-SuperHermes 的 RAG 不是单一向量召回，而是多阶段证据筛选：
+Ragtenance 的 RAG 不是单一向量召回，而是多阶段证据筛选：
 
 1. **QueryPlan 与文件范围识别**：从问题中提取可能的文件名、章节、页码或标题提示，优先缩小搜索空间。
 2. **混合召回**：使用 dense embedding 与 sparse/BM25 信息共同召回候选，再用 RRF 合并。

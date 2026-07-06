@@ -40,6 +40,13 @@ uv run pytest tests/ -m "slow" -v
 
 This is a **RAG (Retrieval-Augmented Generation) Q&A system** for private document knowledge bases. FastAPI backend, static Vue CDN frontend, backed by PostgreSQL + Redis + Milvus + local embedding/reranker models.
 
+The [architecture contract](docs/ARCHITECTURE.md) is the source of truth for package boundaries, supported entrypoints, import policy, runtime flows, and architecture verification gates.
+
+Agent requirements:
+- Consult `docs/ARCHITECTURE.md` before changing backend structure, imports, entrypoints, router/service boundaries, RAG modules, or infrastructure wiring.
+- Keep implementation changes aligned with the documented architecture contract; do not introduce legacy root imports, undocumented aliases, or new cross-layer dependencies.
+- When a change intentionally alters architecture boundaries, runtime flow, supported entrypoints, or verification gates, update `docs/ARCHITECTURE.md` in the same change.
+
 ### Layer boundaries (top to bottom)
 
 | Layer | Module | Role |
@@ -138,7 +145,7 @@ Refer to `docs/superpowers/specs/2026-05-20-rag-fusion-design.md` for domain bac
 
 Refer to `openspec/` for specs, designs and tasks. You may refer to OpenSpec skills and CLI for better understanding of the directory strucure.
 
-Refer to `docs/superhermes-docs` for implementation details of the legacy system.
+Refer to `docs/ragtenance-docs` for implementation details of the legacy system.
 
 ### Documentation precendence
 

@@ -135,8 +135,8 @@ def _index_version_from_cache(cache_client: Any = None) -> str:
 
 
 def _registry_cache_key(collection: str, index_version: str) -> str:
-    # RedisCache prefixes this logical key with "superhermes:", yielding
-    # superhermes:filename_registry:{collection}:v{milvus_index_version}.
+    # RedisCache prefixes this logical key with "ragtenance:", yielding
+    # ragtenance:filename_registry:{collection}:v{milvus_index_version}.
     return f"filename_registry:{collection}:v{index_version}"
 
 

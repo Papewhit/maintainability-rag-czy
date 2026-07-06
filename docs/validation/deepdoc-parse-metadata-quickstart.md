@@ -115,7 +115,7 @@ uv run uvicorn backend.main:app --reload --log-level debug
 ### parse_meta API 返回 404
 ```bash
 # 直接查询 DB 确认数据是否写入
-psql -U postgres -d superhermes -c "SELECT * FROM document_parse_meta WHERE document_id = '国电电力.pdf';"
+psql -U postgres -d langchain_app -c "SELECT * FROM document_parse_meta WHERE document_id = '国电电力.pdf';"
 ```
 
 ### parse_path 为 null 或 unknown

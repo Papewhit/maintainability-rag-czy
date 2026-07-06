@@ -20,7 +20,7 @@
         return response;
     }
 
-    window.SuperHermesApi = {
+    window.RagtenanceApi = {
         createAuthHeaders,
         authFetch,
     };

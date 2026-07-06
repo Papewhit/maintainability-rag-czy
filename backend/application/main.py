@@ -91,7 +91,7 @@ def _load_seed_csv(db, seed_path: Path) -> None:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="SuperHermes Super Cute Pony Bot API", lifespan=lifespan)
+    app = FastAPI(title="Ragtenance API", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,

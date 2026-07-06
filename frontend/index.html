@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>SuperHermes</title>
+    <title>Ragtenance</title>
     <link rel="icon" href="logo-horse.svg" type="image/svg+xml">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -19,7 +19,7 @@
         <header v-if="isAuthenticated" class="top-nav" aria-label="主导航">
             <button class="brand-lockup" @click="handleNewChat" title="回到新对话">
                 <img class="brand-mark brand-mark-sm" src="logo-horse.svg" alt="" width="34" height="34" aria-hidden="true">
-                <span class="brand-name">SuperHermes</span>
+                <span class="brand-name">Ragtenance</span>
             </button>
 
             <nav class="nav-actions" aria-label="对话操作">
@@ -65,7 +65,7 @@
                 <div class="auth-panel">
                     <img class="brand-mark brand-mark-lg" src="logo-horse.svg" alt="" width="82" height="82" aria-hidden="true">
                     <p class="eyebrow">Ink Intelligence</p>
-                    <h1>{{ authMode === 'login' ? '进入 SuperHermes' : '创建 SuperHermes 账号' }}</h1>
+                    <h1>{{ authMode === 'login' ? '进入 Ragtenance' : '创建 Ragtenance 账号' }}</h1>
                     <p class="auth-copy">登录后可以使用对话、历史记录与知识库检索。</p>
 
                     <div class="auth-form">
@@ -91,8 +91,8 @@
                 <div class="chat-scroll" ref="chatContainer">
                     <div v-if="messages.length === 0" class="welcome-screen">
                         <img class="brand-mark brand-mark-hero" src="logo-horse.svg" alt="" width="112" height="112" aria-hidden="true">
-                        <p class="eyebrow">SuperHermes Online</p>
-                        <h1>有什么想问 SuperHermes？</h1>
+                        <p class="eyebrow">Ragtenance Online</p>
+                        <h1>有什么想问 Ragtenance？</h1>
                         <p>可以检索知识库、分析文档、解释代码，或继续一段已有对话。</p>
                         <div class="prompt-grid">
                             <button @click="usePrompt('解释这个知识库里的核心结论')">解释这个知识库里的核心结论</button>
@@ -211,7 +211,7 @@
                     <div class="panel-heading">
                         <p class="eyebrow">Admin Workbench</p>
                         <h1>知识库</h1>
-                        <p>上传文档后，SuperHermes 会切分、向量化并写入检索库。</p>
+                        <p>上传文档后，Ragtenance 会切分、向量化并写入检索库。</p>
                     </div>
 
                     <div class="upload-zone">

@@ -26,7 +26,7 @@
         };
     }
 
-    window.SuperHermesMessages = {
+    window.RagtenanceMessages = {
         createUserMessage,
         createBotMessage,
     };

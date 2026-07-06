@@ -154,8 +154,8 @@ createApp({
         },
 
         createUserMessage(text, contextFiles = []) {
-            if (window.SuperHermesMessages?.createUserMessage) {
-                return window.SuperHermesMessages.createUserMessage(text, contextFiles);
+            if (window.RagtenanceMessages?.createUserMessage) {
+                return window.RagtenanceMessages.createUserMessage(text, contextFiles);
             }
             return {
                 id: "msg_" + Date.now() + "_" + Math.random().toString(16).slice(2),
@@ -167,8 +167,8 @@ createApp({
         },
 
         createBotMessage(text = "", ragTrace = null) {
-            if (window.SuperHermesMessages?.createBotMessage) {
-                return window.SuperHermesMessages.createBotMessage(text, this.renderMarkdown, ragTrace);
+            if (window.RagtenanceMessages?.createBotMessage) {
+                return window.RagtenanceMessages.createBotMessage(text, this.renderMarkdown, ragTrace);
             }
             return {
                 id: "msg_" + Date.now() + "_" + Math.random().toString(16).slice(2),
@@ -182,8 +182,8 @@ createApp({
         },
 
         authHeaders(extra = {}) {
-            if (window.SuperHermesApi?.createAuthHeaders) {
-                return window.SuperHermesApi.createAuthHeaders(this.token, extra);
+            if (window.RagtenanceApi?.createAuthHeaders) {
+                return window.RagtenanceApi.createAuthHeaders(this.token, extra);
             }
             const headers = { ...extra };
             if (this.token) {
@@ -193,8 +193,8 @@ createApp({
         },
 
         async authFetch(url, options = {}) {
-            if (window.SuperHermesApi?.authFetch) {
-                return window.SuperHermesApi.authFetch(
+            if (window.RagtenanceApi?.authFetch) {
+                return window.RagtenanceApi.authFetch(
                     this.token,
                     () => this.handleLogout(),
                     url,

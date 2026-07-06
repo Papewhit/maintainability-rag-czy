@@ -9,7 +9,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_SQLITE_PATH = BASE_DIR / "data" / "superhermes.db"
+DEFAULT_SQLITE_PATH = BASE_DIR / "data" / "ragtenance.db"
 DEFAULT_DOCKER_DATABASE_URL = "postgresql+psycopg2://postgres:postgres@127.0.0.1:5433/langchain_app"
 _PRIMARY_DATABASE_URL = os.getenv(
     "DATABASE_URL",
