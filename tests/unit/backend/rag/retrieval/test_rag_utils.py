@@ -11,6 +11,11 @@ from backend.rag.runtime_config import load_candidate_strategy_config, load_runt
 
 
 class RagUtilsDiagnosticsTests(unittest.TestCase):
+    def setUp(self):
+        self.filename_registry = patch.object(rag_utils, "get_filename_registry", return_value=[])
+        self.filename_registry.start()
+        self.addCleanup(self.filename_registry.stop)
+
     def test_runtime_config_loads_fake_env_without_reloading_modules(self):
         env = {
             "RAG_CANDIDATE_K": "77",

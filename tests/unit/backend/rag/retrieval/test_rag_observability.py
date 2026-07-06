@@ -10,6 +10,11 @@ import backend.rag.utils as rag_utils  # noqa: E402
 
 
 class RagObservabilityTests(unittest.TestCase):
+    def setUp(self):
+        self.filename_registry = patch.object(rag_utils, "get_filename_registry", return_value=[])
+        self.filename_registry.start()
+        self.addCleanup(self.filename_registry.stop)
+
     def test_retrieve_documents_reports_stage_timings(self):
         docs = [{"text": "d1", "filename": "manual.pdf", "chunk_id": "c1", "score": 0.9}]
 

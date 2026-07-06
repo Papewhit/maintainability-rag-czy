@@ -93,6 +93,11 @@ class FakeMilvusManager:
         return ["Alpha Manual.pdf", "Beta Guide.pdf"]
 
 
+class FailingMilvusManager:
+    def query_unique_filenames(self, filter_expr):
+        raise RuntimeError("milvus unavailable")
+
+
 class FakeRegistryCache:
     def __init__(self, version="7"):
         self.version = version
@@ -148,3 +153,12 @@ class TestFilenameRegistryCache:
 
         assert entries == [{"raw": "Cached.pdf", "normalized": "cached"}]
         assert manager.calls == 0
+
+    def test_registry_returns_empty_when_milvus_query_fails(self, monkeypatch):
+        monkeypatch.setattr("backend.rag.query_plan.MILVUS_COLLECTION", "collection_c")
+        fake_cache = FakeRegistryCache(version="5")
+
+        entries = query_plan.get_filename_registry(FailingMilvusManager(), fake_cache)
+
+        assert entries == []
+        assert fake_cache.set_calls == []
