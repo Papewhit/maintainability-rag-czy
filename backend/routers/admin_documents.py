@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.infra.db.database import get_db
 from backend.infra.db.models import DocumentParseMeta
+from backend.security.auth import require_admin
 
 router = APIRouter(prefix="/admin/documents", tags=["admin"])
 
 
 @router.get("/{document_id}/parse_meta")
-async def get_parse_meta(document_id: str, db: Session = Depends(get_db)):
+async def get_parse_meta(
+    document_id: str,
+    _: Any = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     """Return parse metadata for a document (M6)."""
     row = db.query(DocumentParseMeta).filter(
         DocumentParseMeta.document_id == document_id
@@ -37,6 +44,7 @@ async def get_parse_meta(document_id: str, db: Session = Depends(get_db)):
 async def batch_reindex(
     filenames: list[str] | None = None,
     profile: str = Query(default="v4_full"),
+    _: Any = Depends(require_admin),
 ):
     """Trigger a batch reindex for the given filenames (M6.4).
 
