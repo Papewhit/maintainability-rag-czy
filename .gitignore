@@ -23,8 +23,6 @@ data/
 
 # Local-only design, evaluation, and maintenance materials
 docs/*
-!docs/validation/
-!docs/validation/**
 eval/
 scripts/
 
