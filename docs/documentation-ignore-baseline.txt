@@ -1,0 +1,8 @@
+# Intentionally local files that predate documentation evidence governance.
+# Glob syntax is evaluated by scripts/validate_documentation.py.
+docs/cloc.txt
+docs/rag-evaluation-system-explained.md
+docs/superhermes-docs/*
+docs/superhermes-project-contributions.md
+docs/superpowers/*/*
+scripts/spike_deepdoc.py

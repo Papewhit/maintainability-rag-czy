@@ -1,3 +1,5 @@
+> **Durable navigation:** Current behavior is documented in `docs/ARCHITECTURE.md`. Long-lived storage decisions are in `docs/architecture/decisions/ADR-0001-parent-leaf-evidence-storage.md`; unresolved schema/history items are in `docs/known-issues/`. This archived design remains historical change evidence.
+
 ## Context
 
 当前项目 BM25 实现位于 `backend/infra/embedding.py` 的 `EmbeddingService`，状态持久化为 JSON 文件，分词依赖 jieba。jieba 默认词典对船舶/机械领域专业术语覆盖不全：

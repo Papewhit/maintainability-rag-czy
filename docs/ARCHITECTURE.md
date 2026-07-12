@@ -1,185 +1,205 @@
+---
+document_type: current_architecture
+status: current
+verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
+last_verified_time: 2026-07-12T00:00:00+08:00
+authority: current-system-overview
+---
+
 # SuperHermes Architecture
 
-## Overview
+## Purpose and Evidence Boundary
 
-SuperHermes is a FastAPI + RAG document assistant. The backend is organized as a Python package with canonical `backend.*` imports. Legacy bare imports such as `import rag_utils`, `import database`, and `from document_loader import ...` are intentionally unsupported.
+This is the single current-system overview for SuperHermes. Stable contracts live in `openspec/specs/`; rationale, known issues, enhancements, and reproducible evidence live in the governed locations defined by [Evidence Governance](evidence-governance.md).
 
-The backend root now contains only entrypoints, package metadata, data, and real package directories. Former root alias modules have been deleted.
+Current facts were verified against commit `8babe339cda636936c6c0af3c95a99e7c77c2f19` on 2026-07-12 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
 
-Runtime RAG naming uses the short profile format documented in [rag-profile-naming.md](rag-profile-naming.md), for example `K2 / I2 / M0 / A1 / fp16`.
-
-## Runtime Flow
+## System Context and Components
 
 ```text
-Frontend
-  -> backend.app
-  -> backend.application.main
-  -> backend.api
-  -> backend.routers.*
-  -> backend.services.*
-  -> backend.chat / backend.rag
-  -> backend.infra
-  -> PostgreSQL, Redis, Milvus
+Browser UI -> HTTP/SSE -> FastAPI -> routers -> services
+                                      |-> document ingestion
+                                      |-> chat agent -> RAG runtime
+                                      `-> PostgreSQL / Redis / Milvus / BM25 state
 ```
 
-RAG answer flow:
+| Component | Responsibility | Implementation |
+| --- | --- | --- |
+| Application | FastAPI lifecycle, CORS, static UI | `backend/application/main.py` |
+| HTTP | Router registry, auth, documents, sessions, chat/SSE | `backend/api.py`, `backend/routers/` |
+| Services | Upload/delete and chat use cases | `backend/services/` |
+| Chat | Tool invocation and answer workflow | `backend/chat/` |
+| Documents | Parse, normalize, chunk, annotate | `backend/documents/` |
+| RAG | Candidates, rerank, postprocess, trace | `backend/rag/` |
+| Infrastructure | Embedding, database, cache, vector/parent storage | `backend/infra/` |
+
+Canonical imports use `backend.*`. The backend root contains only `backend/__init__.py`, `backend/api.py`, `backend/app.py`, data, and real packages; legacy bare-module aliases are unsupported.
+
+## Ingestion Pipeline
 
 ```text
-User question
-  -> backend.chat.agent
-  -> backend.chat.tools
-  -> backend.rag.pipeline
-  -> backend.rag.utils
-  -> backend.rag retrieval/rerank/context/confidence modules
-  -> backend.infra.vector_store and backend.infra.db
+DocumentService
+  -> Adapter Registry
+  -> DeepDoc Parse Adapter (PDF/DOCX; DOC registered but limited) or Excel Parse Adapter (XLS/XLSX)
+  -> ParsedDocument
+  -> Structure Normalizer
+       heading tree -> list groups -> figure associations
+       -> table validation -> nearby-block association
+  -> Maintainability Chunker
+  -> terminology scan (profile/table availability gated)
+  -> parent/leaf split
+       level 1/2 -> ParentChunkStore -> PostgreSQL (+ Redis read cache)
+       level 3   -> dense+sparse embedding -> MilvusWriter -> Milvus
+                   `-> incremental BM25 statistics
 ```
 
-## Backend Root Contract
+| Stage | Path | Contract |
+| --- | --- | --- |
+| Registry | `backend/documents/parse_adapter/registry.py` | Extension dispatch. Registered adapter failure is fatal; it does not fall back to the legacy loader. |
+| DeepDoc | `backend/documents/parse_adapter/deepdoc/adapter.py` | PDF/DOCX parsing, OCR, layout, tables, figures, and parse metadata. `.doc` is registered but currently routed through the DOCX parser without legacy-DOC conversion. |
+| Excel | `backend/documents/parse_adapter/excel.py` | XLS/XLSX parsing into the common parsed model. |
+| Parse contract | `backend/documents/parse_adapter/base.py` | Parsed document, blocks, tables, figures, parse metadata. |
+| Normalizer | `backend/documents/normalizer/pipeline.py` | Deterministic structural enrichment. |
+| Chunker | `backend/documents/chunker/step_chunker.py` | Maintainability-aware root/leaf emission. |
+| Conversion | `backend/documents/parse_adapter/converters.py` | Runs normalizer/chunker, tables, figures, terminology. |
+| Storage split | `backend/services/document_service.py` | Requires leaves; replaces filename/profile data; stores parents before leaves. |
 
-Allowed root Python files:
+Only an unregistered extension can reach the legacy `DocumentLoader`. Parse metadata persistence is best-effort; adapter parsing and leaf generation are required for upload success.
+
+### Terminology and Rescan
+
+`backend/rag/terminology/` owns the database-backed terminology table, Aho-Corasick matching, jieba dictionary, query preflight, and rescan. Inline scan writes `entity_types`, `term_match_count`, `term_matches`, and `protected_tokens` when `v4_full` is active and the table is loaded; otherwise it safely leaves empty signals.
+
+`backend/rag/terminology/rescan.py` is intended to update existing Milvus and ParentChunkStore metadata without re-chunking. Its current implementation snapshots Milvus and BM25 state, but uses leaf IDs when reading/writing ParentChunkStore; that violates the level 1/2 parent-only contract and makes parent rollback unreliable. Treat rescan as unsafe for parent metadata until [KI-RAG-0003](known-issues/terminology-rescan-parent-contract.md) is resolved.
+
+## Chunk Metadata and Storage Contract
+
+`MaintenanceChunk` in `backend/documents/chunker/base.py` is the canonical model.
+
+| Field | Contract |
+| --- | --- |
+| `chunk_id` | Stable display identity; non-legacy profiles may prefix storage identity. |
+| `chunk_level` | `1` root, `2` optional middle/parent, `3` retrieval leaf. |
+| `chunk_role` | `root` context or `leaf` retrieval unit. |
+| `parent_chunk_id`, `root_chunk_id` | Immediate context parent and top evidence root. |
+| `text`, `retrieval_text` | Evidence body and search-oriented leaf text. |
+| section/anchor fields | `section_title`, `section_type`, `section_path`, `anchor_id`. |
+| list fields | `list_group_id`, `list_order`, `parent_list_order`, `list_marker`, `list_level`, `list_complete`. Parent subgroup order is 1-based for step-chain repair. |
+| table/figure fields | IDs and roles for structured evidence. |
+| terminology fields | Entity types, match count, detailed matches, protected tokens. |
+| `parent_extras` | Rich parent-only payload not guaranteed in Milvus. |
+
+`ParentChunkStore` (`backend/infra/vector_store/parent_chunk_store.py`) stores level 1/2 context in PostgreSQL and caches reads in Redis. `MilvusWriter` (`backend/infra/vector_store/milvus_writer.py`) writes only level 3 leaves with dense and sparse vectors.
+
+Step-chain repair uses two hops: query Milvus leaf metadata by `filename + index_profile + list_group_id + parent_list_order`, deduplicate `parent_chunk_id`, then hydrate complete parents from ParentChunkStore. Milvus is not the complete-parent authority.
+
+## Embedding and Candidate Retrieval
+
+`backend/infra/embedding.py` produces configured dense embeddings and BM25-style sparse vectors using jieba and persisted corpus statistics. `BM25_STATE_PATH` selects the JSON state. `RAG_INDEX_PROFILE` does not automatically change this path, so profile isolation requires an explicitly distinct `BM25_STATE_PATH`; see [KI-RAG-0004](known-issues/bm25-profile-isolation.md). Upload/delete/rescan update or rebuild statistics. Unreadable state degrades to empty in-memory statistics.
+
+`backend/infra/vector_store/milvus_client.py`, `backend/rag/retrieval.py`, and `backend/rag/utils.py` perform dense+sparse hybrid search, RRF, document-scope filtering/boosting, normalization, dedupe, and dense fallback when hybrid retrieval fails.
+
+Candidate strategies:
+
+- **standard** (default): global/scoped hybrid candidates, then shared rerank/postprocess.
+- **layered** (implemented, default disabled): `backend/rag/layered_candidates.py` builds file-aware L0/L1 pools with scope, anchor, route, and diversity guarantees, then uses the same shared L2 rerank and L3 postprocess.
+
+Invalid `RAG_CANDIDATE_STRATEGY` values fall back to standard with a trace warning. `dense_fallback` is an effective failure mode, not a configured strategy.
+
+## Shared Evidence Postprocess
+
+`finish_retrieval_pipeline()` in `backend/rag/utils.py` fixes this order:
 
 ```text
-backend/__init__.py
-backend/api.py
-backend/app.py
+rerank
+  -> auto_merge
+  -> step_chain_check
+  -> structure_rerank
+  -> top_k_truncate
+  -> confidence_gate
 ```
 
-Allowed root package directories:
+| Stage | Responsibility | Default |
+| --- | --- | --- |
+| rerank | Optional local CrossEncoder; optional entity-aware score fusion/cache. | Disabled until `RERANK_MODEL` is set. |
+| auto merge | Replace same-parent leaves with complete parent context. | Enabled. |
+| step-chain check | Repair incomplete list/step evidence through two-hop lookup. | Disabled. |
+| structure rerank | Root/leaf structure scoring and same-root cap. | Enabled. |
+| top-k truncate | Select evidence delivered to answer generation. | Always. |
+| confidence gate | Evaluate the final top-k margin, concentration, score, anchors. | Disabled. |
 
-```text
-backend/application/
-backend/chat/
-backend/contracts/
-backend/data/
-backend/documents/
-backend/evaluation/
-backend/infra/
-backend/rag/
-backend/routers/
-backend/security/
-backend/services/
-backend/shared/
-```
+Every recoverable stage catches its own failure, passes the preceding output to later safe stages, and records a structured stage error, skip/error state, and timing. A single postprocess failure must not erase usable evidence.
 
-`backend/__init__.py` must not mutate `sys.path` or register `sys.modules` aliases.
+### Entity Fusion and Codec Boundary
 
-## Application And HTTP
+Query terminology matches feed `backend/rag/rerank.py`. It computes entity type coverage and match density; optional score fusion combines normalized rerank, RRF, scope, and metadata signals. When entity signals are absent, established generic metadata behavior remains.
 
-| Path | Responsibility |
+Runtime `entity_types` is `list[str]`. `backend/infra/vector_store/metadata_codec.py` encodes compact JSON text for the Milvus wire boundary with a 512-byte maximum. Retrieval accepts JSON strings and legacy array-like values, deduplicates values, and degrades malformed/scalar/nested data to `[]`.
+
+## State Responsibilities
+
+| System | Responsibility |
 | --- | --- |
-| `backend/app.py` | ASGI/script entrypoint; contains the only script-mode bootstrap for `python backend/app.py` |
-| `backend/application/main.py` | FastAPI app factory, lifespan, CORS, static mount |
-| `backend/api.py` | Router registry only |
-| `backend/routers/auth.py` | Auth HTTP routes |
-| `backend/routers/chat.py` | Chat and streaming HTTP routes |
-| `backend/routers/sessions.py` | Session HTTP routes |
-| `backend/routers/documents.py` | Document HTTP routes |
-| `backend/services/chat_service.py` | Chat use-case facade |
-| `backend/services/document_service.py` | Document list/upload/delete orchestration |
-| `backend/contracts/schemas.py` | Pydantic request/response contracts |
-| `backend/security/auth.py` | Authentication, password hashing, JWT, authorization dependencies |
+| PostgreSQL | Users, sessions/messages, document records, parse metadata, terminology/rescan tasks, durable parents. |
+| Redis | Session/data caches, parent read cache, rerank cache, index/filename signals; never durable authority. |
+| Milvus | Dense+sparse leaf vectors and retrieval metadata; not complete parent bodies. |
+| BM25 state | Sparse corpus statistics for the selected state file; not a document or vector store. |
 
-Rules:
+The unset index profile is backward-compatible `legacy`. Profiles logically isolate Milvus records/IDs within the configured collection, parent keys, and trace identity. BM25 isolation is manual through `BM25_STATE_PATH`.
 
-- Routers own HTTP request/response concerns.
-- Services own use-case orchestration.
-- `backend/api.py` stays a router registry and does not hold business logic.
-- Entry compatibility belongs in `backend/app.py`, not `backend/__init__.py`.
+## Trace, Evaluation, and Degradation
 
-## RAG Core
+Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers requested/effective/fallback strategy, counts, stage status/errors/timings, fusion/entity coverage, final top-k, and confidence.
 
-| Path | Responsibility |
-| --- | --- |
-| `backend/rag/utils.py` | RAG helper/facade behavior and retrieval orchestration |
-| `backend/rag/pipeline.py` | LangGraph RAG workflow |
-| `backend/rag/query_plan.py` | Query planning, document-scope matching, route selection |
-| `backend/rag/retrieval.py` | Dense+sparse retrieval helpers, filename boost, dedupe |
-| `backend/rag/rerank.py` | Rerank provider calls, pair enrichment, score fusion |
-| `backend/rag/context.py` | Context assembly, parent merge, structure/root rerank |
-| `backend/rag/confidence.py` | Retrieval confidence gate and anchor matching |
-| `backend/rag/diagnostics.py` | Retrieval failure classification and diagnostics |
-| `backend/rag/layered_rerank.py` | Experimental layered rerank helpers |
-| `backend/rag/profiles.py` | Index profile normalization and chunk ID prefixing |
-| `backend/rag/rules.py` | Shared heading/title/anchor parsing rules |
-| `backend/rag/trace.py` | Candidate identity, text hashing, golden trace signatures |
-| `backend/rag/types.py` | Shared RAG trace/error types |
-| `backend/config.py` | Environment parsing helpers and base runtime values |
+Evaluation lives under `tests/eval/`, `tests/regression/`, and `backend/evaluation/`. Reports must bind a commit and source fingerprint and distinguish deterministic substitutes from real models/infrastructure. Microbenchmarks are not production-capacity evidence.
 
-## Data And Infra
+Degradation rules include hybrid-to-dense fallback, candidate preservation when rerank is absent/fails, preceding-output preservation across postprocess failures, malformed entity data to `[]`, no-op terminology when unavailable, and fatal registered-adapter parse failure.
 
-| Path | Responsibility |
-| --- | --- |
-| `backend/infra/cache.py` | Redis cache wrapper |
-| `backend/infra/embedding.py` | Embedding model/runtime management |
-| `backend/infra/db/database.py` | Database engine/session setup |
-| `backend/infra/db/models.py` | SQLAlchemy ORM models |
-| `backend/infra/db/conversation_storage.py` | Chat history persistence and read-through cache |
-| `backend/infra/vector_store/milvus_client.py` | Milvus client and search operations |
-| `backend/infra/vector_store/milvus_writer.py` | Milvus write/index orchestration |
-| `backend/infra/vector_store/parent_chunk_store.py` | Parent chunk storage for context expansion |
+## Feature Status Matrix
 
-## Documents And Shared Helpers
+| Capability | Status | Code/default evidence |
+| --- | --- | --- |
+| Adapter Registry + DeepDoc/Excel | Default enabled | registry registrations |
+| Normalizer + Maintainability Chunker | Default enabled | `parsed_to_chunks()` |
+| Legacy index profile | Default enabled | unset `RAG_INDEX_PROFILE` |
+| Dense+sparse retrieval and dense failure fallback | Default enabled | retrieval pipeline |
+| Standard candidate strategy | Default enabled | unset strategy |
+| Auto merge | Default enabled | `AUTO_MERGE_ENABLED=true` |
+| Structure rerank | Default enabled | `STRUCTURE_RERANK_ENABLED=true` |
+| Rerank cache | Default enabled when rerank exists | `RERANK_CACHE_ENABLED=true` |
+| CrossEncoder rerank | Implemented, default disabled | `RERANK_MODEL` unset |
+| Layered candidates | Implemented, default disabled | `RAG_CANDIDATE_STRATEGY=layered` |
+| Step-chain check | Implemented, default disabled | `STEP_CHAIN_CHECK_ENABLED=false` |
+| Confidence gate | Implemented, default disabled | `CONFIDENCE_GATE_ENABLED=false` |
+| Rerank score fusion | Implemented, default disabled | `RERANK_SCORE_FUSION_ENABLED=false` |
+| Pair enrichment / heading lexical | Implemented, default disabled | both flags false |
+| Query plan | Implemented, default disabled | `QUERY_PLAN_ENABLED=false` |
+| Unified execution/fallback scaffolding | Implemented, default disabled | both runtime flags false |
+| Citation verification | Implemented, default disabled | citation flag false |
+| Intent routing | Planned, not implemented | `openspec/changes/rag-intent-routing/` |
+| Multilevel fallback | Planned, not implemented | `openspec/changes/rag-multilevel-fallback/` |
 
-| Path | Responsibility |
-| --- | --- |
-| `backend/documents/loader.py` | Document parsing and chunking |
-| `backend/shared/filename_normalization.py` | Filename normalization |
-| `backend/shared/json_utils.py` | JSON extraction helpers |
-| `backend/evaluation/answer_eval.py` | Offline answer generation/evaluation helpers |
+Planned changes are excluded from active diagrams and do not override current defaults.
 
-## Import Policy
+## Known Limitations and Navigation
 
-Supported:
+- Entity metadata uses Milvus dynamic fields; explicit schema migration remains unresolved.
+- Historical entity metadata has mixed shapes; runtime compatibility exists, storage normalization does not.
+- Retrieval output mapping is manually maintained across paths.
+- Entity metadata data-quality observability is limited.
+- Step-chain and confidence remain default disabled pending broader production evidence.
+- Terminology rescan currently violates the parent-only store contract and has unreliable parent rollback.
+- `.doc` is registered but lacks a legacy-DOC conversion/parser path.
+- Index profiles do not automatically isolate BM25 state.
 
-```python
-from backend.rag.utils import retrieve_documents
-from backend.rag.pipeline import run_rag_graph
-from backend.infra.db.database import init_db
-from backend.infra.vector_store.milvus_client import MilvusManager
-from backend.documents.loader import DocumentLoader
-```
+See [Evidence Governance](evidence-governance.md), [ADRs](architecture/decisions/), [known issues](known-issues/), [enhancements](enhancements/), [validation](validation/), [postprocess pipeline](rag-postprocess-evidence/pipeline.md), [OpenSpec changes](../openspec/changes/), and [stable specs](../openspec/specs/).
 
-Unsupported:
-
-```python
-import rag_utils
-import rag_pipeline
-import database
-from document_loader import DocumentLoader
-```
-
-Also unsupported:
+## Architecture Verification
 
 ```powershell
-PYTHONPATH=backend python -c "import rag_utils"
-```
-
-## Supported Entrypoints
-
-```powershell
-uv run uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
-uv run python backend/app.py
-```
-
-`python backend/app.py` is entrypoint compatibility only. It does not imply support for legacy root imports.
-
-## Verification Gates
-
-Standard gates for architecture cleanup:
-
-```powershell
-uv run pytest tests/ -q
-uv run ruff check backend/ scripts/ tests/
-uv run python -m compileall backend scripts
-node --check frontend\script.js
-node --check frontend\src\api.js
-node --check frontend\src\messages.js
-node frontend\ui-redesign.test.mjs
-```
-
-RAG performance smoke:
-
-```powershell
-uv run python scripts\evaluate_rag_matrix.py --dataset-profile smoke --variants B0 --skip-reindex --limit 1 --run-id post-cleanup-smoke
-uv run python scripts\evaluate_rag_matrix.py --dataset-profile smoke --variants B0 --mode graph --skip-reindex --limit 1 --run-id post-cleanup-graph-smoke
+python scripts/validate_documentation.py
+uv run pytest tests/unit/docs -q
+uv run pytest tests/unit/backend/documents tests/unit/backend/rag tests/unit/backend/infra/vector_store -q
+openspec status --change documentation-evidence-governance --json
+uv run python -c "from backend.rag.runtime_config import load_runtime_config; print(load_runtime_config({}))"
 ```

@@ -1,3 +1,12 @@
+---
+document_type: behavior_evidence
+status: current
+scope: rag.postprocess
+source_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
+source_fingerprint: sha256:41b32e61844e1c0a0b3c6011e38609e3033b321b26d07eba638fdb6a1e1423a7
+executed_at: 2026-07-12T00:00:00+08:00
+---
+
 # RAG 证据后处理管线
 
 检索候选进入固定的证据后处理顺序：

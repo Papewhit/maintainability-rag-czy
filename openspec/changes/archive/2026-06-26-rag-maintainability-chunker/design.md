@@ -1,3 +1,5 @@
+> **Durable navigation:** Current behavior is documented in `docs/ARCHITECTURE.md`. The parent/leaf storage contract is in `docs/architecture/decisions/ADR-0001-parent-leaf-evidence-storage.md`. This archived design remains historical change evidence.
+
 ## Context
 
 当前 `DocumentLoader` 是个一体化模块，"读文件 → 切 chunk" 一次完成，中间没有可重用的中间结构。在融合方案下要求：

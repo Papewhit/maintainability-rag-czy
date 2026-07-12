@@ -1,3 +1,11 @@
+---
+document_type: troubleshooting
+status: current
+scope: rag.postprocess
+last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
+last_verified_time: 2026-07-12T00:00:00+08:00
+---
+
 # RAG 证据组织排障指南
 
 先查看 `rag_trace.stage_errors`，再按阶段查看 `rag_trace.timings` 和候选计数。

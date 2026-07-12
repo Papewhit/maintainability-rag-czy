@@ -107,7 +107,10 @@ class MilvusManager:
         retries: int = 2,
         operation_name: str = "milvus_operation",
     ) -> Any:
-        """Execute an operation with fresh client creation on each attempt."""
+        """
+        Execute an operation with fresh client creation on each attempt. 
+        Similar to db.execute(), but accepts a callable that takes a MilvusClient.
+        """
         backoff = float(os.getenv("MILVUS_RECONNECT_BACKOFF_SECONDS", "0.05"))
 
         last_exc: Exception | None = None

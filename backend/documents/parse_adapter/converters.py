@@ -1,11 +1,8 @@
-"""Convert ParsedDocument to legacy chunk-dict format.
+"""Normalize and chunk ParsedDocument into the storage-facing dict contract.
 
-Bridge between the new ParseAdapter output and the existing
-DocumentService → ParentChunkStore / MilvusWriter pipeline.
-
-The conversion is minimal — simple text splitting with no
-maintainability awareness.  The Maintainability Chunker (M2+)
-will replace this once complete.
+This bridge runs the active Structure Normalizer and Maintainability Chunker,
+adds profile-gated table/figure/terminology metadata, and returns the root/leaf
+records consumed by DocumentService, ParentChunkStore, and MilvusWriter.
 """
 
 from __future__ import annotations

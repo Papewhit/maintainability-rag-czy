@@ -1,3 +1,14 @@
+---
+document_type: validation_report
+validation_id: VAL-RAG-POSTPROCESS-001
+status: partial
+scope: evaluation.rag
+source_commit: c64d228b22ff0d647bc1fec717cc2479a1487b89
+source_fingerprint: sha256:41b32e61844e1c0a0b3c6011e38609e3033b321b26d07eba638fdb6a1e1423a7
+executed_at: 2026-07-11T00:00:00+08:00
+source_findings: []
+---
+
 # RAG 后处理证据链评测报告
 
 ## 可复核来源

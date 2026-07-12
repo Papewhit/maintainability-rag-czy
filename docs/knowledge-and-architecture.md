@@ -1,3 +1,13 @@
+---
+document_type: historical_architecture
+status: superseded
+superseded_by: docs/ARCHITECTURE.md
+last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
+last_verified_time: 2026-07-12T00:00:00+08:00
+---
+
+> **Superseded:** This historical architecture snapshot is not a current-system authority. See [ARCHITECTURE.md](ARCHITECTURE.md).
+
 # SuperHermes 项目完整知识梳理与架构解析
 
 ## 一、项目定位

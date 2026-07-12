@@ -23,8 +23,15 @@ data/
 
 # Local-only design, evaluation, and maintenance materials
 docs/*
+!docs/architecture/
+!docs/enhancements/
+!docs/findings/
+!docs/known-issues/
+!docs/templates/
+docs/evidence-catalog.md
 eval/
-scripts/
+scripts/*
+!scripts/validate_documentation.py
 
 # Eval reports (large, regenerated)
 eval/reports/
