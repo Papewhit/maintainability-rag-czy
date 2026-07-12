@@ -61,6 +61,7 @@ class MilvusWriter:
                     "block_type": doc.get("block_type", "paragraph"),
                     "list_group_id": doc.get("list_group_id", ""),
                     "list_order": doc.get("list_order"),
+                    "parent_list_order": doc.get("parent_list_order"),
                     "list_marker": doc.get("list_marker", ""),
                     "list_level": doc.get("list_level"),
                     "list_complete": doc.get("list_complete", True),

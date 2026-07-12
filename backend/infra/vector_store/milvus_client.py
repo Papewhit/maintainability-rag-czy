@@ -20,7 +20,7 @@ _RETRIEVAL_OUTPUT_FIELDS = [
     "index_profile",
     "section_title", "section_type", "section_path", "anchor_id",
     "block_type",
-    "list_group_id", "list_order", "list_marker", "list_level", "list_complete",
+    "list_group_id", "list_order", "parent_list_order", "list_marker", "list_level", "list_complete",
     "table_id", "table_role",
     "figure_id", "figure_role",
     "entity_types", "term_match_count",

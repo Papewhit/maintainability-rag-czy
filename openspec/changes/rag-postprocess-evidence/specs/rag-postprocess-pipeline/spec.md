@@ -46,7 +46,15 @@ rerank 输出量 MUST 由 `RERANK_CANDIDATE_POOL_SIZE` 控制（默认 20），S
 
 #### Scenario: 检测到截断
 - **WHEN** top-3 chunk 中包含一个 list_complete=false 且 list_order=2 的 chunk
-- **THEN** step_chain_check 通过 Milvus query 拉取同 list_group_id 的 list_order=1 和 list_order=3 的相邻 parent；将未在结果中的相邻 chunk 追加到候选列表；trace 中 `step_chain_repaired_groups` 包含该 list_group_id
+- **THEN** step_chain_check 通过 Milvus 查询同 list_group_id 且 parent_list_order=1/3 的 leaf metadata，去重得到 parent_chunk_id，再从 ParentChunkStore 批量加载相邻 parent；将未在结果中的 parent 追加到候选列表；trace 中 `step_chain_repaired_groups` 包含该 list_group_id
+
+#### Scenario: leaf 与 parent 序号语义隔离
+- **WHEN** 一个 leaf 的原始列表项 list_order 与其所属 parent subgroup 序号不同
+- **THEN** leaf 的 `list_order` MUST 保留原始列表项序号，`parent_list_order` MUST 记录 1-based parent subgroup 序号；相邻 parent 查询 MUST 使用 `parent_list_order`，MUST NOT 将两种序号混用
+
+#### Scenario: Milvus 只存 leaf
+- **WHEN** 正常 ingestion 将 parent 写入 ParentChunkStore、将 leaf 写入 Milvus
+- **THEN** 相邻查询 MUST 在 Milvus 使用 chunk_level=3 定位 parent_chunk_id，MUST NOT 查询不存在的 chunk_level=1 Milvus 记录；完整 parent 内容 MUST 从 ParentChunkStore 获取
 
 #### Scenario: 完整步骤无操作
 - **WHEN** top-K 中所有 chunk 的 list_complete=true 或 list_order=1
@@ -55,6 +63,10 @@ rerank 输出量 MUST 由 `RERANK_CANDIDATE_POOL_SIZE` 控制（默认 20），S
 #### Scenario: 缺失 list_group_id 降级
 - **WHEN** chunk 未携带 list_group_id（如来自旧 profile）
 - **THEN** step_chain_check 对这些 chunk 跳过；trace 中 `step_chain_check_enabled=true` 但 `step_chain_repaired_groups=[]`
+
+#### Scenario: leaf 缺失 parent_list_order 降级
+- **WHEN** 旧索引中的 leaf 未携带 parent_list_order
+- **THEN** Milvus 定位结果为空并安全降级，不解析 chunk_id 猜测 parent 序号；重新启用 step_chain 前需要重建索引
 
 #### Scenario: lookback 窗口限制
 - **WHEN** STEP_CHAIN_ADJACENT_LOOKBACK=2

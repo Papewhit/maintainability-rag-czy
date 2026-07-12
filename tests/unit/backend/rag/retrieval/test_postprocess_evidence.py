@@ -402,21 +402,37 @@ def test_step_chain_check_limits_window_dedupes_and_handles_groups_independently
     assert meta["step_chain_completion_count"] == 2
 
 
-def test_fetch_adjacent_chunks_queries_parent_chunks_with_bounded_orders():
-    with patch.object(rag_utils._milvus_manager, "query", return_value=[{"chunk_id": "g1-parent"}]) as query:
+def test_fetch_adjacent_chunks_locates_parent_ids_via_leaf_metadata_then_hydrates_parents():
+    leaf_refs = [
+        {"parent_chunk_id": "g1-parent-3", "parent_list_order": 3},
+        {"parent_chunk_id": "g1-parent-1", "parent_list_order": 1},
+        {"parent_chunk_id": "g1-parent-3", "parent_list_order": 3},
+    ]
+    parents = [
+        {"chunk_id": "g1-parent-1", "list_group_id": 'group "one"', "list_order": 1},
+        {"chunk_id": "g1-parent-3", "list_group_id": 'group "one"', "list_order": 3},
+    ]
+
+    with (
+        patch.object(rag_utils._milvus_manager, "query_all", return_value=leaf_refs) as query,
+        patch.object(rag_utils, "_get_parent_chunk_store") as get_store,
+    ):
+        get_store.return_value.get_documents_by_ids.return_value = parents
         rows = rag_utils._fetch_adjacent_chunks(
             'group "one"', [1, 3], filename="manual.pdf", index_profile="v4"
         )
 
-    assert rows == [{"chunk_id": "g1-parent"}]
+    assert rows == parents
     kwargs = query.call_args.kwargs
     assert 'list_group_id == "group \\u0022one\\u0022"' not in kwargs["filter_expr"]
     assert "list_group_id ==" in kwargs["filter_expr"]
-    assert "list_order in [1, 3]" in kwargs["filter_expr"]
-    assert "chunk_level == 1" in kwargs["filter_expr"]
+    assert "parent_list_order in [1, 3]" in kwargs["filter_expr"]
+    assert "chunk_level == 3" in kwargs["filter_expr"]
     assert 'filename == "manual.pdf"' in kwargs["filter_expr"]
     assert 'index_profile == "v4"' in kwargs["filter_expr"]
-    assert "chunk_id" in kwargs["output_fields"]
+    assert "parent_chunk_id" in kwargs["output_fields"]
+    assert "parent_list_order" in kwargs["output_fields"]
+    get_store.return_value.get_documents_by_ids.assert_called_once_with(["g1-parent-1", "g1-parent-3"])
 
 
 def test_step_chain_check_disabled_is_noop():

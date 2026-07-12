@@ -1,5 +1,12 @@
 # RAG 后处理设计模糊地带与实现决策
 
+## Milvus “拉取相邻 parent”的含义
+
+设计原文把定位与取内容合写成“通过 Milvus query 拉取相邻 parent”，但正常 ingestion 只将
+leaf 写入 Milvus，完整 parent 位于 ParentChunkStore。实现采用两跳契约：Milvus 通过 leaf 的
+`list_group_id + parent_list_order` 定位并去重 `parent_chunk_id`，ParentChunkStore 再 hydrate
+完整 parent。leaf 的 `list_order` 继续表示原始列表项序号，不能代替 parent subgroup 顺序。
+
 ## 1. confidence gate 与 top-k 的先后顺序
 
 - 模糊点：proposal 的概述出现过 `confidence_gate -> top_k_truncate`，delta spec 和 design 的

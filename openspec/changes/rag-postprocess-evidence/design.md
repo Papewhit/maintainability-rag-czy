@@ -135,7 +135,14 @@ def _step_chain_check(docs: list[dict], top_k: int) -> tuple[list[dict], dict]:
     }
 ```
 
-`_fetch_adjacent_chunks` 通过 Milvus query 拉取，按 list_group_id + list_order 过滤。控制 lookback 窗口（默认 ±2）避免无限扩散。
+`_fetch_adjacent_chunks` 使用两跳查询。Milvus 正常只索引 leaf，不存储完整 parent：
+
+1. leaf 保留原始列表项的 `list_order`，另写入 1-based `parent_list_order` 表示所属 parent subgroup；
+2. Milvus 按 filename + index_profile + list_group_id + parent_list_order 查询 leaf metadata，只返回并去重 `parent_chunk_id`；
+3. ParentChunkStore 按这些 ID 批量加载完整 parent，并按目标 parent order 返回。
+
+因此“通过 Milvus query 拉取相邻 parent”是“Milvus 定位 + ParentChunkStore hydrate”的两跳契约，
+不是要求 Milvus 直接存在 `chunk_level=1` 的记录。控制 lookback 窗口（默认 ±2）避免无限扩散。
 
 ### 决策 5：metadata 缺失时的降级
 
@@ -224,13 +231,13 @@ CrossEncoder rerank 时间线性正比于输入数量。从 top_k=5 改为 pool_
 - structure_rerank 计算量也变大，但纯 Python 操作，影响小
 - 监控 P95 延迟，必要时降低 `RERANK_CANDIDATE_POOL_SIZE` 到 10-15
 
-**风险 3：step_chain_check 的 Milvus query 开销**
+**风险 3：step_chain_check 的两跳查询开销**
 
-每次检测到不完整列表组都触发一次 Milvus query 拉相邻 parent。极端情况（多个失败步骤组）会引入多次额外查询。
+每次检测到不完整列表组都会先查询 Milvus leaf metadata，再批量读取 ParentChunkStore。极端情况（多个失败步骤组）会引入多次额外查询。
 
 缓解：
 - lookback 窗口默认 ±2 限制扩散
-- `_fetch_adjacent_chunks` 可批量化（一次 query 拉所有需要的相邻 chunk）
+- Milvus 使用窄 metadata filter 且只返回 parent 引用；ParentChunkStore 按去重 ID 批量读取
 - 监控 `step_chain_ms` trace 字段，超过阈值时告警
 
 **风险 4：chunker 阶段 1 未完成时 step_chain_check 是空 op**
@@ -251,7 +258,7 @@ v1 选 20 作为默认，预期单次 RAG 增加 ~50ms（rerank 慢 30ms + 后�
 
 ## 依赖与衔接
 
-- **软依赖 `rag-maintainability-chunker` 阶段 1**：step_chain_check 需要 list_group_id 字段；缺失时降级为 no-op
+- **软依赖 `rag-maintainability-chunker` 阶段 1**：step_chain_check 需要 list_group_id / parent_list_order 字段；缺失时降级为 no-op
 - **软依赖 `rag-terminology-module`**：score fusion 的 entity 分量需要 entity_types / term_match_count 字段；缺失时分量为 0
 - **被 `rag-multilevel-fallback` 依赖**：Level 2 scope relax 依赖本 change 的 confidence_gate 输出
 - **与 `rag-intent-routing` 协同**：intent 中的 entities 传给 score fusion 作为 query_entities

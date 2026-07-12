@@ -23,6 +23,7 @@
    - top-K parent chunk 是否被截断（list_complete=false 且 list_order != 1）
    - 若是，拉取相邻 parent chunk（同 list_group_id，list_order 紧邻）补齐
    - 输出 trace 字段 `step_chain_completion_count`、`step_chain_repaired_groups`
+   - Milvus 中的 leaf 额外携带 `parent_list_order`；先按 group + parent order 定位相邻 `parent_chunk_id`，再从 ParentChunkStore 批量加载完整 parent
 
 4. **统一后处理管线契约**：把 rerank → auto_merge → step_chain_check → structure_rerank → confidence_gate → top_k_truncate 串成一条管线，每阶段输入输出明确、可单测，并在 trace 中暴露每阶段的耗时和操作统计。
 
@@ -56,7 +57,7 @@
 - 现有 `auto_merge_applied` 字段语义不变，但首次能反映真实值
 
 **依赖：**
-- 软依赖 `rag-maintainability-chunker` 阶段 1（list_group_id 字段）—— step_chain_check 在缺少这些字段时降级为 no-op
+- 软依赖 `rag-maintainability-chunker` 阶段 1（list_group_id / parent_list_order 字段）—— step_chain_check 在缺少这些字段时降级为 no-op
 - 软依赖 `rag-terminology-module`（entity_types / term_match_count）—— score fusion 在缺少这些字段时使用旧行为
 
 **风险与回归：**

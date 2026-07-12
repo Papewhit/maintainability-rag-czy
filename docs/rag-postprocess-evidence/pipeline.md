@@ -26,6 +26,12 @@ rerank
 | top_k_truncate | 排序池 → 最终证据 | `final_top_k_count` |
 | confidence_gate | 最终证据 → fallback 信号 | `fallback_required`、`confidence_reasons`、`confidence_ms` |
 
+step-chain 使用两跳读取。Milvus 仅索引 leaf：leaf 的 `list_order` 保留原始列表项序号，
+`parent_list_order` 记录其所属的 1-based parent subgroup。修复阶段先按
+`filename + index_profile + list_group_id + parent_list_order` 查询 leaf metadata，去重得到
+`parent_chunk_id`，再由 ParentChunkStore 批量加载完整 parent。旧索引缺少
+`parent_list_order` 时安全 no-op，启用该阶段前必须重建索引。
+
 实体 metadata score 使用 query entity type 覆盖率和术语命中密度；只有 query 与 chunk
 双方都带实体字段时才应用。旧索引缺字段时该分量为 0。
 

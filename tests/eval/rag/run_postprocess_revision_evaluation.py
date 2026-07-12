@@ -144,7 +144,13 @@ def main() -> int:
     for case_name, first_rank, second_rank in CASES:
         docs, parent, adjacent = _fixture(case_name, first_rank, second_rank)
         parent_store = MagicMock()
-        parent_store.get_documents_by_ids.return_value = [parent]
+        parent_store.get_documents_by_ids.side_effect = lambda chunk_ids: (
+            [parent] if chunk_ids == [parent["chunk_id"]] else adjacent
+        )
+        adjacent_leaf_refs = [
+            {"parent_chunk_id": item["chunk_id"], "parent_list_order": item["list_order"]}
+            for item in adjacent
+        ]
 
         with ExitStack() as stack:
             settings = {
@@ -179,7 +185,7 @@ def main() -> int:
             )
             if is_current_pipeline:
                 stack.enter_context(
-                    patch.object(rag_utils._milvus_manager, "query", return_value=adjacent)
+                    patch.object(rag_utils._milvus_manager, "query_all", return_value=adjacent_leaf_refs)
                 )
 
             first_result = None

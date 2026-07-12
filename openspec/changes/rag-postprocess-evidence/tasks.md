@@ -24,11 +24,12 @@
 - [x] 3.1 新增配置 `STEP_CHAIN_CHECK_ENABLED`（默认 false，待 chunker 阶段 1 完成后开启）
 - [x] 3.2 新增配置 `STEP_CHAIN_ADJACENT_LOOKBACK`（默认 2）
 - [x] 3.3 实现 `_step_chain_check(docs, top_k)` 函数：检测 list_complete=false 的 chunk，拉取相邻 parent 补齐
-- [x] 3.4 实现 `_fetch_adjacent_chunks(list_group_id, orders)` 通过 Milvus query 批量拉取
+- [x] 3.4 实现 `_fetch_adjacent_chunks(list_group_id, orders)`：通过 Milvus leaf metadata 定位 parent IDs，再从 ParentChunkStore 批量加载完整 parent
 - [x] 3.5 接入 `_finish_retrieval_pipeline()`：auto_merge 之后、structure_rerank 之前
 - [x] 3.6 trace 字段 `step_chain_check_enabled`、`step_chain_repaired_groups`、`step_chain_completion_count`、`step_chain_ms`
 - [x] 3.7 单元测试：mock 不同的 chunk 序列（完整 / 中间断 / 头尾断 / 跨 group），验证修复正确
 - [x] 3.8 缺失 list_group_id 时的降级测试：旧 profile 的 chunk 不触发任何 query，trace 中 repaired_groups 为空
+- [x] 3.9 审查回归：leaf 写入 parent_list_order；真实 ingestion 契约下 Milvus 只返回 parent 引用，ParentChunkStore hydrate 完整 parent
 
 **验收**：在带 list_group_id 的样本上 step_chain_check 工作；旧 profile 上是 no-op；trace 字段齐全。
 

@@ -102,6 +102,16 @@ def test_complete_postprocess_evidence_chain_e2e():
             "score": 0.65,
         },
     ]
+    adjacent_leaf_refs = [
+        {"parent_chunk_id": "parent-first", "parent_list_order": 1},
+        {"parent_chunk_id": "parent-last", "parent_list_order": 3},
+    ]
+
+    def load_parents(chunk_ids):
+        if chunk_ids == ["parent-mid"]:
+            return [parent_mid]
+        assert chunk_ids == ["parent-first", "parent-last"]
+        return adjacent
 
     with (
         patch.object(rag_utils, "RERANK_PROVIDER", "local"),
@@ -124,9 +134,9 @@ def test_complete_postprocess_evidence_chain_e2e():
         patch.object(rag_utils, "ENABLE_ANCHOR_GATE", False),
         patch.object(rag_utils, "_get_local_reranker", return_value=_FakeCrossEncoder()),
         patch.object(rag_utils, "_get_parent_chunk_store") as parent_store,
-        patch.object(rag_utils._milvus_manager, "query", return_value=adjacent) as milvus_query,
+        patch.object(rag_utils._milvus_manager, "query_all", return_value=adjacent_leaf_refs) as milvus_query,
     ):
-        parent_store.return_value.get_documents_by_ids.return_value = [parent_mid]
+        parent_store.return_value.get_documents_by_ids.side_effect = load_parents
         result = rag_utils._finish_retrieval_pipeline(
             query="泵体拆卸和检查步骤",
             search_query="泵体拆卸和检查步骤",
@@ -165,3 +175,5 @@ def test_complete_postprocess_evidence_chain_e2e():
     filter_expr = milvus_query.call_args.kwargs["filter_expr"]
     assert 'filename == "manual.pdf"' in filter_expr
     assert 'index_profile == "v4"' in filter_expr
+    assert "parent_list_order in [1, 3]" in filter_expr
+    assert "chunk_level == 3" in filter_expr

@@ -141,6 +141,7 @@ class TestChunkNormalized:
 
         chunks = chunk_normalized(doc, "/tmp/test.pdf", root_tokens=5)
         roots = [chunk for chunk in chunks if chunk["chunk_role"] == "root"]
+        leaves = [chunk for chunk in chunks if chunk["chunk_role"] == "leaf"]
 
         assert len(roots) > 1
         assert [root["list_order"] for root in roots] == list(range(1, len(roots) + 1))
@@ -148,6 +149,8 @@ class TestChunkNormalized:
         assert [root["parent_extras"]["list_order"] for root in roots] == list(range(1, len(roots) + 1))
         assert all(root["parent_extras"]["list_group_id"] == "lg_1" for root in roots)
         assert all(root["parent_extras"]["list_complete"] is False for root in roots)
+        parent_orders = {root["chunk_id"]: root["list_order"] for root in roots}
+        assert all(leaf["parent_list_order"] == parent_orders[leaf["parent_chunk_id"]] for leaf in leaves)
 
     def test_long_chinese_list_item_leaf_respects_milvus_byte_budget(self) -> None:
         item_text = "6.4.3 沿用、改进软件变更关联功能优化需求符合性\n" + ("该需求强调多型号软件变更同步关联。" * 120)

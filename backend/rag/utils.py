@@ -796,37 +796,33 @@ def _fetch_adjacent_chunks(
         encoded_profile = json.dumps(str(index_profile), ensure_ascii=False)
         profile_filter = f" and index_profile == {encoded_profile}"
     order_expr = ", ".join(str(order) for order in clean_orders)
-    return list(
-        _milvus_manager.query(
+    leaf_refs = list(
+        _milvus_manager.query_all(
             filter_expr=(
                 f"filename == {encoded_filename} and list_group_id == {encoded_group} and "
-                f"list_order in [{order_expr}] and chunk_level == 1{profile_filter}"
+                f"parent_list_order in [{order_expr}] and chunk_level == 3{profile_filter}"
             ),
             output_fields=[
-                "text",
-                "retrieval_text",
-                "filename",
-                "file_type",
-                "page_number",
-                "page_start",
-                "page_end",
-                "chunk_id",
                 "parent_chunk_id",
-                "root_chunk_id",
-                "chunk_level",
-                "chunk_role",
-                "index_profile",
-                "section_title",
-                "section_path",
-                "anchor_id",
-                "list_group_id",
-                "list_order",
-                "list_complete",
+                "parent_list_order",
             ],
-            limit=max(len(clean_orders), 1),
         )
         or []
     )
+    order_rank = {order: rank for rank, order in enumerate(clean_orders)}
+    parent_orders: dict[str, int] = {}
+    for leaf in leaf_refs:
+        parent_id = str(leaf.get("parent_chunk_id") or "").strip()
+        try:
+            parent_order = int(leaf.get("parent_list_order"))
+        except (TypeError, ValueError):
+            continue
+        if parent_id and parent_order in order_rank:
+            parent_orders.setdefault(parent_id, parent_order)
+    parent_ids = sorted(parent_orders, key=lambda item: (order_rank[parent_orders[item]], item))
+    if not parent_ids:
+        return []
+    return _get_parent_chunk_store().get_documents_by_ids(parent_ids)
 
 
 def _step_chain_check(docs: List[dict], top_k: int) -> Tuple[List[dict], Dict[str, Any]]:

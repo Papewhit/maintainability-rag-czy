@@ -43,8 +43,8 @@ class MilvusIndexVersionTests(unittest.TestCase):
                 self.last_rows = rows
 
         docs = [
-            {"text": "alpha", "filename": "a.pdf", "file_type": "pdf"},
-            {"text": "beta", "filename": "b.pdf", "file_type": "pdf"},
+            {"text": "alpha", "filename": "a.pdf", "file_type": "pdf", "parent_list_order": 1},
+            {"text": "beta", "filename": "b.pdf", "file_type": "pdf", "parent_list_order": 2},
         ]
         fake_cache = FakeCache()
         manager = FakeMilvusManager()
@@ -54,6 +54,7 @@ class MilvusIndexVersionTests(unittest.TestCase):
             writer.write_documents(docs, batch_size=1)
 
         self.assertEqual(manager.insert_calls, 2)
+        self.assertEqual(manager.last_rows[0]["parent_list_order"], 2)
         self.assertEqual(fake_cache.incr_keys, ["milvus_index_version"])
 
     def test_delete_and_drop_bump_index_version_after_success(self):
