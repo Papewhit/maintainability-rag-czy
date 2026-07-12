@@ -91,4 +91,4 @@ jobs:
         run: node --check frontend/script.js
 
       - name: Frontend behavior checks
-        run: node frontend/ui-redesign.test.mjs
+        run: node tests/unit/frontend/ui-redesign.test.mjs
