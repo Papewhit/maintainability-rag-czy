@@ -81,11 +81,15 @@ rerank 输出量 MUST 由 `RERANK_CANDIDATE_POOL_SIZE` 控制（默认 20），S
 - **THEN** 阶段完全跳过；trace 中 `step_chain_check_enabled=false`
 
 ### Requirement: entity 信号融入 score fusion
-当 query 携带 query_entities（来自 intent classifier 或 terminology preflight）且 chunk 携带 entity_types / term_match_count metadata 时，rerank score fusion 的 metadata 分量 MUST 使用 entity 信号计算。
+当 `RERANK_SCORE_FUSION_ENABLED=true`、query 携带 query_entities（来自 intent classifier 或 terminology preflight）且 chunk 携带 entity_types / term_match_count metadata 时，rerank score fusion 的 metadata 分量 MUST 使用 entity 信号计算。
 
 #### Scenario: entity 命中加分
-- **WHEN** query_entities = [{type: product_model, ...}, {type: component, ...}]，某 chunk 的 entity_types = [product_model, component, maintenance_action]
+- **WHEN** RERANK_SCORE_FUSION_ENABLED=true，query_entities = [{type: product_model, ...}, {type: component, ...}]，某 chunk 的 entity_types = [product_model, component, maintenance_action]
 - **THEN** _metadata_score(doc, query_entities) > 0；该 chunk 的 final_score 在 metadata 分量上获得加权；trace 中 `entity_type_coverage = 1.0`（query 中两种类型都被覆盖）
+
+#### Scenario: score fusion 关闭
+- **WHEN** RERANK_SCORE_FUSION_ENABLED=false，即使 query 和 chunk 都带 entity metadata
+- **THEN** entity metadata 分量不参与最终分数；trace 中 `entity_metadata_score_applied=false`
 
 #### Scenario: 无 entity 信号降级
 - **WHEN** query_entities 为空 或 chunk 的 entity_types 为空

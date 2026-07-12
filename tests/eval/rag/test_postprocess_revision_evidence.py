@@ -1,8 +1,9 @@
-import hashlib
 import json
 from pathlib import Path
 
 import pytest
+
+from scripts.source_fingerprint import postprocess_source_fingerprint
 
 
 pytestmark = pytest.mark.eval
@@ -26,21 +27,19 @@ def _paired_outcome(left: dict, right: dict) -> tuple[int, int, int]:
     return wins, losses, ties
 
 
-def _current_source_fingerprint() -> str:
-    digest = hashlib.sha256()
-    for relative in ("backend/rag/utils.py", "backend/rag/context.py", "backend/rag/rerank.py"):
-        digest.update(relative.encode())
-        digest.update((REPO_ROOT / relative).read_bytes())
-    return digest.hexdigest()
-
-
 def test_revision_evidence_is_paired_and_source_fingerprinted():
     baseline = _load("baseline-results.json")
     pool20 = _load("current-pool-20-results.json")
 
     assert baseline["revision"] == "06faa1c2a74599656dffcf0b67102f532ba951a3"
+    assert baseline["source_fingerprint_version"] == 2
+    assert baseline["source_fingerprint_normalization"] == "lf"
     assert baseline["source_sha256"] != pool20["source_sha256"]
-    assert pool20["source_sha256"] == _current_source_fingerprint()
+    expected_fingerprint = postprocess_source_fingerprint(REPO_ROOT)
+    assert pool20["source_fingerprint_version"] == 2
+    assert pool20["source_fingerprint_normalization"] == "lf"
+    assert pool20["source_files"] == expected_fingerprint["source_files"]
+    assert pool20["source_sha256"] == expected_fingerprint["source_sha256"]
     assert baseline["pipeline"] == "baseline"
     assert pool20["pipeline"] == "current"
     assert [case["case"] for case in baseline["cases"]] == [

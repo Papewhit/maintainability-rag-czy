@@ -191,7 +191,7 @@ final_score = (
 
 默认行为：
 - terminology 模块未上线时，`query_entities` 为空，`metadata_score = 0`，与现状等价
-- terminology 上线后，自动接入，无需额外开关
+- terminology 上线且 `RERANK_SCORE_FUSION_ENABLED=true` 时自动接入，无需额外的 entity 开关；score fusion 关闭时不应用该分量
 
 #### entity_types 的存储与运行时边界
 
