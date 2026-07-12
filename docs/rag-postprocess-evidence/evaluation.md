@@ -17,7 +17,7 @@
 | 代码 | revision | source SHA-256 |
 | --- | --- | --- |
 | baseline | `06faa1c2a74599656dffcf0b67102f532ba951a3` | `463b578f…c9c73640d` |
-| current | `72a28165f1d82b48a698632ca2cc4f41e9ccfd71` | `18ec7738…d8ce717` |
+| current | `8e091a2b9922b7ac17ec09066bbaa55847d24e36` | `84dcc9dc…f0e6f6` |
 
 机器可读证据为 `baseline-results.json`、`current-pool-{10,15,20}-results.json`；每份都包含
 完整 top_k、逐样本质量、revision、源指纹、配置和延迟。基线与当前回归测试原始记录分别为
@@ -50,13 +50,13 @@ auto-merge、step-chain 或 structure-rerank 的输出。
 | --- | ---: | ---: |
 | 平均证据可回答性 | 0.1250 | 0.9167 |
 | 完整步骤组 | 0/8 | 6/8 |
-| 完整管线 P50 | 0.384 ms | 0.542 ms |
-| 完整管线 P95 | 0.515 ms | 0.902 ms |
+| 完整管线 P50 | 0.384 ms | 0.862 ms |
+| 完整管线 P95 | 0.515 ms | 1.365 ms |
 
 逐查询 top_k 在两份 JSON 的 `cases[].top_k` 中保存。例如 `seal-basic` 从
 `leaf-1, leaf-2, background-3` 变为 `parent-first, parent-last, parent-middle`，质量从 1/3
-变为 3/3。当前管线增加 auto-merge 与 step-chain 后，本冻结集 P50/P95 分别增加 0.158 ms
-和 0.387 ms；这是模型无关、本机、80 次完整后处理调用的相对开销。
+变为 3/3。当前管线增加 auto-merge 与两跳 step-chain 后，本冻结集 P50/P95 分别增加 0.478 ms
+和 0.850 ms；这是模型无关、本机、80 次完整后处理调用的相对开销。
 
 ## 10 vs 15 vs 20 paired 结果
 
@@ -64,9 +64,9 @@ auto-merge、step-chain 或 structure-rerank 的输出。
 
 | candidate pool | 平均可回答性 | 完整步骤组 | P50 | P95 |
 | ---: | ---: | ---: | ---: | ---: |
-| 10 | 0.2917 | 2/8 | 0.365 ms | 0.522 ms |
-| 15 | 0.5417 | 4/8 | 0.414 ms | 0.607 ms |
-| 20 | 0.9167 | 6/8 | 0.542 ms | 0.902 ms |
+| 10 | 0.2917 | 2/8 | 0.636 ms | 1.043 ms |
+| 15 | 0.5417 | 4/8 | 0.533 ms | 0.848 ms |
+| 20 | 0.9167 | 6/8 | 0.862 ms | 1.365 ms |
 
 逐查询 paired win/loss/tie：
 
