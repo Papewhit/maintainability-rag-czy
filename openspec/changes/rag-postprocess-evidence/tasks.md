@@ -61,3 +61,14 @@
 - [x] 6.5 写评测报告，决定 candidate_pool_size 默认值（20 vs 15 vs 10）
 
 **验收**：评测报告完整；默认值有数据支撑；无明显回归。
+
+## 7. Milestone M7：entity metadata 存储契约闭合
+
+- [x] 7.1 定义共享 entity_types codec：Milvus wire format 为 JSON string，RAG runtime format 为去重后的 list[str]；读取兼容历史 list 值
+- [x] 7.2 正常 ingestion writer 与 terminology rescan 统一使用 JSON string 写入
+- [x] 7.3 hybrid / split / dense 三条 Milvus 检索路径透传并解码 entity_types / term_match_count
+- [x] 7.4 rerank fusion 与 cache key 使用统一 runtime 表示，非法或缺失 metadata 安全降级
+- [x] 7.5 补充 codec、writer、检索透传、fusion 与 cache key 等价性回归测试
+- [x] 7.6 更新 OpenSpec 和运维文档；将显式 Milvus schema 与历史数据迁移记录到 docs
+
+**验收**：正常 ingestion 与 rescan 产生等价的 entity metadata；所有检索路径向 rerank 提供 list[str]；等价 wire 表示产生相同 fusion 结果和 cache key。

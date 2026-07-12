@@ -10,6 +10,7 @@ import time
 from backend.infra.cache import cache
 from backend.shared.json_utils import extract_json_object
 from backend.infra.vector_store.milvus_client import MilvusManager
+from backend.infra.vector_store.metadata_codec import decode_entity_types
 from backend.infra.embedding import embedding_service as _embedding_service
 from backend.rag.query_plan import (
     QueryPlan,
@@ -595,7 +596,7 @@ def _rerank_doc_signatures(docs: List[dict], enrichment_enabled: bool) -> List[d
             {
                 "chunk_id": str(doc.get("chunk_id") or doc.get("id") or ""),
                 "pair_text_sha1": _sha1_text(pair_text),
-                "entity_types": sorted(str(value) for value in (doc.get("entity_types") or [])),
+                "entity_types": sorted(decode_entity_types(doc.get("entity_types"))),
                 "term_match_count": int(doc.get("term_match_count") or 0),
             }
         )

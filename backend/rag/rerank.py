@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from backend.infra.vector_store.metadata_codec import decode_entity_types
+
 
 @dataclass(frozen=True)
 class RerankRuntime:
@@ -87,7 +89,7 @@ def _entity_type(entity: Any) -> str:
 def metadata_score_components(doc: dict, query_entities: list[Any] | None) -> tuple[float, float, float]:
     query_types = {_entity_type(entity) for entity in query_entities or []}
     query_types.discard("")
-    doc_types = {str(value).strip() for value in doc.get("entity_types") or [] if str(value).strip()}
+    doc_types = set(decode_entity_types(doc.get("entity_types")))
     if not query_types or not doc_types:
         return 0.0, 0.0, 0.0
     type_coverage = len(query_types & doc_types) / len(query_types)

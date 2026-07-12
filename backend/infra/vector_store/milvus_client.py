@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from backend.config import MILVUS_COLLECTION
 from backend.infra.cache import cache
+from backend.infra.vector_store.metadata_codec import decode_entity_types
 
 logger = logging.getLogger(__name__)
 
@@ -343,6 +344,8 @@ class MilvusManager:
                         "section_type": hit.get("section_type", ""),
                         "section_path": hit.get("section_path", ""),
                         "anchor_id": hit.get("anchor_id", ""),
+                        "entity_types": decode_entity_types(hit.get("entity_types")),
+                        "term_match_count": hit.get("term_match_count", 0),
                         "score": hit.get("distance", 0.0),
                     }
                 )
@@ -419,6 +422,8 @@ class MilvusManager:
                     "section_type": entity.get("section_type", ""),
                     "section_path": entity.get("section_path", ""),
                     "anchor_id": entity.get("anchor_id", ""),
+                    "entity_types": decode_entity_types(entity.get("entity_types")),
+                    "term_match_count": entity.get("term_match_count", 0),
                     "dense_score": hit.get("distance", 0.0),
                     "dense_rank": rank_0 + 1,
                     "in_dense": True,
@@ -460,6 +465,8 @@ class MilvusManager:
                         "section_type": entity.get("section_type", ""),
                         "section_path": entity.get("section_path", ""),
                         "anchor_id": entity.get("anchor_id", ""),
+                        "entity_types": decode_entity_types(entity.get("entity_types")),
+                        "term_match_count": entity.get("term_match_count", 0),
                         "dense_score": 0.0,
                         "dense_rank": None,
                         "in_dense": False,
@@ -516,6 +523,8 @@ class MilvusManager:
                         "section_type": entity.get("section_type", ""),
                         "section_path": entity.get("section_path", ""),
                         "anchor_id": entity.get("anchor_id", ""),
+                        "entity_types": decode_entity_types(entity.get("entity_types")),
+                        "term_match_count": entity.get("term_match_count", 0),
                         "score": hit.get("distance", 0.0),
                     }
                 )

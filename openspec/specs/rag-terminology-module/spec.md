@@ -65,7 +65,11 @@ Preflight 阶段 MUST 对用户 query 进行术语扫描，输出 query_entities
 
 #### Scenario: Milvus 字段
 - **WHEN** 索引新 chunk 到 Milvus
-- **THEN** Milvus schema 中包含 `entity_types`（VARCHAR）和 `term_match_count`（INT64）；entity_types 序列化为 JSON 字符串数组，长度不超过 512 字节
+- **THEN** Milvus schema 中包含 `entity_types`（VARCHAR）和 `term_match_count`（INT64）；entity_types 序列化为 JSON 字符串数组，长度不超过 512 字节；正常 ingestion 与 rescan MUST 使用同一 encoder
+
+#### Scenario: entity_types 读取兼容
+- **WHEN** 检索读取新 JSON 字符串记录或历史 dynamic-field 数组记录
+- **THEN** vector-store 适配层将两种表示统一解码为去重后的字符串数组；非法 JSON 或非数组值安全降级为空数组
 
 #### Scenario: ParentChunkStore 字段
 - **WHEN** chunk 上传到 ParentChunkStore

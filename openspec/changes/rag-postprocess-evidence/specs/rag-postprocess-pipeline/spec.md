@@ -91,6 +91,18 @@ rerank 输出量 MUST 由 `RERANK_CANDIDATE_POOL_SIZE` 控制（默认 20），S
 - **WHEN** chunk metadata 不含 entity_types 字段（旧 schema）
 - **THEN** 视为空列表处理；不抛异常
 
+#### Scenario: Milvus metadata 编解码边界
+- **WHEN** 正常 ingestion 或 terminology rescan 将 entity_types 写入 Milvus
+- **THEN** 两条写入路径 MUST 使用相同的 JSON string wire format；hybrid、split dense/sparse、dense fallback 三条检索路径 MUST 将其解码为 list[str] 后再交给后处理管线
+
+#### Scenario: 历史 list 表示兼容
+- **WHEN** 旧 collection 的 dynamic field 返回 list[str]，或新记录返回 JSON string array
+- **THEN** 两种表示 MUST 规范化为等价的去重 list[str]，并产生相同 metadata fusion 分数和 rerank cache signature
+
+#### Scenario: 非法 entity_types 安全降级
+- **WHEN** Milvus 返回非法 JSON、非数组 JSON 或不支持的 entity_types 类型
+- **THEN** 视为空列表处理；MUST NOT 按字符串字符参与 entity 覆盖率计算，MUST NOT 阻断检索
+
 ### Requirement: 后处理 trace 字段完整性
 rag_trace MUST 包含每个后处理阶段的详细字段，供调试和评测使用。
 

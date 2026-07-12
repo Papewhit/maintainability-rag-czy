@@ -270,9 +270,9 @@ def _rescan_worker(task_id: str, triggered_by: str) -> None:
 
 def _do_rescan(task_id: str, db: Session) -> tuple[list[dict], list[dict]]:
     """Core rescan logic. Returns (milvus_snapshot, parent_snapshot) for rollback."""
-    import json as _json
     from backend.infra.embedding import embedding_service
     from backend.infra.vector_store.milvus_client import MilvusManager
+    from backend.infra.vector_store.metadata_codec import encode_entity_types
     from backend.infra.vector_store.parent_chunk_store import ParentChunkStore
     from backend.rag.terminology.table import get_terminology_table
     from backend.rag.terminology.jieba_dict import get_terminology_surfaces, reload_jieba_with_terminology
@@ -336,7 +336,7 @@ def _do_rescan(task_id: str, db: Session) -> tuple[list[dict], list[dict]]:
             if row_id is not None:
                 updated_milvus.append({
                     "id": row_id,
-                    "entity_types": _json.dumps(entity_types),
+                    "entity_types": encode_entity_types(entity_types),
                     "term_match_count": len(term_matches),
                 })
 

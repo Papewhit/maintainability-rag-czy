@@ -4,6 +4,7 @@ from __future__ import annotations
 from backend.infra.cache import cache
 from backend.infra.embedding import EmbeddingService, embedding_service as _default_embedding_service
 from backend.infra.vector_store.milvus_client import MilvusManager
+from backend.infra.vector_store.metadata_codec import encode_entity_types
 from backend.rag.profiles import current_index_profile
 
 
@@ -69,7 +70,7 @@ class MilvusWriter:
                     "table_role": doc.get("table_role", ""),
                     "figure_id": doc.get("figure_id", ""),
                     "figure_role": doc.get("figure_role", ""),
-                    "entity_types": doc.get("entity_types", []),
+                    "entity_types": encode_entity_types(doc.get("entity_types")),
                     "term_match_count": doc.get("term_match_count", 0),
                 }
                 for doc, dense_emb, sparse_emb in prepared_batch

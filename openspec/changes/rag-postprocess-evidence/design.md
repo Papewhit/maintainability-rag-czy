@@ -189,6 +189,21 @@ final_score = (
 - terminology 模块未上线时，`query_entities` 为空，`metadata_score = 0`，与现状等价
 - terminology 上线后，自动接入，无需额外开关
 
+#### entity_types 的存储与运行时边界
+
+`rag-terminology-module` 已规定 Milvus 中的 `entity_types` wire format 为 VARCHAR JSON string；
+后处理算法使用的 runtime format 则统一为去重后的 `list[str]`。两者 MUST 在 vector-store
+适配边界完成转换：
+
+- ingestion writer 与 terminology rescan 统一调用共享 encoder，写入 JSON string；
+- hybrid、split dense/sparse、dense fallback 的结果适配统一调用共享 decoder；
+- decoder 在迁移期兼容历史 dynamic-field list 值，非法 JSON 安全降级为空列表；
+- rerank fusion 与 rerank cache signature 使用同一个 decoder，避免 JSON 字符串被逐字符遍历；
+- 本 change 不把 dynamic field 迁移为显式 VARCHAR schema，也不要求立即重建历史 collection。
+
+这个边界保证“存储表示”不会泄漏到 score fusion，并允许旧 list 行与新 JSON-string 行在
+同一个 collection 中平滑共存。
+
 ### 决策 7：trace 字段扩展
 
 新增字段：

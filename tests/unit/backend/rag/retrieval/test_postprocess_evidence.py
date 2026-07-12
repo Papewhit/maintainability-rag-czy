@@ -509,6 +509,16 @@ def test_metadata_score_uses_entity_type_coverage_and_match_density():
     assert rag_utils._metadata_score({}, query_entities) == 0.0
 
 
+def test_metadata_score_treats_json_and_list_entity_types_equally():
+    query_entities = [{"type": "component"}]
+    list_doc = {"entity_types": ["component"], "term_match_count": 2}
+    json_doc = {"entity_types": '["component"]', "term_match_count": 2}
+
+    assert rag_utils._metadata_score(json_doc, query_entities) == rag_utils._metadata_score(
+        list_doc, query_entities
+    )
+
+
 def test_entity_metadata_score_can_change_fusion_order():
     docs = [
         {"chunk_id": "plain", "entity_types": [], "term_match_count": 0},
@@ -730,6 +740,36 @@ def test_rerank_cache_key_includes_query_entity_types():
         query_entities=[{"entity_type": "component"}],
     )
     assert changed_metadata != entity
+
+
+def test_rerank_cache_key_normalizes_entity_types_wire_representation():
+    kwargs = {
+        "query": "pump",
+        "rerank_top_n": 1,
+        "rerank_input_k": 1,
+        "enrichment_enabled": False,
+        "query_entities": [{"entity_type": "component"}],
+    }
+    list_key = rag_utils._rerank_cache_key(
+        docs_for_rerank=[{
+            "chunk_id": "c1",
+            "text": "pump",
+            "entity_types": ["component"],
+            "term_match_count": 2,
+        }],
+        **kwargs,
+    )
+    json_key = rag_utils._rerank_cache_key(
+        docs_for_rerank=[{
+            "chunk_id": "c1",
+            "text": "pump",
+            "entity_types": '["component"]',
+            "term_match_count": 2,
+        }],
+        **kwargs,
+    )
+
+    assert json_key == list_key
 
 
 @pytest.mark.parametrize(

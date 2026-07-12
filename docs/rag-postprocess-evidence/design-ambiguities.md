@@ -68,3 +68,18 @@ leaf 写入 Milvus，完整 parent 位于 ParentChunkStore。实现采用两跳�
 - 假设：本 change 必须提供可重复的 CI 评测，同时诚实区分微基准与生产性能。
 - 解决：CI 使用无模型确定性 reranker 比较 5/10/20，并将数据固化；报告不宣称生产延迟
   达标，明确把真实 GPU 和 125 条 gold dataset 复跑列为发布步骤。
+
+## 9. Entity metadata 延期事项
+
+本 PR 已闭合 `entity_types` / `term_match_count` 的写入、读取、fusion、trace 和缓存链路，并通过
+兼容 decoder 支持现有 collection。以下数据治理工作不阻塞本 change，留待后续处理：
+
+1. **显式 Milvus schema**：当前 collection 通过 `enable_dynamic_field=True` 保存这两个字段，
+   而术语规范期望显式的 `entity_types VARCHAR(512)` 与 `term_match_count INT64`。后续 change
+   应设计新 collection、alias 切换、回滚方案和真实 Milvus integration test。
+2. **历史数据规范化**：迁移前统计空值、数组、JSON 字符串和非法值；通过重建索引或受控
+   backfill 统一为 JSON 字符串，并校验 chunk 数、term_match_count 分布和 entity coverage。
+3. **通用 metadata mapper**：评估声明式处理 `_RETRIEVAL_OUTPUT_FIELDS` 的默认值、类型转换和
+   透传测试，避免新增字段已请求但在某条结果格式化路径中遗漏。
+4. **数据质量可观测性**：为字段缺失、非法 JSON、非数组 JSON 增加低噪声计数指标或采样日志，
+   便于判断何时需要提前迁移。

@@ -181,3 +181,27 @@ rerank / confidence gate 的 entity 信号处理（位于 `backend/rag/utils.py`
                           ├──→ upsert Milvus + ParentChunkStore
                           └──→ 原子重建 BM25 state
 ```
+
+---
+
+## Entity Types 存储契约
+
+`entity_types` 的 Milvus 存储表示与 Python 运行时表示必须分离：
+
+| 边界 | 表示 | 示例 |
+| --- | --- | --- |
+| chunker / terminology runtime | `list[str]` | `["component", "maintenance_action"]` |
+| Milvus wire format | UTF-8 JSON string，最多 512 字节 | `["component","maintenance_action"]` |
+| RAG retrieval / rerank runtime | 去重后的 `list[str]` | `["component", "maintenance_action"]` |
+
+正常 ingestion writer 与 terminology rescan 使用
+`backend.infra.vector_store.metadata_codec.encode_entity_types()` 写入。hybrid、split dense/sparse、
+dense fallback 三条检索路径使用 `decode_entity_types()` 解码后再返回候选文档。
+
+读取端兼容历史 Milvus dynamic-field 数组与 JSON 字符串。非法 JSON、非数组 JSON 和不支持的
+类型降级为空列表，不阻断检索；写入端超过 512 字节时拒绝写入，避免产生违反存储契约的记录。
+rerank fusion 和 rerank cache signature 使用同一个 decoder，因此语义相同的历史数组和新 JSON
+字符串产生相同的 entity coverage、fusion 分数和缓存键。
+
+本次调整不要求立即重建 collection。读取兼容层允许历史数组和新 JSON 字符串共存；所有新写入
+统一为 JSON 字符串。
