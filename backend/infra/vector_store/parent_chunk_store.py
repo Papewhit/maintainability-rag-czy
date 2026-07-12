@@ -30,6 +30,7 @@ class ParentChunkStore:
         self.index_profile = normalize_index_profile(index_profile or current_index_profile())
 
     def _to_dict(self, item: ParentChunk) -> dict:
+        parent_extras = dict(getattr(item, "parent_extras", None) or {})
         return {
             "text": item.text,
             "filename": item.filename,
@@ -44,7 +45,10 @@ class ParentChunkStore:
             "index_profile": getattr(item, "index_profile", self.index_profile) or self.index_profile,
             "term_matches": getattr(item, "term_matches", None) or [],
             "protected_tokens": getattr(item, "protected_tokens", None) or [],
-            "parent_extras": getattr(item, "parent_extras", None),
+            "list_group_id": parent_extras.get("list_group_id", ""),
+            "list_order": parent_extras.get("list_order"),
+            "list_complete": parent_extras.get("list_complete", True),
+            "parent_extras": parent_extras or None,
         }
 
     def _cache_key(self, chunk_id: str) -> str:
@@ -54,6 +58,10 @@ class ParentChunkStore:
 
     def _payload_from_doc(self, doc: dict, updated_at: datetime) -> dict:
         chunk_id = (doc.get("chunk_id") or "").strip()
+        parent_extras = dict(doc.get("parent_extras") or {})
+        for field in ("list_group_id", "list_order", "list_complete"):
+            if field in doc and doc[field] is not None:
+                parent_extras[field] = doc[field]
         return {
             "chunk_id": storage_chunk_id(chunk_id, self.index_profile),
             "index_profile": self.index_profile,
@@ -69,10 +77,11 @@ class ParentChunkStore:
             "updated_at": updated_at,
             "term_matches": doc.get("term_matches") or [],
             "protected_tokens": doc.get("protected_tokens") or [],
-            "parent_extras": doc.get("parent_extras") or None,
+            "parent_extras": parent_extras or None,
         }
 
     def _cache_payload(self, payload: dict) -> dict:
+        parent_extras = dict(payload.get("parent_extras") or {})
         return {
             "chunk_id": display_chunk_id(payload["chunk_id"], self.index_profile),
             "text": payload["text"],
@@ -87,7 +96,10 @@ class ParentChunkStore:
             "index_profile": payload["index_profile"],
             "term_matches": payload.get("term_matches") or [],
             "protected_tokens": payload.get("protected_tokens") or [],
-            "parent_extras": payload.get("parent_extras"),
+            "list_group_id": parent_extras.get("list_group_id", ""),
+            "list_order": parent_extras.get("list_order"),
+            "list_complete": parent_extras.get("list_complete", True),
+            "parent_extras": parent_extras or None,
         }
 
     def upsert_documents(self, docs: List[dict]) -> int:

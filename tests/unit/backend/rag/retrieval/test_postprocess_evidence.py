@@ -138,6 +138,9 @@ def test_finish_pipeline_exposes_real_auto_merge_result():
             "filename": "manual.pdf",
             "text": "step one",
             "score": 0.9,
+            "rerank_score": 0.99,
+            "raw_rerank_score": 2.5,
+            "fusion_score": 0.95,
         },
         {
             "chunk_id": "leaf-a2",
@@ -206,6 +209,9 @@ def test_finish_pipeline_exposes_real_auto_merge_result():
         )
 
     assert [doc["chunk_id"] for doc in result["docs"]] == ["parent-a", "leaf-b1"]
+    assert result["docs"][0]["rerank_score"] == pytest.approx(0.99)
+    assert result["docs"][0]["raw_rerank_score"] == pytest.approx(2.5)
+    assert result["docs"][0]["fusion_score"] == pytest.approx(0.95)
     assert result["meta"]["auto_merge_applied"] is True
     assert result["meta"]["auto_merge_replaced_chunks"] == 2
     assert result["meta"]["timings"]["auto_merge_ms"] >= 0
@@ -213,8 +219,8 @@ def test_finish_pipeline_exposes_real_auto_merge_result():
 
 def test_auto_merge_no_eligible_parent_is_noop():
     docs = [
-        {"chunk_id": "a", "parent_chunk_id": "parent-a", "score": 0.9},
-        {"chunk_id": "b", "parent_chunk_id": "parent-b", "score": 0.8},
+        {"chunk_id": "b", "parent_chunk_id": "parent-b", "score": 0.1, "rerank_score": 0.9},
+        {"chunk_id": "a", "parent_chunk_id": "parent-a", "score": 0.9, "rerank_score": 0.8},
     ]
 
     with (
@@ -224,7 +230,7 @@ def test_auto_merge_no_eligible_parent_is_noop():
     ):
         result, meta = rag_utils._auto_merge_documents(docs, top_k=5)
 
-    assert result == docs
+    assert [doc["chunk_id"] for doc in result] == ["b", "a"]
     assert meta["auto_merge_applied"] is False
     assert meta["auto_merge_replaced_chunks"] == 0
 

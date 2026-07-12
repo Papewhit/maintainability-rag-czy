@@ -203,6 +203,10 @@ def _make_chunk(
         extras["anchor_id"] = anchor_id
     if list_group_id:
         extras["list_group_id"] = list_group_id
+    if list_order is not None:
+        extras["list_order"] = list_order
+    if list_complete is not None:
+        extras["list_complete"] = list_complete
 
     return {
         "chunk_id": chunk_id,
