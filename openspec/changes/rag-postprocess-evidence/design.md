@@ -144,6 +144,10 @@ def _step_chain_check(docs: list[dict], top_k: int) -> tuple[list[dict], dict]:
 因此“通过 Milvus query 拉取相邻 parent”是“Milvus 定位 + ParentChunkStore hydrate”的两跳契约，
 不是要求 Milvus 直接存在 `chunk_level=1` 的记录。控制 lookback 窗口（默认 ±2）避免无限扩散。
 
+同一 `(filename, index_profile, list_group_id)` 在 top-K 中可能同时出现多个不完整 parent。
+实现必须累积该 scope/group 的全部 `list_order`，合并各自 lookback 邻域并去重后执行一次 Milvus
+查询；不得只保留第一个 order。`step_chain_repaired_groups` 仍按 group 记录一次。
+
 ### 决策 5：metadata 缺失时的降级
 
 当 chunk 没有 list_group_id（来自旧 profile 或 chunker 早期阶段）时：

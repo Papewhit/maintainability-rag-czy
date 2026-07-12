@@ -837,7 +837,7 @@ def _step_chain_check(docs: List[dict], top_k: int) -> Tuple[List[dict], Dict[st
         base_meta["step_chain_ms"] = elapsed_ms(stage_start)
         return docs, base_meta
 
-    targets: dict[tuple[str, str, str], int] = {}
+    targets: dict[tuple[str, str, str], set[int]] = {}
     for doc in docs[:top_k]:
         group_id = str(doc.get("list_group_id") or "").strip()
         filename = str(doc.get("filename") or "").strip()
@@ -852,16 +852,19 @@ def _step_chain_check(docs: List[dict], top_k: int) -> Tuple[List[dict], Dict[st
         # The OpenSpec contract treats the first list item as a safe boundary.
         if order <= 1:
             continue
-        targets.setdefault((filename, index_profile, group_id), order)
+        targets.setdefault((filename, index_profile, group_id), set()).add(order)
 
     repaired = list(docs)
     seen_ids = {candidate_identity(doc) for doc in repaired}
     repaired_groups: list[str] = []
     lookback = max(0, int(STEP_CHAIN_ADJACENT_LOOKBACK))
-    for (filename, index_profile, group_id), order in targets.items():
-        lower = range(max(1, order - lookback), order)
-        upper = range(order + 1, order + lookback + 1)
-        adjacent_orders = list(lower) + list(upper)
+    for (filename, index_profile, group_id), orders in targets.items():
+        adjacent_orders = sorted({
+            adjacent_order
+            for order in orders
+            for adjacent_order in range(max(1, order - lookback), order + lookback + 1)
+            if adjacent_order != order
+        })
         added = False
         for adjacent in _fetch_adjacent_chunks(
             group_id,

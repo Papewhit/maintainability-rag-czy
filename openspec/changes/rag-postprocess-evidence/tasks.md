@@ -72,3 +72,10 @@
 - [x] 7.6 更新 OpenSpec 和运维文档；将显式 Milvus schema 与历史数据迁移记录到 docs
 
 **验收**：正常 ingestion 与 rescan 产生等价的 entity metadata；所有检索路径向 rerank 提供 list[str]；等价 wire 表示产生相同 fusion 结果和 cache key。
+
+## 8. Milestone M8：同 group 多截断点修复
+
+- [x] 8.1 同一 filename / index_profile / list_group_id 累积全部不完整 parent order，并查询 lookback 邻域并集
+- [x] 8.2 增加同 group 多个不连续 order 的回归测试，验证一次查询覆盖全部截断点且 trace 按 group 去重
+
+**验收**：top-K 中同 group 的每个不完整 parent 都参与修复，后出现的 order 不再被忽略。

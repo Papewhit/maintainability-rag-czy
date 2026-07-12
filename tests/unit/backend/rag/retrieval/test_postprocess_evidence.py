@@ -378,8 +378,9 @@ def test_step_chain_check_limits_window_dedupes_and_handles_groups_independently
         if group_id == "g1":
             assert filename == "a.pdf"
             assert index_profile == "v4"
-            assert orders == [3, 4, 6, 7]
+            assert orders == [2, 3, 4, 5, 6, 7]
             return [
+                {"chunk_id": "g1-2", "list_group_id": "g1", "list_order": 2},
                 {"chunk_id": "g1-4", "list_group_id": "g1", "list_order": 4},
                 {"chunk_id": "g1-6", "list_group_id": "g1", "list_order": 6},
             ]
@@ -397,9 +398,36 @@ def test_step_chain_check_limits_window_dedupes_and_handles_groups_independently
         repaired, meta = rag_utils._step_chain_check(docs, top_k=3)
 
     assert fetch_mock.call_count == 2
-    assert [doc["chunk_id"] for doc in repaired] == ["g1-5", "g2-2", "g1-4", "g1-6", "g2-1"]
+    assert [doc["chunk_id"] for doc in repaired] == ["g1-5", "g2-2", "g1-4", "g1-2", "g1-6", "g2-1"]
     assert meta["step_chain_repaired_groups"] == ["g1", "g2"]
     assert meta["step_chain_completion_count"] == 2
+
+
+def test_step_chain_check_unions_non_adjacent_orders_within_one_group():
+    docs = [
+        {"chunk_id": "g1-2", "filename": "manual.pdf", "index_profile": "v4", "chunk_level": 1, "list_group_id": "g1", "list_order": 2, "list_complete": False},
+        {"chunk_id": "g1-6", "filename": "manual.pdf", "index_profile": "v4", "chunk_level": 1, "list_group_id": "g1", "list_order": 6, "list_complete": False},
+    ]
+
+    with (
+        patch.object(rag_utils, "STEP_CHAIN_CHECK_ENABLED", True),
+        patch.object(rag_utils, "STEP_CHAIN_ADJACENT_LOOKBACK", 2),
+        patch.object(rag_utils, "_fetch_adjacent_chunks", return_value=[
+            {"chunk_id": "g1-1", "list_group_id": "g1", "list_order": 1},
+            {"chunk_id": "g1-8", "list_group_id": "g1", "list_order": 8},
+        ]) as fetch,
+    ):
+        repaired, meta = rag_utils._step_chain_check(docs, top_k=2)
+
+    fetch.assert_called_once_with(
+        "g1",
+        [1, 3, 4, 5, 7, 8],
+        filename="manual.pdf",
+        index_profile="v4",
+    )
+    assert [doc["chunk_id"] for doc in repaired] == ["g1-2", "g1-6", "g1-1", "g1-8"]
+    assert meta["step_chain_repaired_groups"] == ["g1"]
+    assert meta["step_chain_completion_count"] == 1
 
 
 def test_fetch_adjacent_chunks_locates_parent_ids_via_leaf_metadata_then_hydrates_parents():

@@ -72,6 +72,10 @@ rerank 输出量 MUST 由 `RERANK_CANDIDATE_POOL_SIZE` 控制（默认 20），S
 - **WHEN** STEP_CHAIN_ADJACENT_LOOKBACK=2
 - **THEN** 对 list_order=5 的 chunk，最多拉取 list_order 3、4、6、7 的相邻 parent；不无限扩散
 
+#### Scenario: 同一 group 多个不连续截断点
+- **WHEN** top-K 中同一 filename / index_profile / list_group_id 同时包含 list_order=2 和 list_order=6 的不完整 parent，且 lookback=2
+- **THEN** step_chain_check MUST 累积两个 order，并通过一次 Milvus 查询获取邻域并集 1、3、4、5、7、8；MUST NOT 只修复第一个 order；trace 中该 group 只记录一次
+
 #### Scenario: 关闭状态
 - **WHEN** `STEP_CHAIN_CHECK_ENABLED=false`
 - **THEN** 阶段完全跳过；trace 中 `step_chain_check_enabled=false`
