@@ -59,16 +59,46 @@ class RetrievalMeta(TypedDict, total=False):
     candidate_count_before_rerank: int
     candidate_count_after_rerank: int
     candidate_count_after_structure_rerank: int
+    final_top_k_count: int
     rerank_enabled: bool
     rerank_applied: bool
     rerank_model: str | None
     rerank_error: str | None
+    rerank_skipped: bool
     rerank_input_count: int
     rerank_output_count: int
+    rerank_ms: float
+    rerank_candidate_pool_size: int
     rerank_input_cap: int | None
     rerank_input_device_tier: str | None
     rerank_cache_enabled: bool
     rerank_cache_hit: bool
+    auto_merge_enabled: bool
+    auto_merge_applied: bool
+    auto_merge_replaced_chunks: int
+    auto_merge_ms: float
+    auto_merge_skipped: bool
+    auto_merge_error: str
+    step_chain_check_enabled: bool
+    step_chain_repaired_groups: list[str]
+    step_chain_completion_count: int
+    step_chain_ms: float
+    step_chain_skipped: bool
+    step_chain_error: str
+    structure_rerank_enabled: bool
+    structure_rerank_applied: bool
+    structure_rerank_ms: float
+    structure_rerank_skipped: bool
+    structure_rerank_error: str
+    entity_metadata_score_applied: bool
+    entity_type_coverage: float
+    entity_match_density: float
+    term_matches: list[dict[str, Any]]
+    query_entities: list[dict[str, Any]]
+    confidence_gate_enabled: bool
+    confidence_ms: float
+    confidence_gate_skipped: bool
+    confidence_error: str
     fallback_required: bool
     confidence_reasons: list[str]
     context_files: list[str]
@@ -104,6 +134,41 @@ class RagTrace(TypedDict, total=False):
     retrieved_chunk_count: int
     final_context_chunk_count: int
     citation_verifier: dict[str, Any]
+    rerank_candidate_pool_size: int
+    candidate_count_before_rerank: int
+    candidate_count_after_rerank: int
+    candidate_count_after_structure_rerank: int
+    final_top_k_count: int
+    rerank_output_count: int
+    rerank_ms: float
+    rerank_skipped: bool
+    auto_merge_enabled: bool
+    auto_merge_applied: bool
+    auto_merge_replaced_chunks: int
+    auto_merge_ms: float
+    auto_merge_skipped: bool
+    auto_merge_error: str
+    step_chain_check_enabled: bool
+    step_chain_repaired_groups: list[str]
+    step_chain_completion_count: int
+    step_chain_ms: float
+    step_chain_skipped: bool
+    step_chain_error: str
+    structure_rerank_applied: bool
+    structure_rerank_ms: float
+    structure_rerank_skipped: bool
+    structure_rerank_error: str
+    entity_metadata_score_applied: bool
+    entity_type_coverage: float
+    entity_match_density: float
+    term_matches: list[dict[str, Any]]
+    query_entities: list[dict[str, Any]]
+    confidence_gate_enabled: bool
+    confidence_ms: float
+    confidence_gate_skipped: bool
+    confidence_error: str
+    fallback_required: bool
+    confidence_reasons: list[str]
 
 
 @dataclass(frozen=True)

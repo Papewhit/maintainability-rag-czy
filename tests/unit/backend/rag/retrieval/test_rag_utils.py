@@ -445,8 +445,8 @@ class RagUtilsDiagnosticsTests(unittest.TestCase):
             reranked, meta = rag_utils._rerank_documents("query", docs, top_k=4)
 
         self.assertEqual(meta["rerank_input_count"], 7)
-        self.assertEqual(meta["rerank_output_count"], 4)
-        self.assertEqual(len(reranked), 4)
+        self.assertEqual(meta["rerank_output_count"], 7)
+        self.assertEqual(len(reranked), 7)
 
     def test_reranker_cache_hit_skips_local_predict(self):
         class FakeCache:

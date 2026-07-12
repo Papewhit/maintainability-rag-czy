@@ -43,8 +43,14 @@ class MilvusIndexVersionTests(unittest.TestCase):
                 self.last_rows = rows
 
         docs = [
-            {"text": "alpha", "filename": "a.pdf", "file_type": "pdf"},
-            {"text": "beta", "filename": "b.pdf", "file_type": "pdf"},
+            {
+                "text": "alpha",
+                "filename": "a.pdf",
+                "file_type": "pdf",
+                "parent_list_order": 1,
+                "entity_types": ["component", "maintenance_action"],
+            },
+            {"text": "beta", "filename": "b.pdf", "file_type": "pdf", "parent_list_order": 2},
         ]
         fake_cache = FakeCache()
         manager = FakeMilvusManager()
@@ -54,7 +60,37 @@ class MilvusIndexVersionTests(unittest.TestCase):
             writer.write_documents(docs, batch_size=1)
 
         self.assertEqual(manager.insert_calls, 2)
+        self.assertEqual(manager.last_rows[0]["parent_list_order"], 2)
+        self.assertEqual(manager.last_rows[0]["entity_types"], "[]")
         self.assertEqual(fake_cache.incr_keys, ["milvus_index_version"])
+
+    def test_writer_serializes_entity_types_with_shared_wire_format(self):
+        class FakeEmbeddingService:
+            def get_all_embeddings(self, texts):
+                return [[0.1, 0.2]], [{1: 0.5}]
+
+            def increment_add_documents(self, texts):
+                return None
+
+        class FakeMilvusManager:
+            def init_collection(self):
+                return None
+
+            def insert(self, rows):
+                self.last_rows = rows
+
+        manager = FakeMilvusManager()
+        writer = milvus_writer.MilvusWriter(embedding_service=FakeEmbeddingService(), milvus_manager=manager)
+
+        with patch.object(milvus_writer, "cache", FakeCache()):
+            writer.write_documents([{
+                "text": "pump",
+                "filename": "manual.pdf",
+                "file_type": "pdf",
+                "entity_types": ["component", "maintenance_action"],
+            }])
+
+        self.assertEqual(manager.last_rows[0]["entity_types"], '["component","maintenance_action"]')
 
     def test_delete_and_drop_bump_index_version_after_success(self):
         fake_cache = FakeCache()

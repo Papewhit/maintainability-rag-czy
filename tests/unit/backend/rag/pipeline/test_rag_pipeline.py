@@ -128,6 +128,7 @@ class RagPipelinePromptTests(unittest.TestCase):
             "rag_trace": {
                 "timings": {"initial_retrieve_ms": 7.0},
                 "stage_errors": [{"stage": "initial_warning", "error": "kept"}],
+                "term_matches": [{"entity_type": "component", "canonical": "pump"}],
             },
             "fallback_deadline": time.perf_counter() + 5,
         }
@@ -164,6 +165,10 @@ class RagPipelinePromptTests(unittest.TestCase):
         pool.assert_called_once()
         self.assertEqual(pool.call_args.kwargs["candidate_k"], 17)
         finish.assert_called_once()
+        self.assertEqual(
+            finish.call_args.kwargs["query_entities"],
+            [{"entity_type": "component", "canonical": "pump"}],
+        )
         trace = result["rag_trace"]
         self.assertEqual(trace["fallback_second_pass_mode"], "candidate_only")
         self.assertEqual(trace["fallback_mode"], "candidate_only_merge")

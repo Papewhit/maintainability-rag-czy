@@ -54,6 +54,7 @@ class MaintenanceChunk:
     # ── List / step-chain fields ──
     list_group_id: str | None = None
     list_order: int | None = None       # ordinal within the group
+    parent_list_order: int | None = None  # parent subgroup ordinal (1-based)
     list_marker: str | None = None      # e.g. "(1)", "a)", "Step 3"
     list_level: int | None = None       # nesting depth
     list_complete: bool = True          # False if this chunk is a partial group

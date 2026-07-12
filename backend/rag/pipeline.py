@@ -225,10 +225,22 @@ class RAGState(TypedDict):
     fallback_started_at: Optional[float]
     fallback_deadline: Optional[float]
     rag_trace: Optional[dict]
+    query_entities: Optional[List[dict]]
+    intent_result: Optional[dict]
 
 
 def _format_docs(docs: List[dict]) -> str:
     return format_rag_documents(docs)
+
+
+def _state_query_entities(state: RAGState) -> list:
+    direct = state.get("query_entities") or []
+    if direct:
+        return list(direct)
+    intent_result = state.get("intent_result")
+    if isinstance(intent_result, dict):
+        return list(intent_result.get("entities") or [])
+    return list(getattr(intent_result, "entities", None) or [])
 
 
 def _fallback_to_initial_retrieval(state: RAGState, rag_trace: dict, expanded_start: float) -> RAGState:
@@ -253,7 +265,11 @@ def retrieve_initial(state: RAGState) -> RAGState:
     query = state["question"]
     context_files = state.get("context_files") or []
     emit_rag_step("🔍", "正在检索知识库...", f"查询: {query[:50]}")
-    retrieved = retrieve_documents(query, top_k=5, context_files=context_files)
+    retrieve_kwargs = {"top_k": 5, "context_files": context_files}
+    query_entities = _state_query_entities(state)
+    if query_entities:
+        retrieve_kwargs["query_entities"] = query_entities
+    retrieved = retrieve_documents(query, **retrieve_kwargs)
     results = retrieved.get("docs", [])
     attached_docs = []
     attached_meta = {}
@@ -634,6 +650,11 @@ def _retrieve_expanded_candidate_only(
         },
         context_files=context_files,
         retrieval_mode="fallback_candidate_only",
+        query_entities=(
+            _state_query_entities(state)
+            or list(rag_trace.get("query_entities") or [])
+            or list(rag_trace.get("term_matches") or [])
+        ),
     )
     docs = final_result.get("docs", [])
     meta = dict(final_result.get("meta", {}))
@@ -708,13 +729,19 @@ def retrieve_expanded(state: RAGState) -> RAGState:
     expanded_timings: dict[str, float] = {}
     expanded_stage_errors: list[dict] = []
     precomputed_retrievals: dict[str, dict] = {}
+    expanded_query_entities = (
+        _state_query_entities(state)
+        or list(rag_trace.get("query_entities") or [])
+        or list(rag_trace.get("term_matches") or [])
+    )
+    entity_kwargs = {"query_entities": expanded_query_entities} if expanded_query_entities else {}
 
     if strategy == "complex":
         hypothetical_doc = state.get("hypothetical_doc") or generate_hypothetical_document(state["question"])
         expanded_query = state.get("expanded_query") or state["question"]
         jobs = {
-            "hyde": _submit_with_context(lambda: retrieve_documents(hypothetical_doc, top_k=5, context_files=context_files)),
-            "step_back": _submit_with_context(lambda: retrieve_documents(expanded_query, top_k=5, context_files=context_files)),
+            "hyde": _submit_with_context(lambda: retrieve_documents(hypothetical_doc, top_k=5, context_files=context_files, **entity_kwargs)),
+            "step_back": _submit_with_context(lambda: retrieve_documents(expanded_query, top_k=5, context_files=context_files, **entity_kwargs)),
         }
         for key, future in jobs.items():
             retrieved = _await_with_deadline(future, fallback_deadline, rag_trace, f"{key}_retrieve", "initial_retrieval")
@@ -727,7 +754,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         if "hyde" in precomputed_retrievals:
             retrieved_hyde = precomputed_retrievals["hyde"]
         else:
-            future = _submit_with_context(lambda: retrieve_documents(hypothetical_doc, top_k=5, context_files=context_files))
+            future = _submit_with_context(lambda: retrieve_documents(hypothetical_doc, top_k=5, context_files=context_files, **entity_kwargs))
             retrieved_hyde = _await_with_deadline(future, fallback_deadline, rag_trace, "hyde_retrieve", "initial_retrieval")
             if retrieved_hyde is None:
                 return _fallback_to_initial_retrieval(state, rag_trace, expanded_start)
@@ -770,7 +797,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         if "step_back" in precomputed_retrievals:
             retrieved_stepback = precomputed_retrievals["step_back"]
         else:
-            future = _submit_with_context(lambda: retrieve_documents(expanded_query, top_k=5, context_files=context_files))
+            future = _submit_with_context(lambda: retrieve_documents(expanded_query, top_k=5, context_files=context_files, **entity_kwargs))
             retrieved_stepback = _await_with_deadline(future, fallback_deadline, rag_trace, "stepback_retrieve", "initial_retrieval")
             if retrieved_stepback is None:
                 return _fallback_to_initial_retrieval(state, rag_trace, expanded_start)

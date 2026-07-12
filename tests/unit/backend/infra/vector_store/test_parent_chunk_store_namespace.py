@@ -99,6 +99,34 @@ class ParentChunkStoreNamespaceTests(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertEqual(row.index_profile, "legacy")
 
+    def test_list_metadata_round_trips_through_cache_and_database(self):
+        store = ParentChunkStore(index_profile="v4")
+        store.upsert_documents([
+            {
+                "chunk_id": "parent-list-2",
+                "text": "middle maintenance steps",
+                "filename": "manual.pdf",
+                "file_type": "pdf",
+                "page_number": 2,
+                "chunk_level": 1,
+                "list_group_id": "maintenance-group",
+                "list_order": 2,
+                "list_complete": False,
+                "parent_extras": {"list_group_items": 3},
+            }
+        ])
+
+        cached = store.get_documents_by_ids(["parent-list-2"])[0]
+        self.assertEqual(cached["list_group_id"], "maintenance-group")
+        self.assertEqual(cached["list_order"], 2)
+        self.assertIs(cached["list_complete"], False)
+
+        self.cache.values.clear()
+        persisted = store.get_documents_by_ids(["parent-list-2"])[0]
+        self.assertEqual(persisted["list_group_id"], "maintenance-group")
+        self.assertEqual(persisted["list_order"], 2)
+        self.assertIs(persisted["list_complete"], False)
+
 
 if __name__ == "__main__":
     unittest.main()

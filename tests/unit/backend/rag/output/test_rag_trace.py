@@ -52,6 +52,21 @@ class RagTraceTests(unittest.TestCase):
                 "rerank_contract": "shared_rerank",
                 "rerank_contract_version": "shared-rerank-v2",
                 "rerank_execution_mode": "executed",
+                "rerank_candidate_pool_size": 20,
+                "candidate_count_before_rerank": 30,
+                "candidate_count_after_rerank": 20,
+                "candidate_count_after_structure_rerank": 18,
+                "final_top_k_count": 5,
+                "term_matches": [{"entity_type": "component", "canonical": "pump"}],
+                "query_entities": [{"type": "component", "value": "pump"}],
+                "auto_merge_skipped": True,
+                "auto_merge_error": "recovered",
+                "step_chain_check_enabled": True,
+                "step_chain_repaired_groups": ["g1"],
+                "step_chain_completion_count": 1,
+                "entity_metadata_score_applied": True,
+                "entity_type_coverage": 1.0,
+                "entity_match_density": 0.6,
                 "postprocess_contract": "shared_retrieval_postprocess",
                 "postprocess_contract_version": "shared-postprocess-v1",
             }
@@ -70,6 +85,17 @@ class RagTraceTests(unittest.TestCase):
             attached_docs=[{"chunk_id": "a1"}],
             attached_meta={"attached_context_count": 1},
         )
+
+        self.assertEqual(trace["rerank_candidate_pool_size"], 20)
+        self.assertEqual(trace["candidate_count_before_rerank"], 30)
+        self.assertEqual(trace["final_top_k_count"], 5)
+        self.assertEqual(trace["term_matches"][0]["canonical"], "pump")
+        self.assertEqual(trace["query_entities"][0]["type"], "component")
+        self.assertEqual(trace["step_chain_repaired_groups"], ["g1"])
+        self.assertTrue(trace["auto_merge_skipped"])
+        self.assertEqual(trace["auto_merge_error"], "recovered")
+        self.assertTrue(trace["entity_metadata_score_applied"])
+        self.assertEqual(trace["entity_type_coverage"], 1.0)
         append_stage_error(trace, "rerank", "boom", "ranked_candidates")
         merge_expanded_rag_trace(
             trace,

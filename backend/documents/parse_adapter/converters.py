@@ -186,6 +186,7 @@ def _make_chunk(
     figure_role: str | None = None,
     list_group_id: str | None = None,
     list_order: int | None = None,
+    parent_list_order: int | None = None,
     list_marker: str | None = None,
     list_level: int | None = None,
     list_complete: bool | None = None,
@@ -203,6 +204,10 @@ def _make_chunk(
         extras["anchor_id"] = anchor_id
     if list_group_id:
         extras["list_group_id"] = list_group_id
+    if list_order is not None:
+        extras["list_order"] = list_order
+    if list_complete is not None:
+        extras["list_complete"] = list_complete
 
     return {
         "chunk_id": chunk_id,
@@ -229,6 +234,7 @@ def _make_chunk(
         "figure_role": figure_role or "",
         "list_group_id": list_group_id or "",
         "list_order": list_order,
+        "parent_list_order": parent_list_order,
         "list_marker": list_marker or "",
         "list_level": list_level,
         "list_complete": list_complete if list_complete is not None else True,
