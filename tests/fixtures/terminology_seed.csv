@@ -1,0 +1,249 @@
+canonical,entity_type,variants,description
+主减速齿轮箱,component,"主齿轮箱|主减速器|MRG|main reduction gearbox",船舶主推进系统中的核心减速传动部件
+燃气轮机,equipment,"燃机|gas turbine|GT",船舶主动力装置
+柴油机,equipment,"柴油发动机|diesel engine|DE",船舶辅助动力或主动力装置
+推进电机,equipment,"推进电动机|propulsion motor|PM",电力推进系统的驱动电机
+离合器,component,"clutch|联轴器离合器",动力传递的接合/分离装置
+推力轴承,component,"thrust bearing|推力轴瓦",承受螺旋桨轴向推力的轴承
+中间轴,component,"intermediate shaft|传动轴",连接主机与螺旋桨的轴系部件
+艉轴,component,"stern shaft|螺旋桨轴|尾轴",穿过船体连接螺旋桨的轴
+螺旋桨,equipment,"propeller|桨叶|推进器",船舶推进器
+舵机,equipment,"steering gear|舵装置|steering engine",船舶操舵装置
+锚机,equipment,"windlass|anchor winch|起锚机",锚链收放装置
+绞缆机,equipment,"mooring winch|系泊绞车|缆车",系泊缆绳收放装置
+消防泵,equipment,"fire pump|灭火泵|消防水泵",消防系统供水泵
+舱底泵,equipment,"bilge pump|污水泵|舱底水泵",舱底水排出泵
+滑油泵,equipment,"lube oil pump|润滑油泵|lubricating oil pump",润滑油供给泵
+燃油泵,equipment,"fuel oil pump|fuel pump|供油泵",燃油供给泵
+冷却水泵,equipment,"cooling water pump|冷却泵|循環水泵",冷却水循环泵
+压载泵,equipment,"ballast pump|压载水泵|ballast water pump",压载水注入排出泵
+空压机,equipment,"air compressor|空气压缩机|compressor",压缩空气供给设备
+分油机,equipment,"oil purifier|油分离机|离心分油机",燃油/滑油净化分离设备
+造水机,equipment,"fresh water generator|海水淡化装置|造水装置",海水淡化制淡水设备
+锅炉,equipment,"boiler|蒸汽锅炉|steam boiler",蒸汽发生设备
+热交换器,equipment,"heat exchanger|换热器|冷却器",热量交换设备
+滤器,component,"filter|过滤器|滤网",流体过滤元件
+阀件,component,"valve|阀门|阀",流体控制元件
+法兰,component,"flange|法兰盘|接头法兰",管路连接件
+弯头,component,"elbow|弯管|管弯头",管路转向件
+密封件,component,"seal|密封圈|密封垫|gasket",防泄漏密封元件
+轴承,component,"bearing|轴瓦|滚动轴承",转动支撑元件
+齿轮,component,"gear|齿轮副|传动齿轮",传动啮合元件
+联轴器,component,"coupling|联轴节|靠背轮",轴系连接件
+减振器,component,"damper|减震器|vibration damper",振动衰减装置
+弹性联轴器,component,"flexible coupling|弹性靠背轮|挠性联轴器",补偿轴系偏移的联轴器
+气缸,component,"cylinder|气缸套|cylinder liner",往复式内燃机缸体
+活塞,component,"piston|活塞体|柱塞",往复运动部件
+活塞环,component,"piston ring|活塞涨圈|胀圈",活塞密封环
+曲轴,component,"crankshaft|曲柄轴|crank",旋转运动转换轴
+连杆,component,"connecting rod|连杆总成|conrod",活塞与曲轴连接件
+凸轮轴,component,"camshaft|凸轮|cam shaft",配气机构驱动轴
+喷油器,component,"fuel injector|喷油嘴|油头",燃油喷射装置
+涡轮增压器,equipment,"turbocharger|增压器|废气涡轮增压器",进气增压设备
+中冷器,component,"intercooler|中间冷却器|增压空气冷却器",增压空气冷却设备
+调速器,component,"governor|速度调节器|转速调节器",转速自动调节装置
+启动马达,component,"starter motor|启动电机|起动马达",发动机启动电机
+发电机,equipment,"generator|发电机组|generator set|gen-set",发电设备
+配电板,equipment,"switchboard|配电盘|配电柜",电力分配装置
+变压器,equipment,"transformer|电力变压器|变电器",电压变换设备
+整流器,equipment,"rectifier|整流装置|整流柜",交流转直流设备
+逆变器,equipment,"inverter|逆变装置|逆变电源",直流转交流设备
+蓄电池,equipment,"battery|蓄电池组|电瓶|storage battery",电能储存设备
+控制柜,equipment,"control cabinet|控制箱|电控柜|MCC",电动机控制中心
+PLC控制器,equipment,"PLC|可编程控制器|programmable logic controller",可编程逻辑控制器
+传感器,component,"sensor|感测器|transducer",物理量检测元件
+温度传感器,component,"temperature sensor|温度计|测温元件|RTD",温度检测元件
+压力传感器,component,"pressure sensor|压力变送器|压力表",压力检测元件
+流量计,component,"flow meter|流量表|flowmeter",流量检测仪表
+液位计,component,"level gauge|液位表|level meter|液面计",液位检测仪表
+转速表,component,"tachometer|转速计|转速传感器|rpm meter",转速测量仪表
+振动传感器,component,"vibration sensor|振动监测器|震动传感器",振动检测元件
+扭矩仪,component,"torque meter|扭矩传感器|扭力计",扭矩测量仪表
+油雾探测器,component,"oil mist detector|油雾浓度探测器|OMD",曲轴箱油雾浓度检测
+火警探测器,component,"fire detector|火焰探测器|烟雾探测器",火灾检测元件
+气体探测器,component,"gas detector|可燃气体探测器|毒气探测器",气体泄漏检测
+液压泵,equipment,"hydraulic pump|液压油泵|油压泵",液压系统动力源
+液压马达,equipment,"hydraulic motor|液压马达|油马达",液压执行元件
+液压缸,component,"hydraulic cylinder|油缸|液压油缸",液压执行元件
+液压阀,component,"hydraulic valve|液压控制阀|油压阀",液压控制元件
+蓄能器,component,"accumulator|液压蓄能器|储能器",液压能量储存
+冷却器,equipment,"cooler|冷却装置|散热器|radiator",散热冷却设备
+加热器,equipment,"heater|加热装置|电加热器|加温器",加热设备
+通风机,equipment,"ventilator|通风设备|fan|风机",空气流通设备
+空调装置,equipment,"air conditioner|空调|空调系统|HVAC",空气调节设备
+冷藏装置,equipment,"refrigeration unit|冷冻机|制冷机组|冰箱",制冷设备
+焚烧炉,equipment,"incinerator|焚烧炉|垃圾焚烧炉|incinerator plant",废弃物焚烧设备
+油水分离器,equipment,"oil water separator|油水分离设备|OWS",舱底水油水分离
+生活污水处理装置,equipment,"sewage treatment plant|污水处理装置|STP",生活污水处理
+压载水处理装置,equipment,"ballast water treatment|压载水处理|BWTS",压载水处理系统
+防海生物装置,equipment,"anti-fouling system|防海生物|防污装置|MGPS",防止海生物附着
+阴极保护装置,equipment,"cathodic protection|阴极防护|ICCP|牺牲阳极",防电化学腐蚀
+灭火系统,equipment,"fire extinguishing system|消防系统|灭火装置",消防灭火系统
+惰气系统,equipment,"inert gas system|惰性气体系统|IGS",货舱惰化防爆
+液位遥测系统,equipment,"level gauging system|液位遥测|液位监测",液位远程监测
+阀门遥控系统,equipment,"valve remote control|阀门遥控|液压遥控阀",阀门远程控制
+机舱监测报警系统,equipment,"engine room alarm|机舱监测|AMS|机舱报警",机舱设备监测与报警
+主机遥控系统,equipment,"main engine remote control|主机遥控|MERS",主机远程操纵
+电站管理系统,equipment,"power management system|电站管理|PMS|电力管理",船舶电站自动管理
+动态定位系统,equipment,"dynamic positioning|动力定位|DP system|DP",船舶自动定位保持
+侧推器,equipment,"side thruster|侧向推进器|艏侧推|bow thruster",侧向推进装置
+减摇鳍,equipment,"fin stabilizer|减摇鳍|稳定鳍|stabilizer fin",减摇装置
+减摇水舱,equipment,"anti-rolling tank|减摇水舱|被动减摇|ART",减摇水舱
+调距桨,equipment,"controllable pitch propeller|调距螺旋桨|可变螺距桨|CPP",可调螺距螺旋桨
+全回转推进器,equipment,"azimuth thruster|全回转|Z型推进|全回旋推进器",全回转推进装置
+喷水推进器,equipment,"waterjet|喷水推进|water jet|泵喷推进",喷水推进装置
+吊艇架,equipment,"davit|救生艇吊架|吊艇柱|boat davit",救生艇收放装置
+舵,component,"rudder|船舵|rudder blade",船舶转向装置
+导流罩,component,"duct|导流管|导管|nozzle",推进器导流装置
+轴包架,component,"shaft bracket|轴支架|尾轴架|shaft strut",尾轴支撑构件
+人孔盖,component,"manhole cover|人孔|检查孔盖|manhole",舱室检查开口盖
+水密门,component,"watertight door|水密门|WT door|风雨密门",水密关闭门
+防火风闸,component,"fire damper|防火闸|防火挡板|防火阀",通风管道防火关闭装置
+舷窗,component,"porthole|舷窗|side scuttle|舷窗盖",船体侧面采光窗
+通海阀,component,"sea valve|通海阀门|海水阀|seacock",连通海水的阀件
+海底门,component,"sea chest|海底门|海水吸入箱|sea suction",海水吸入格栅箱
+牺牲阳极,component,"sacrificial anode|牺牲阳极块|锌块|zinc anode",电化学腐蚀防护
+接地装置,component,"earthing device|接地|接地线|grounding",电气接地保护
+电缆,component,"cable|电缆|电力电缆|electric cable",电力传输线缆
+接线盒,component,"junction box|接线箱|分线盒|J-box",电缆连接分配箱
+穿舱件,component,"cable gland|穿舱件|电缆密封|MCT",电缆穿舱密封
+透气管,component,"vent pipe|通气管道|air pipe|透气管头",舱柜空气排出管
+溢流管,component,"overflow pipe|溢流管|溢流管道|overflow",防过量注入溢流
+测深管,component,"sounding pipe|测深管|液位测量管|sounding",液位手工测量管
+注入管,component,"filling pipe|注入管|加注管|filling line",液体加注管道
+排出管,component,"discharge pipe|排出管|排水管|discharge line",流体/污水排出
+舱口盖,component,"hatch cover|舱盖|舱口盖|hatch",货舱舱口关闭装置
+系缆桩,component,"bollard|系缆桩|带缆桩|mooring bollard",甲板系泊缆桩
+导缆孔,component,"fairlead|导缆孔|导缆器|chock",缆绳导向孔
+锚,equipment,"anchor|船锚|系留锚|stock anchor",船舶锚泊设备
+锚链,component,"anchor chain|锚链|chain cable|stud link chain",锚链连接锚与船体
+舵承,component,"rudder bearing|舵承|舵轴轴承|舵杆承",舵杆支撑轴承
+舵销,component,"rudder pintle|舵销|舵栓|舵柱销",舵叶转动枢轴
+舵杆,component,"rudder stock|舵杆|舵轴|rudder shaft",舵叶驱动轴
+密封填料,component,"packing|填料|盘根|stuffing box packing",动密封填充材料
+垫片,component,"gasket washer|垫片|密封垫片|shim",静密封填充件
+O型圈,component,"O-ring|O形圈|O型密封圈|O ring",环形弹性密封件
+螺栓,component,"bolt|螺栓|螺丝|紧固螺栓",螺纹紧固件
+螺母,component,"nut|螺母|螺帽|螺套",螺纹配合件
+垫圈,component,"washer|垫圈|弹簧垫圈|平垫圈",螺栓配套防松件
+键,component,"key|键销|定位键|shaft key",轴毂周向定位件
+销,component,"pin|销钉|定位销|dowel pin",零件定位件
+弹簧,component,"spring|弹簧|弹性元件|coil spring",弹性元件
+摩擦片,component,"friction plate|摩擦片|离合器片|刹车片",摩擦传动元件
+制动器,component,"brake|制动装置|刹车|stopper",运动制动装置
+棘轮,component,"ratchet|棘轮机构|棘轮|棘爪",单向间歇运动机构
+防护罩,component,"guard|防护罩|保护罩|safety guard",安全防护装置
+格栅,component,"grating|格栅|网格板|platform grating",平台走道格栅
+扶手,component,"handrail|扶手|栏杆|railing",安全防护扶手
+梯子,component,"ladder|梯子|直梯|斜梯",人员上下通道
+吊环,component,"lifting eye|吊环|吊耳|lifting lug",起重吊点
+吊梁,component,"spreader bar|吊梁|吊架|lifting beam",起重横梁
+起重吊车,equipment,"crane|吊车|起重机|hoist",起重设备
+电动葫芦,equipment,"electric hoist|电葫芦|电动卷扬|电动吊车",小型电动起重
+千斤顶,equipment,"jack|千斤顶|油压千斤顶|hydraulic jack",顶升工具
+扭矩扳手,equipment,"torque wrench|力矩扳手|定扭扳手|扭力扳手",定扭矩紧固工具
+液压拉伸器,equipment,"hydraulic tensioner|液压拉伸|螺栓拉伸器|bolt tensioner",螺栓预紧力施加
+振动分析仪,equipment,"vibration analyzer|振动分析|振动诊断|振动检测仪",振动数据分析诊断
+内窥镜,equipment,"endoscope|内窥镜|工业内窥镜|borescope",内部目视检查设备
+超声波探伤仪,equipment,"ultrasonic flaw detector|超声波探伤|UT检测仪|超声探伤",无损检测超声探伤
+磁粉探伤仪,equipment,"magnetic particle detector|磁粉探伤|MT探伤|磁探",无损检测磁粉探伤
+X射线探伤仪,equipment,"X-ray detector|X射线探伤|射线探伤|RT探伤|radiographic testing",无损检测射线探伤
+涂层测厚仪,equipment,"coating thickness gauge|涂层测厚|漆膜测厚|膜厚计",涂层厚度测量
+硬度计,equipment,"hardness tester|硬度计|硬度测试|hardness meter",材料硬度检测
+粗糙度仪,equipment,"roughness meter|粗糙度仪|表面粗糙度|roughness tester",表面粗糙度检测
+激光对中仪,equipment,"laser alignment tool|激光对中|轴对中仪|laser aligner",轴系对中校正
+拆卸,maintenance_action,"分解|拆除|拆下|disassembly|dismantling",设备/部件的拆解作业
+安装,maintenance_action,"装配|装复|组装|installation|assembly",设备/部件的组装作业
+检修,maintenance_action,"检查维修|维护检修|overhaul|inspection and repair",设备定期检查与维修
+大修,maintenance_action,"全面检修|大修|翻修|major overhaul|general repair",设备全面分解修复
+中修,maintenance_action,"中等修理|中修|部分解体检修|medium repair",设备部分分解的定期修理
+小修,maintenance_action,"日常维修|小修|航行修理|minor repair|running repair",设备运行中的常规维修
+坞修,maintenance_action,"进坞修理|船坞修理|入坞检修|dock repair|dry docking",船舶进干船坞进行的修理
+换新,maintenance_action,"更换|更新|替换|renewal|replacement",以新件替换旧件
+修复,maintenance_action,"修复|再生|翻新|repair|restoration|recondition",恢复原有性能的修理
+更换滑油,maintenance_action,"换滑油|更换润滑油|oil change|换油|lube oil renewal",定期更换润滑油
+清洗,maintenance_action,"清洗|清洁|洗净|cleaning|washing|flushing",清除污垢/沉积物
+润滑,maintenance_action,"加油润滑|加注润滑脂|lubrication|greasing",添加润滑剂减少摩擦
+防腐,maintenance_action,"防腐蚀|防锈|防腐处理|corrosion protection|rust prevention",金属表面防腐蚀作业
+除锈,maintenance_action,"去锈|除锈|除锈作业|rust removal|derusting",清除金属表面铁锈
+涂装,maintenance_action,"涂漆|喷漆|刷漆|painting|coating",表面涂覆保护涂料
+对中,maintenance_action,"找正|对中|校中|alignment|centering",轴系/设备安装中的位置找正
+校平衡,maintenance_action,"平衡校核|动平衡|静平衡|balancing|balance correction",转子/旋转件平衡校正
+探伤,maintenance_action,"无损检测|探伤|NDT|non-destructive testing|flaw detection",材料/焊缝内部缺陷检测
+试车,maintenance_action,"试运转|试运行|起动试验|trial run|test run|commissioning",维修后设备的运行试验
+排故,maintenance_action,"故障排查|排故|troubleshooting|fault diagnosis|故障诊断",查找并排除设备故障原因
+调试,maintenance_action,"调整|调节|校准|debug|adjustment|tuning|commissioning",参数调节与系统优化
+紧配,maintenance_action,"过盈配合|冷装|热装|shrink fit|press fit|interference fit",过盈连接装配
+研磨,maintenance_action,"气门研磨|阀座研磨|lapping|grinding|valve grinding",配对密封面的研磨加工
+镗孔,maintenance_action,"镗缸|镗孔|boring|cylinder boring|reboring",气缸/轴承座内孔镗削加工
+铰孔,maintenance_action,"铰孔|铰削|reaming|hole reaming",内孔精密铰削
+攻丝,maintenance_action,"攻螺纹|攻丝|tapping|thread tapping",内螺纹加工
+液压试验,maintenance_action,"液压测试|水压试验|压力测试|hydrostatic test|pressure test",容器/管路的耐压试验
+气密试验,maintenance_action,"气密测试|泄漏试验|air tightness test|leak test",密封性气压检测
+冲车,maintenance_action,"冲车|气缸吹除|blowing through|cylinder blowing",启动前气缸内油气吹除
+试航,maintenance_action,"航行试验|试航|sea trial|speed trial",船舶修后海上性能测试
+系泊试验,maintenance_action,"系泊试验|码头试验|dock trial|mooring trial",船舶修后码头系泊状态试验
+倾斜试验,maintenance_action,"倾斜试验|inclining test|稳性倾斜|stability test",船舶稳性校核倾斜试验
+TBD234,product_model,"TBD234V|TBD 234|MTU TBD234",MTU TBD234系列柴油机型号
+TBD616,product_model,"TBD616V|TBD 616|MTU TBD616",MTU TBD616系列柴油机型号
+TBD620,product_model,"TBD620V|TBD 620|MTU TBD620",MTU TBD620系列柴油机型号
+MTU396,product_model,"MTU 396|396系列|12V396|16V396",MTU 396系列柴油机型号
+MTU4000,product_model,"MTU 4000|4000系列|MTU4000|12V4000|16V4000|20V4000",MTU 4000系列柴油机型号
+PA6,product_model,"PA6B|PA6BSTC|SEMT Pielstick PA6|PA-6",SEMT Pielstick PA6型柴油机
+PA6B,product_model,"PA6BSTC|PA6-B|PA6B-STC",PA6B系列柴油机型号
+PC2-6,product_model,"PC2.6|PC2-6B|SEMT Pielstick PC2.6",PC2.6系列中速柴油机型号
+L16/24,product_model,"L1624|L 1624|MAN L1624",MAN L16/24发电机组柴油机型号
+L21/31,product_model,"L2131|L 2131|MAN L2131",MAN L21/31系列柴油机型号
+L27/38,product_model,"L2738|L 2738|MAN L2738",MAN L27/38系列柴油机型号
+L32/40,product_model,"L3240|L 3240|MAN L3240",MAN L32/40系列柴油机型号
+WARTSILA20,product_model,"W20|Wartsila 20|瓦锡兰20",Wärtsilä 20系列柴油机型号
+WARTSILA32,product_model,"W32|Wartsila 32|瓦锡兰32",Wärtsilä 32系列柴油机型号
+WARTSILA46F,product_model,"W46F|Wartsila 46F|瓦锡兰46F",Wärtsilä 46F系列柴油机型号
+6S50MC,product_model,"6S50MCC|6S50MC-C|MAN B&W 6S50MC",MAN B&W S50MC-C型低速柴油机
+6S60MC,product_model,"6S60MCC|6S60MC-C|MAN B&W 6S60MC",MAN B&W S60MC-C型低速柴油机
+7S80ME-C,product_model,"7S80ME|7S80MEC|MAN B&W 7S80ME-C",MAN B&W S80ME-C电控低速柴油机
+RT-flex50,product_model,"RTflex50|RT-flex50|Wartsila RT-flex50",Wärtsilä RT-flex50电控低速柴油机
+RT-flex58T,product_model,"RTflex58T|RT-flex58T|Wartsila RT-flex58T",Wärtsilä RT-flex58T电控低速柴油机
+X52,product_model,"X52|WinGD X52|Wartsila X52",WinGD X52型低速柴油机
+X62,product_model,"X62|WinGD X62|Wartsila X62",WinGD X62型低速柴油机
+X72,product_model,"X72|WinGD X72|Wartsila X72",WinGD X72型低速柴油机
+CAT3516,product_model,"CAT 3516|3516|3516B|3516C|Caterpillar 3516",Caterpillar 3516系列柴油机
+CAT3612,product_model,"CAT 3612|3612|3616|Caterpillar 3612",Caterpillar 3600系列柴油机
+CAT3606,product_model,"CAT 3606|3606|Caterpillar 3606",Caterpillar 3606柴油机
+12V190,product_model,"12V190|12190|济柴12V190",12V190系列柴油机型号
+12V200,product_model,"12V200|12200|12V200型",12V200系列柴油机型号
+16V240,product_model,"16V240|16240|16V240Z",16V240系列柴油机型号
+TBD604B,product_model,"TBD604|TBD 604B|MTU TBD604B",MTU TBD604B系列柴油机型号
+D2842,product_model,"MAN D2842|D 2842|D2842LE",MAN D2842系列柴油机型号
+D2862,product_model,"MAN D2862|D 2862|D2862LE",MAN D2862系列柴油机型号
+CAT C32,product_model,"C32|CAT C32|Caterpillar C32",Caterpillar C32柴油机
+CAT C18,product_model,"C18|CAT C18|Caterpillar C18",Caterpillar C18柴油机
+CAT 3412,product_model,"3412|CAT 3412|3412C|Caterpillar 3412",Caterpillar 3412柴油机
+A170,product_model,"A170系列|170系列|A170",170系列柴油机型号
+A190,product_model,"A190系列|190系列|A190",190系列柴油机型号
+SXD-MAN16/24,product_model,"SXD MAN 1624|MAN16/24|陕柴16/24",陕柴MAN 16/24柴油机型号
+DK28,product_model,"DK-28|DK28|大韩DK28|HSD DK28",HSD DK28系列柴油机型号
+TBD620V12,product_model,"TBD620 V12|TBD620V-12|TBD620十二缸",TBD620十二缸柴油机型号
+L20/27,product_model,"L2027|L 2027|MAN L2027",MAN L20/27柴油机型号
+MAN28/33D,product_model,"2833D|MAN 2833D|28/33D",MAN 28/33D柴油机型号
+MTU2000,product_model,"MTU 2000|2000系列|16V2000|12V2000",MTU 2000系列柴油机型号
+MTU8000,product_model,"MTU 8000|8000系列|20V8000",MTU 8000系列柴油机型号
+CMD-MTU396,product_model,"CMD MTU396|CMD-MTU396|CMD 396",CMD-MTU合资396柴油机型号
+MWM TBD234,product_model,"MWM TBD234|MWM 234|TBD234 MWM",MWM品牌TBD234柴油机
+CAT 3116,product_model,"3116|CAT 3116|3116TA|Caterpillar 3116",Caterpillar 3116柴油机
+CAT 3126,product_model,"3126|CAT 3126|3126B|Caterpillar 3126",Caterpillar 3126柴油机
+CAT 3176,product_model,"3176|CAT 3176|3176C|Caterpillar 3176",Caterpillar 3176柴油机
+CAT 3508,product_model,"3508|CAT 3508|3508B|Caterpillar 3508",Caterpillar 3508柴油机
+CAT 3512,product_model,"3512|CAT 3512|3512B|Caterpillar 3512",Caterpillar 3512柴油机
+CUMMINS KTA19,product_model,"KTA19|康明斯KTA19|Cummins KTA19",Cummins KTA19柴油机型号
+CUMMINS KTA38,product_model,"KTA38|康明斯KTA38|Cummins KTA38",Cummins KTA38柴油机型号
+CUMMINS KTA50,product_model,"KTA50|康明斯KTA50|Cummins KTA50",Cummins KTA50柴油机型号
+CUMMINS QSK60,product_model,"QSK60|康明斯QSK60|Cummins QSK60",Cummins QSK60柴油机型号
+YANMAR 6EY22AW,product_model,"6EY22AW|洋马6EY22AW|Yanmar 6EY22AW",Yanmar 6EY22AW型柴油机
+YANMAR 6EY26W,product_model,"6EY26W|洋马6EY26W|Yanmar 6EY26W",Yanmar 6EY26W型柴油机
+DAIHATSU 6DK-20,product_model,"6DK20|大发6DK20|Daihatsu 6DK-20",Daihatsu 6DK-20柴油机
+DAIHATSU 6DE-18,product_model,"6DE18|大发6DE18|Daihatsu 6DE-18",Daihatsu 6DE-18柴油机
+MAK M25,product_model,"M25|MaK M25|MaK M 25",MaK M25系列柴油机
+MAK M32,product_model,"M32|MaK M32|MaK M 32",MaK M32系列柴油机
+MAK M43,product_model,"M43|MaK M43|MaK M 43",MaK M43系列柴油机
+ABC 8DZC,product_model,"8DZC|ABC 8DZC|ABC DZC",ABC 8DZC柴油机型号

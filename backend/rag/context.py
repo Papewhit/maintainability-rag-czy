@@ -26,9 +26,17 @@ def merge_to_parent_level(docs: list[dict], *, parent_store_getter, threshold: i
             merged_docs.append(doc)
             continue
         parent_doc = dict(parent_map[parent_id])
-        score = doc.get("score")
-        if score is not None:
-            parent_doc["score"] = max(float(parent_doc.get("score", score)), float(score))
+        child_scores = [child.get("score") for child in groups[parent_id] if child.get("score") is not None]
+        if child_scores:
+            parent_doc["score"] = max(
+                float(parent_doc.get("score", child_scores[0]) or 0.0),
+                *(float(score) for score in child_scores),
+            )
+        # Input order is already the CrossEncoder order. The first replacement
+        # survives deduplication, so carry its ranking signals to the parent.
+        for field in ("rerank_score", "raw_rerank_score", "fusion_score", "rrf_rank"):
+            if doc.get(field) is not None:
+                parent_doc[field] = doc[field]
         parent_doc["merged_from_children"] = True
         parent_doc["merged_child_count"] = len(groups[parent_id])
         merged_docs.append(parent_doc)
@@ -68,7 +76,6 @@ def auto_merge_documents(
         parent_store_getter=parent_store_getter,
         threshold=threshold,
     )
-    merged_docs.sort(key=lambda item: item.get("score", 0.0), reverse=True)
     merged_docs = merged_docs[:top_k]
 
     return merged_docs, {

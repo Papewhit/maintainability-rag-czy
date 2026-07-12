@@ -100,7 +100,7 @@ class TestTerminologySeedLoading:
         from pathlib import Path
         import csv
 
-        seed_path = Path(__file__).resolve().parent.parent / "data" / "terminology_seed.csv"
+        seed_path = Path(__file__).resolve().parents[2] / "fixtures" / "terminology_seed.csv"
         assert seed_path.is_file(), f"Seed file not found at {seed_path}"
 
         with open(seed_path, encoding="utf-8-sig") as f:
@@ -132,7 +132,7 @@ class TestTerminologySeedLoading:
             db.query(TerminologyEntryModel).delete()
             db.commit()
 
-            seed_path = Path(__file__).resolve().parent.parent / "data" / "terminology_seed.csv"
+            seed_path = Path(__file__).resolve().parents[2] / "fixtures" / "terminology_seed.csv"
             _load_seed_csv(db, seed_path)
 
             count = db.query(TerminologyEntryModel).count()

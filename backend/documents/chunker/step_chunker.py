@@ -254,6 +254,8 @@ def _chunk_list_group(
             page_start=min(page_numbers),
             page_end=max(page_numbers),
             list_group_id=group.group_id,
+            list_order=sg_idx + 1,
+            parent_list_order=sg_idx + 1,
             list_complete=(len(sub_groups) == 1),
         )
         chunk_data.setdefault("parent_extras", {})["list_group_items"] = len(sub_items)
@@ -282,6 +284,7 @@ def _chunk_list_group(
                     page_end=item.page_no,
                     list_group_id=group.group_id,
                     list_order=item.list_item_index,
+                    parent_list_order=sg_idx + 1,
                     list_marker=item.list_marker or "",
                     list_level=item.list_level,
                     list_complete=(len(sub_groups) == 1),

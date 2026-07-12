@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from backend.config import MILVUS_COLLECTION
 from backend.infra.cache import cache
+from backend.infra.vector_store.metadata_codec import decode_entity_types
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,10 @@ _RETRIEVAL_OUTPUT_FIELDS = [
     "page_number", "page_start", "page_end",
     "chunk_id", "parent_chunk_id", "root_chunk_id",
     "chunk_level", "chunk_role", "chunk_idx",
+    "index_profile",
     "section_title", "section_type", "section_path", "anchor_id",
     "block_type",
-    "list_group_id", "list_order", "list_marker", "list_level", "list_complete",
+    "list_group_id", "list_order", "parent_list_order", "list_marker", "list_level", "list_complete",
     "table_id", "table_role",
     "figure_id", "figure_role",
     "entity_types", "term_match_count",
@@ -342,6 +344,8 @@ class MilvusManager:
                         "section_type": hit.get("section_type", ""),
                         "section_path": hit.get("section_path", ""),
                         "anchor_id": hit.get("anchor_id", ""),
+                        "entity_types": decode_entity_types(hit.get("entity_types")),
+                        "term_match_count": hit.get("term_match_count", 0),
                         "score": hit.get("distance", 0.0),
                     }
                 )
@@ -418,6 +422,8 @@ class MilvusManager:
                     "section_type": entity.get("section_type", ""),
                     "section_path": entity.get("section_path", ""),
                     "anchor_id": entity.get("anchor_id", ""),
+                    "entity_types": decode_entity_types(entity.get("entity_types")),
+                    "term_match_count": entity.get("term_match_count", 0),
                     "dense_score": hit.get("distance", 0.0),
                     "dense_rank": rank_0 + 1,
                     "in_dense": True,
@@ -459,6 +465,8 @@ class MilvusManager:
                         "section_type": entity.get("section_type", ""),
                         "section_path": entity.get("section_path", ""),
                         "anchor_id": entity.get("anchor_id", ""),
+                        "entity_types": decode_entity_types(entity.get("entity_types")),
+                        "term_match_count": entity.get("term_match_count", 0),
                         "dense_score": 0.0,
                         "dense_rank": None,
                         "in_dense": False,
@@ -515,6 +523,8 @@ class MilvusManager:
                         "section_type": entity.get("section_type", ""),
                         "section_path": entity.get("section_path", ""),
                         "anchor_id": entity.get("anchor_id", ""),
+                        "entity_types": decode_entity_types(entity.get("entity_types")),
+                        "term_match_count": entity.get("term_match_count", 0),
                         "score": hit.get("distance", 0.0),
                     }
                 )
