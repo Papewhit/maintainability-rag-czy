@@ -79,3 +79,12 @@
 - [x] 8.2 增加同 group 多个不连续 order 的回归测试，验证一次查询覆盖全部截断点且 trace 按 group 去重
 
 **验收**：top-K 中同 group 的每个不完整 parent 都参与修复，后出现的 order 不再被忽略。
+
+## 9. Milestone M9：归档前 artifacts 与证据收口
+
+- [x] 9.1 修正 proposal/design/spec 的管线顺序与 score-fusion 开关契约
+- [x] 9.2 为 rag-terminology-module 补齐 modified capability 和 delta spec 谱系
+- [x] 9.3 实现跨 LF/CRLF 稳定的 versioned canonical source fingerprint，并让生成器与测试共享实现
+- [x] 9.4 重新生成 baseline/current 评测证据并通过归档前严格验证
+
+**验收**：artifacts 与实现一致；主规格 sync 谱系完整；冻结评测在不同换行风格的 checkout 中产生相同源码指纹。

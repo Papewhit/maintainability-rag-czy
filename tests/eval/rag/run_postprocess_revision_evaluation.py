@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack
-import hashlib
 import json
 from pathlib import Path
 import statistics
@@ -12,6 +11,11 @@ import subprocess
 import sys
 import time
 from unittest.mock import MagicMock, patch
+
+RUNNER_REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(RUNNER_REPO_ROOT))
+
+from scripts.source_fingerprint import postprocess_source_fingerprint
 
 
 CASES = (
@@ -38,16 +42,11 @@ def _percentile(samples: list[float], percentile: float) -> float:
     return ordered[index]
 
 
-def _fingerprint(repo: Path) -> dict[str, str]:
+def _fingerprint(repo: Path) -> dict[str, object]:
     revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=repo, text=True
     ).strip()
-    digest = hashlib.sha256()
-    for relative in ("backend/rag/utils.py", "backend/rag/context.py", "backend/rag/rerank.py"):
-        path = repo / relative
-        digest.update(relative.encode())
-        digest.update(path.read_bytes())
-    return {"revision": revision, "source_sha256": digest.hexdigest()}
+    return {"revision": revision, **postprocess_source_fingerprint(repo)}
 
 
 def _fixture(case_name: str, first_rank: int, second_rank: int):

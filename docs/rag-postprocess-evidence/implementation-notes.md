@@ -55,7 +55,7 @@ trace 记录是否实际应用实体分量，以及候选中的最大 type cover
 
 ## 最终验证
 
-- unit：`469 passed`
+- unit：`481 passed`
 - integration（排除 slow）：`15 passed, 1 skipped, 5 deselected`
 - eval + regression：`68 passed, 10 subtests passed`
 - 完整后处理 E2E：`1 passed`

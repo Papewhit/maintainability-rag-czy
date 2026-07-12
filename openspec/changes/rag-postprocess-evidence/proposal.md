@@ -25,7 +25,7 @@
    - 输出 trace 字段 `step_chain_completion_count`、`step_chain_repaired_groups`
    - Milvus 中的 leaf 额外携带 `parent_list_order`；先按 group + parent order 定位相邻 `parent_chunk_id`，再从 ParentChunkStore 批量加载完整 parent
 
-4. **统一后处理管线契约**：把 rerank → auto_merge → step_chain_check → structure_rerank → confidence_gate → top_k_truncate 串成一条管线，每阶段输入输出明确、可单测，并在 trace 中暴露每阶段的耗时和操作统计。
+4. **统一后处理管线契约**：把 rerank → auto_merge → step_chain_check → structure_rerank → top_k_truncate → confidence_gate 串成一条管线，每阶段输入输出明确、可单测，并在 trace 中暴露每阶段的耗时和操作统计。
 
 5. **score fusion 引入 entity 信号**：当 chunk metadata 含 `entity_types` 和 `term_match_count`（来自 `rag-terminology-module`）时，rerank score fusion 的 metadata 分量使用这些信号；否则保持当前行为（score 占位）。
 
@@ -35,7 +35,7 @@
 - `rag-postprocess-pipeline`: 修复并重组后处理管线，提供 Evidence 组织契约
 
 ### Modified Capabilities
-<!-- 现有 openspec/specs/ 无既有 spec -->
+- `rag-terminology-module`：明确 entity_types 的统一写入 encoder、历史表示兼容和 vector-store 解码边界
 
 ## Impact
 
