@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 
@@ -22,6 +22,7 @@ class RerankRuntime:
     load_cached_result: Callable[[str, list[dict], int], list[dict] | None]
     store_result: Callable[[str, list[dict], list[dict]], None]
     doc_text_getter: Callable[[dict], str]
+    query_entities: list[Any] = field(default_factory=list)
 
 
 def build_enriched_pair(doc: dict, *, doc_text_getter) -> str:
@@ -77,6 +78,31 @@ def metadata_match_score(doc: dict) -> float:
     return min(1.0, score)
 
 
+def _entity_type(entity: Any) -> str:
+    if isinstance(entity, dict):
+        return str(entity.get("type") or entity.get("entity_type") or "").strip()
+    return str(getattr(entity, "type", None) or getattr(entity, "entity_type", None) or "").strip()
+
+
+def metadata_score_components(doc: dict, query_entities: list[Any] | None) -> tuple[float, float, float]:
+    query_types = {_entity_type(entity) for entity in query_entities or []}
+    query_types.discard("")
+    doc_types = {str(value).strip() for value in doc.get("entity_types") or [] if str(value).strip()}
+    if not query_types or not doc_types:
+        return 0.0, 0.0, 0.0
+    type_coverage = len(query_types & doc_types) / len(query_types)
+    try:
+        term_match_count = max(0.0, float(doc.get("term_match_count") or 0.0))
+    except (TypeError, ValueError):
+        term_match_count = 0.0
+    match_density = min(term_match_count / 5.0, 1.0)
+    return 0.7 * type_coverage + 0.3 * match_density, type_coverage, match_density
+
+
+def metadata_score(doc: dict, query_entities: list[Any] | None) -> float:
+    return metadata_score_components(doc, query_entities)[0]
+
+
 def scope_match_score(doc: dict) -> float:
     for key in ("doc_scope_match_score", "filename_boost_match_score"):
         try:
@@ -105,6 +131,7 @@ def apply_rerank_score_fusion(
     enabled: bool,
     weights: dict[str, float],
     milvus_rrf_k: int,
+    query_entities: list[Any] | None = None,
 ) -> list[tuple[int, float]]:
     if not enabled or not indexed_scores:
         return sorted(indexed_scores, key=lambda item: item[1], reverse=True)
@@ -115,7 +142,13 @@ def apply_rerank_score_fusion(
         [rerank_rrf_score(docs_for_rerank[idx], milvus_rrf_k=milvus_rrf_k) for idx in ordered_indices]
     )
     scope_scores = [scope_match_score(docs_for_rerank[idx]) for idx in ordered_indices]
-    metadata_scores = [metadata_match_score(docs_for_rerank[idx]) for idx in ordered_indices]
+    if query_entities:
+        metadata_scores = [
+            metadata_score(doc, query_entities) if doc.get("entity_types") else metadata_match_score(doc)
+            for doc in (docs_for_rerank[idx] for idx in ordered_indices)
+        ]
+    else:
+        metadata_scores = [metadata_match_score(docs_for_rerank[idx]) for idx in ordered_indices]
 
     normalized_weights = {
         "rerank": max(0.0, weights.get("rerank", 0.0)),
@@ -151,6 +184,7 @@ def _rank_from_scores(
         enabled=runtime.score_fusion_enabled,
         weights=runtime.fusion_weights,
         milvus_rrf_k=runtime.milvus_rrf_k,
+        query_entities=runtime.query_entities,
     )
     reranked = []
     for idx, score in indexed_scores[:rerank_top_n]:
@@ -190,6 +224,15 @@ def rerank_documents(query: str, docs: list[dict], top_k: int, runtime: RerankRu
         "rerank_score_fusion_enabled": runtime.score_fusion_enabled,
         "rerank_fusion_weights": runtime.fusion_weights,
     }
+    entity_components = [metadata_score_components(doc, runtime.query_entities) for doc in docs_for_rerank]
+    entity_scoring_ready = (
+        runtime.score_fusion_enabled
+        and runtime.fusion_weights.get("metadata", 0.0) > 0
+        and any(score > 0 for score, _, _ in entity_components)
+    )
+    meta["entity_metadata_score_applied"] = False
+    meta["entity_type_coverage"] = max((coverage for _, coverage, _ in entity_components), default=0.0)
+    meta["entity_match_density"] = max((density for _, _, density in entity_components), default=0.0)
     if not docs_with_rank or not runtime.model:
         result = docs_with_rank[:rerank_top_n]
         meta["rerank_output_count"] = len(result)
@@ -207,6 +250,7 @@ def rerank_documents(query: str, docs: list[dict], top_k: int, runtime: RerankRu
         cached_result = runtime.load_cached_result(rerank_cache_key, docs_for_rerank, rerank_top_n)
         if cached_result:
             meta["rerank_applied"] = True
+            meta["entity_metadata_score_applied"] = entity_scoring_ready
             meta["rerank_cache_hit"] = True
             meta["rerank_output_count"] = len(cached_result)
             return cached_result, meta
@@ -215,6 +259,7 @@ def rerank_documents(query: str, docs: list[dict], top_k: int, runtime: RerankRu
         reranker = runtime.get_local_reranker()
         if not reranker:
             meta["rerank_error"] = "local_reranker_not_loaded"
+            meta["rerank_skipped"] = True
             result = docs_for_rerank[:rerank_top_n]
             meta["rerank_output_count"] = len(result)
             return result, meta
@@ -234,6 +279,7 @@ def rerank_documents(query: str, docs: list[dict], top_k: int, runtime: RerankRu
             runtime,
         )
         meta["rerank_applied"] = True
+        meta["entity_metadata_score_applied"] = entity_scoring_ready
         result = reranked[:rerank_top_n]
         meta["rerank_output_count"] = len(result)
         if rerank_cache_key:
@@ -241,6 +287,7 @@ def rerank_documents(query: str, docs: list[dict], top_k: int, runtime: RerankRu
         return result, meta
     except Exception as exc:
         meta["rerank_error"] = str(exc)
+        meta["rerank_skipped"] = True
         result = docs_for_rerank[:rerank_top_n]
         meta["rerank_output_count"] = len(result)
         return result, meta

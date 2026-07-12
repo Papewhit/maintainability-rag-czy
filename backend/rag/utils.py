@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Any
 import json
 import hashlib
+import logging
 import re
 import time
 
@@ -35,6 +36,7 @@ from backend.rag.rerank import (
     rerank_documents as _run_rerank_documents,
     rerank_pair_text as _rerank_pair_text_impl,
     rerank_rrf_score as _rerank_rrf_score_impl,
+    metadata_score as _rerank_metadata_score,
 )
 from backend.rag.candidate_strategy import (
     CandidateStrategyDetail,
@@ -67,6 +69,9 @@ from backend.config import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 _RUNTIME_CONFIG = load_runtime_config()
 _LAYERED_CANDIDATE_PRESET = DEFAULT_LAYERED_CANDIDATE_PRESET
 
@@ -89,6 +94,9 @@ ENABLE_ANCHOR_GATE = _RUNTIME_CONFIG.enable_anchor_gate
 QUERY_PLAN_ENABLED = _RUNTIME_CONFIG.query_plan_enabled
 RAG_CANDIDATE_K = _RUNTIME_CONFIG.rag_candidate_k
 RERANK_TOP_N = _RUNTIME_CONFIG.rerank_top_n
+RERANK_CANDIDATE_POOL_SIZE = _RUNTIME_CONFIG.rerank_candidate_pool_size
+STEP_CHAIN_CHECK_ENABLED = _RUNTIME_CONFIG.step_chain_check_enabled
+STEP_CHAIN_ADJACENT_LOOKBACK = _RUNTIME_CONFIG.step_chain_adjacent_lookback
 RERANK_INPUT_K_GPU = _RUNTIME_CONFIG.rerank_input_k_gpu
 RERANK_CACHE_ENABLED = _RUNTIME_CONFIG.rerank_cache_enabled
 RERANK_CACHE_TTL_SECONDS = _RUNTIME_CONFIG.rerank_cache_ttl_seconds
@@ -237,7 +245,15 @@ def _rerank_rrf_score(doc: dict) -> float:
     return _rerank_rrf_score_impl(doc, milvus_rrf_k=MILVUS_RRF_K)
 
 
-def _apply_rerank_score_fusion(indexed_scores: list[tuple[int, float]], docs_for_rerank: list[dict]) -> list[tuple[int, float]]:
+def _metadata_score(doc: dict, query_entities: list[Any] | None) -> float:
+    return _rerank_metadata_score(doc, query_entities)
+
+
+def _apply_rerank_score_fusion(
+    indexed_scores: list[tuple[int, float]],
+    docs_for_rerank: list[dict],
+    query_entities: list[Any] | None = None,
+) -> list[tuple[int, float]]:
     weights = {
         "rerank": max(0.0, RERANK_FUSION_RERANK_WEIGHT),
         "rrf": max(0.0, RERANK_FUSION_RRF_WEIGHT),
@@ -250,6 +266,7 @@ def _apply_rerank_score_fusion(indexed_scores: list[tuple[int, float]], docs_for
         enabled=RERANK_SCORE_FUSION_ENABLED,
         weights=weights,
         milvus_rrf_k=MILVUS_RRF_K,
+        query_entities=query_entities,
     )
 
 
@@ -278,123 +295,166 @@ def _finish_retrieval_pipeline(
     base_filter: str | None = None,
     retrieval_mode: str = "hybrid",
     hybrid_error: str | None = None,
+    query_entities: list[Any] | None = None,
 ) -> Dict[str, Any]:
-    """Complete the retrieval pipeline: rerank -> structure_rerank -> confidence_gate."""
-    current_stage = "rerank"
+    """Complete the retrieval evidence post-processing pipeline."""
+    candidate_pool_size = _effective_rerank_output_size(top_k, len(retrieved))
+    effective_query_entities = list(
+        query_entities
+        or (extra_trace or {}).get("query_entities")
+        or (extra_trace or {}).get("term_matches")
+        or []
+    )
+
+    stage_start = time.perf_counter()
     try:
-        stage_start = time.perf_counter()
-        reranked, rerank_meta = _rerank_documents(query=query, docs=retrieved, top_k=top_k)
-        timings["rerank_ms"] = elapsed_ms(stage_start)
-        if rerank_meta.get("rerank_error"):
-            stage_errors.append(_stage_error("rerank", str(rerank_meta.get("rerank_error")), "ranked_candidates"))
-
-        rerank_meta["ce_dtype"] = RERANK_TORCH_DTYPE
-        rerank_meta["ce_input_count"] = rerank_meta.get("rerank_input_count", 0)
-        rerank_meta["ce_cache_hit"] = rerank_meta.get("rerank_cache_hit", False)
-        rerank_meta["ce_latency_ms"] = rerank_meta.get("ce_predict_ms", timings.get("rerank_ms", 0.0))
-        rerank_meta["model_warmup_state"] = "warm" if _local_reranker is not None else "cold"
-        rerank_meta.update(
-            candidate_strategy_trace(
-                requested=CandidateStrategyId(str((extra_trace or {}).get("candidate_strategy_requested") or CandidateStrategyId.STANDARD.value)),
-                effective=CandidateStrategyId(str((extra_trace or {}).get("candidate_strategy_effective") or CandidateStrategyId.STANDARD.value)),
-                detail=CandidateStrategyDetail(str((extra_trace or {}).get("candidate_strategy_detail") or CandidateStrategyDetail.GLOBAL_HYBRID.value)),
-                rerank_execution_mode=_rerank_execution_mode_from_meta(rerank_meta),
-            )
-        )
-
-        current_stage = "structure_rerank"
-        stage_start = time.perf_counter()
-        reranked_docs, structure_meta = _apply_structure_rerank(docs=reranked, top_k=top_k)
-        timings["structure_rerank_ms"] = elapsed_ms(stage_start)
-
-        current_stage = "confidence_gate"
-        stage_start = time.perf_counter()
-        confidence_meta = _evaluate_retrieval_confidence(query=query, docs=reranked_docs)
-        timings["confidence_ms"] = elapsed_ms(stage_start)
-        timings["total_retrieve_ms"] = elapsed_ms(total_start)
-
-        rerank_meta["retrieval_mode"] = retrieval_mode
-        rerank_meta["candidate_k"] = candidate_k
-        rerank_meta["candidate_count_before_rerank"] = len(retrieved)
-        rerank_meta["candidate_count_after_rerank"] = len(reranked)
-        rerank_meta["candidate_count_after_structure_rerank"] = len(reranked_docs)
-        rerank_meta["milvus_search_ef"] = MILVUS_SEARCH_EF
-        rerank_meta["milvus_sparse_drop_ratio"] = MILVUS_SPARSE_DROP_RATIO
-        rerank_meta["milvus_rrf_k"] = MILVUS_RRF_K
-        rerank_meta["leaf_retrieve_level"] = LEAF_RETRIEVE_LEVEL
-        rerank_meta["index_profile"] = RAG_INDEX_PROFILE
-        rerank_meta["context_files"] = context_files or []
-        rerank_meta["hybrid_error"] = hybrid_error
-        rerank_meta["dense_error"] = None
-        rerank_meta["timings"] = dict(_ensure_retrieve_timing_defaults(timings))
-        rerank_meta["stage_errors"] = stage_errors
-        rerank_meta.update(structure_meta)
-        rerank_meta.update(confidence_meta)
-        rerank_meta["candidates_before_rerank"] = _candidate_trace(retrieved)
-        rerank_meta["candidates_after_rerank"] = _candidate_trace(reranked)
-        rerank_meta["candidates_after_structure_rerank"] = _candidate_trace(reranked_docs)
-
-        # Add QueryPlan trace fields
-        if extra_trace:
-            rerank_meta.update(extra_trace)
-
-        return {"docs": reranked_docs, "meta": build_retrieval_meta(rerank_meta)}
-
-    except Exception as exc:
-        stage_errors.append(_stage_error(current_stage, str(exc)))
-        timings["total_retrieve_ms"] = elapsed_ms(total_start)
-        return {
-            "docs": [],
-            "meta": build_retrieval_meta({
-                "rerank_enabled": _is_rerank_enabled(),
-                "rerank_applied": False,
-                "rerank_model": RERANK_MODEL,
-                "rerank_error": str(exc),
-                "rerank_execution_mode": (
-                    RerankExecutionMode.FAILED_BEFORE_RERANK.value
-                    if current_stage == "rerank"
-                    else RerankExecutionMode.FAILED_WITH_RANKED_CANDIDATES.value
-                ),
-                "pipeline_stage_model": "rag-l0-l3-v1",
-                "rerank_contract": "shared_rerank",
-                "rerank_contract_version": "shared-rerank-v2",
-                "postprocess_contract": "shared_retrieval_postprocess",
-                "postprocess_contract_version": "shared-postprocess-v1",
-                "hybrid_error": hybrid_error,
-                "dense_error": None,
-                "retrieval_mode": "failed",
-                "candidate_k": candidate_k,
-                "candidate_count_before_rerank": len(retrieved),
-                "candidate_count_after_rerank": 0,
-                "candidate_count_after_structure_rerank": 0,
-                "rerank_top_n": _effective_rerank_top_n(top_k, 0),
-                "milvus_search_ef": MILVUS_SEARCH_EF,
-                "milvus_sparse_drop_ratio": MILVUS_SPARSE_DROP_RATIO,
-                "milvus_rrf_k": MILVUS_RRF_K,
-                "leaf_retrieve_level": LEAF_RETRIEVE_LEVEL,
-                "index_profile": RAG_INDEX_PROFILE,
-                "context_files": context_files or [],
-                "structure_rerank_applied": False,
-                "structure_rerank_enabled": STRUCTURE_RERANK_ENABLED,
-                "structure_rerank_root_weight": STRUCTURE_RERANK_ROOT_WEIGHT,
-                "same_root_cap": SAME_ROOT_CAP,
-                "auto_merge_enabled": AUTO_MERGE_ENABLED,
-                "auto_merge_applied": False,
-                "auto_merge_threshold": AUTO_MERGE_THRESHOLD,
-                "auto_merge_replaced_chunks": 0,
-                "auto_merge_steps": 0,
-                "candidate_count": 0,
-                "confidence_gate_enabled": CONFIDENCE_GATE_ENABLED,
-                "fallback_required": CONFIDENCE_GATE_ENABLED,
-                "confidence_reasons": ["retrieve_failed"] if CONFIDENCE_GATE_ENABLED else [],
-                "candidates_before_rerank": [],
-                "candidates_after_rerank": [],
-                "candidates_after_structure_rerank": [],
-                "timings": dict(_ensure_retrieve_timing_defaults(timings)),
-                "stage_errors": stage_errors,
-                **(extra_trace or {}),
-            }),
+        rerank_kwargs: dict[str, Any] = {
+            "query": query,
+            "docs": retrieved,
+            "top_k": candidate_pool_size,
         }
+        if effective_query_entities:
+            rerank_kwargs["query_entities"] = effective_query_entities
+        reranked, rerank_meta = _rerank_documents(**rerank_kwargs)
+    except Exception as exc:
+        reranked = list(retrieved[:candidate_pool_size])
+        rerank_meta = {
+            "rerank_enabled": _is_rerank_enabled(),
+            "rerank_applied": False,
+            "rerank_model": RERANK_MODEL,
+            "rerank_error": str(exc),
+            "rerank_skipped": True,
+            "rerank_output_count": len(reranked),
+            "entity_metadata_score_applied": False,
+            "entity_type_coverage": 0.0,
+            "entity_match_density": 0.0,
+        }
+        stage_errors.append(_stage_error("rerank", str(exc), "retrieved_candidates"))
+    timings["rerank_ms"] = elapsed_ms(stage_start)
+    if rerank_meta.get("rerank_error") and not any(
+        error.get("stage") == "rerank" for error in stage_errors
+    ):
+        stage_errors.append(_stage_error("rerank", str(rerank_meta.get("rerank_error")), "ranked_candidates"))
+
+    rerank_meta["ce_dtype"] = RERANK_TORCH_DTYPE
+    rerank_meta["ce_input_count"] = rerank_meta.get("rerank_input_count", 0)
+    rerank_meta["ce_cache_hit"] = rerank_meta.get("rerank_cache_hit", False)
+    rerank_meta["ce_latency_ms"] = rerank_meta.get("ce_predict_ms", timings.get("rerank_ms", 0.0))
+    rerank_meta["model_warmup_state"] = "warm" if _local_reranker is not None else "cold"
+    rerank_meta.update(
+        candidate_strategy_trace(
+            requested=CandidateStrategyId(str((extra_trace or {}).get("candidate_strategy_requested") or CandidateStrategyId.STANDARD.value)),
+            effective=CandidateStrategyId(str((extra_trace or {}).get("candidate_strategy_effective") or CandidateStrategyId.STANDARD.value)),
+            detail=CandidateStrategyDetail(str((extra_trace or {}).get("candidate_strategy_detail") or CandidateStrategyDetail.GLOBAL_HYBRID.value)),
+            rerank_execution_mode=_rerank_execution_mode_from_meta(rerank_meta),
+        )
+    )
+
+    stage_start = time.perf_counter()
+    try:
+        merged_docs, merge_meta = _auto_merge_documents(
+            docs=reranked,
+            top_k=candidate_pool_size,
+        )
+    except Exception as exc:
+        merged_docs = reranked
+        merge_meta = {
+            "auto_merge_enabled": AUTO_MERGE_ENABLED,
+            "auto_merge_applied": False,
+            "auto_merge_replaced_chunks": 0,
+            "auto_merge_skipped": True,
+            "auto_merge_error": str(exc),
+        }
+        stage_errors.append(_stage_error("auto_merge", str(exc), "rerank_output"))
+    timings["auto_merge_ms"] = elapsed_ms(stage_start)
+
+    stage_start = time.perf_counter()
+    try:
+        repaired_docs, chain_meta = _step_chain_check(
+            docs=merged_docs,
+            top_k=candidate_pool_size,
+        )
+    except Exception as exc:
+        repaired_docs = merged_docs
+        chain_meta = {
+            "step_chain_check_enabled": STEP_CHAIN_CHECK_ENABLED,
+            "step_chain_repaired_groups": [],
+            "step_chain_completion_count": 0,
+            "step_chain_skipped": True,
+            "step_chain_error": str(exc),
+        }
+        stage_errors.append(_stage_error("step_chain_check", str(exc), "auto_merge_output"))
+    timings["step_chain_ms"] = float(chain_meta.get("step_chain_ms", elapsed_ms(stage_start)))
+
+    stage_start = time.perf_counter()
+    try:
+        reranked_pool, structure_meta = _apply_structure_rerank(
+            docs=repaired_docs,
+            top_k=candidate_pool_size,
+        )
+    except Exception as exc:
+        reranked_pool = repaired_docs
+        structure_meta = {
+            "structure_rerank_enabled": STRUCTURE_RERANK_ENABLED,
+            "structure_rerank_applied": False,
+            "structure_rerank_skipped": True,
+            "structure_rerank_error": str(exc),
+        }
+        stage_errors.append(_stage_error("structure_rerank", str(exc), "step_chain_output"))
+    timings["structure_rerank_ms"] = elapsed_ms(stage_start)
+
+    reranked_docs = reranked_pool[:top_k]
+
+    stage_start = time.perf_counter()
+    try:
+        confidence_meta = _evaluate_retrieval_confidence(query=query, docs=reranked_docs)
+    except Exception as exc:
+        confidence_meta = {
+            "confidence_gate_enabled": CONFIDENCE_GATE_ENABLED,
+            "fallback_required": False,
+            "confidence_reasons": [],
+            "confidence_gate_skipped": True,
+            "confidence_error": str(exc),
+        }
+        stage_errors.append(_stage_error("confidence_gate", str(exc), "final_top_k"))
+    timings["confidence_ms"] = elapsed_ms(stage_start)
+    timings["total_retrieve_ms"] = elapsed_ms(total_start)
+
+    rerank_meta.update({
+        "retrieval_mode": retrieval_mode,
+        "candidate_k": candidate_k,
+        "candidate_count_before_rerank": len(retrieved),
+        "candidate_count_after_rerank": len(reranked),
+        "candidate_count_after_structure_rerank": len(reranked_pool),
+        "final_top_k_count": len(reranked_docs),
+        "rerank_candidate_pool_size": candidate_pool_size,
+        "rerank_output_count": len(reranked),
+        "milvus_search_ef": MILVUS_SEARCH_EF,
+        "milvus_sparse_drop_ratio": MILVUS_SPARSE_DROP_RATIO,
+        "milvus_rrf_k": MILVUS_RRF_K,
+        "leaf_retrieve_level": LEAF_RETRIEVE_LEVEL,
+        "index_profile": RAG_INDEX_PROFILE,
+        "context_files": context_files or [],
+        "hybrid_error": hybrid_error,
+        "dense_error": None,
+        "timings": dict(_ensure_retrieve_timing_defaults(timings)),
+        "stage_errors": stage_errors,
+    })
+    rerank_meta.update(merge_meta)
+    rerank_meta.update(chain_meta)
+    rerank_meta.update(structure_meta)
+    rerank_meta.update(confidence_meta)
+    rerank_meta["candidates_before_rerank"] = _candidate_trace(retrieved)
+    rerank_meta["candidates_after_rerank"] = _candidate_trace(reranked)
+    rerank_meta["candidates_after_structure_rerank"] = _candidate_trace(reranked_pool)
+    if effective_query_entities:
+        rerank_meta["query_entities"] = effective_query_entities
+    for timing_key in ("rerank_ms", "auto_merge_ms", "step_chain_ms", "structure_rerank_ms", "confidence_ms"):
+        rerank_meta[timing_key] = timings[timing_key]
+    if extra_trace:
+        rerank_meta.update(extra_trace)
+
+    return {"docs": reranked_docs, "meta": build_retrieval_meta(rerank_meta)}
 
 
 def _sha1_text(value: str) -> str:
@@ -444,10 +504,14 @@ def _effective_candidate_k(top_k: int) -> int:
     return max(top_k * 10, 50)
 
 
-def _effective_rerank_top_n(top_k: int, candidate_count: int) -> int:
+def _effective_rerank_output_size(top_k: int, candidate_count: int) -> int:
     if candidate_count <= 0:
         return 0
-    requested = RERANK_TOP_N if RERANK_TOP_N > 0 else top_k
+    if RERANK_TOP_N > 0:
+        logger.warning("RERANK_TOP_N is deprecated; use RERANK_CANDIDATE_POOL_SIZE instead")
+        requested = RERANK_TOP_N
+    else:
+        requested = RERANK_CANDIDATE_POOL_SIZE if RERANK_CANDIDATE_POOL_SIZE > 0 else top_k * 4
     requested = max(top_k, requested)
     return min(candidate_count, requested)
 
@@ -531,6 +595,8 @@ def _rerank_doc_signatures(docs: List[dict], enrichment_enabled: bool) -> List[d
             {
                 "chunk_id": str(doc.get("chunk_id") or doc.get("id") or ""),
                 "pair_text_sha1": _sha1_text(pair_text),
+                "entity_types": sorted(str(value) for value in (doc.get("entity_types") or [])),
+                "term_match_count": int(doc.get("term_match_count") or 0),
             }
         )
     return signatures
@@ -542,7 +608,19 @@ def _rerank_cache_key(
     rerank_top_n: int,
     rerank_input_k: int,
     enrichment_enabled: bool,
+    query_entities: list[Any] | None = None,
 ) -> str:
+    query_entity_types = sorted(
+        {
+            str(
+                (entity.get("type") or entity.get("entity_type") or "")
+                if isinstance(entity, dict)
+                else (getattr(entity, "type", None) or getattr(entity, "entity_type", None) or "")
+            ).strip()
+            for entity in query_entities or []
+        }
+        - {""}
+    )
     payload = {
         "version": 2,
         "query": query,
@@ -561,6 +639,7 @@ def _rerank_cache_key(
         "bm25_total_docs": _bm25_total_docs(),
         "milvus_index_version": _milvus_index_version(),
         "docs": _rerank_doc_signatures(docs_for_rerank, enrichment_enabled),
+        "query_entity_types": query_entity_types,
     }
     digest = _sha1_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return f"rerank:{digest}"
@@ -647,6 +726,8 @@ _RETRIEVE_TIMING_KEYS = (
     "milvus_dense_fallback_ms",
     "l1_prefilter_ms",
     "rerank_ms",
+    "auto_merge_ms",
+    "step_chain_ms",
     "structure_rerank_ms",
     "confidence_ms",
     "total_retrieve_ms",
@@ -698,6 +779,116 @@ def _auto_merge_documents(docs: List[dict], top_k: int) -> Tuple[List[dict], Dic
     )
 
 
+def _fetch_adjacent_chunks(
+    list_group_id: str,
+    orders: list[int],
+    *,
+    filename: str,
+    index_profile: str = "",
+) -> list[dict]:
+    clean_orders = sorted({int(order) for order in orders if int(order) > 0})
+    if not list_group_id or not filename or not clean_orders:
+        return []
+    encoded_group = json.dumps(str(list_group_id), ensure_ascii=False)
+    encoded_filename = json.dumps(str(filename), ensure_ascii=False)
+    profile_filter = ""
+    if index_profile:
+        encoded_profile = json.dumps(str(index_profile), ensure_ascii=False)
+        profile_filter = f" and index_profile == {encoded_profile}"
+    order_expr = ", ".join(str(order) for order in clean_orders)
+    return list(
+        _milvus_manager.query(
+            filter_expr=(
+                f"filename == {encoded_filename} and list_group_id == {encoded_group} and "
+                f"list_order in [{order_expr}] and chunk_level == 1{profile_filter}"
+            ),
+            output_fields=[
+                "text",
+                "retrieval_text",
+                "filename",
+                "file_type",
+                "page_number",
+                "page_start",
+                "page_end",
+                "chunk_id",
+                "parent_chunk_id",
+                "root_chunk_id",
+                "chunk_level",
+                "chunk_role",
+                "index_profile",
+                "section_title",
+                "section_path",
+                "anchor_id",
+                "list_group_id",
+                "list_order",
+                "list_complete",
+            ],
+            limit=max(len(clean_orders), 1),
+        )
+        or []
+    )
+
+
+def _step_chain_check(docs: List[dict], top_k: int) -> Tuple[List[dict], Dict[str, Any]]:
+    stage_start = time.perf_counter()
+    base_meta = {
+        "step_chain_check_enabled": STEP_CHAIN_CHECK_ENABLED,
+        "step_chain_repaired_groups": [],
+        "step_chain_completion_count": 0,
+    }
+    if not STEP_CHAIN_CHECK_ENABLED or not docs:
+        base_meta["step_chain_ms"] = elapsed_ms(stage_start)
+        return docs, base_meta
+
+    targets: dict[tuple[str, str, str], int] = {}
+    for doc in docs[:top_k]:
+        group_id = str(doc.get("list_group_id") or "").strip()
+        filename = str(doc.get("filename") or "").strip()
+        index_profile = str(doc.get("index_profile") or "").strip()
+        is_parent = doc.get("chunk_level") == 1 or doc.get("chunk_role") == "root"
+        if not is_parent or not filename or not group_id or doc.get("list_complete", True) is not False:
+            continue
+        try:
+            order = int(doc.get("list_order"))
+        except (TypeError, ValueError):
+            continue
+        # The OpenSpec contract treats the first list item as a safe boundary.
+        if order <= 1:
+            continue
+        targets.setdefault((filename, index_profile, group_id), order)
+
+    repaired = list(docs)
+    seen_ids = {candidate_identity(doc) for doc in repaired}
+    repaired_groups: list[str] = []
+    lookback = max(0, int(STEP_CHAIN_ADJACENT_LOOKBACK))
+    for (filename, index_profile, group_id), order in targets.items():
+        lower = range(max(1, order - lookback), order)
+        upper = range(order + 1, order + lookback + 1)
+        adjacent_orders = list(lower) + list(upper)
+        added = False
+        for adjacent in _fetch_adjacent_chunks(
+            group_id,
+            adjacent_orders,
+            filename=filename,
+            index_profile=index_profile,
+        ):
+            identity = candidate_identity(adjacent)
+            if identity in seen_ids:
+                continue
+            seen_ids.add(identity)
+            repaired.append(adjacent)
+            added = True
+        if added:
+            repaired_groups.append(group_id)
+
+    return repaired, {
+        "step_chain_check_enabled": True,
+        "step_chain_repaired_groups": repaired_groups,
+        "step_chain_completion_count": len(repaired_groups),
+        "step_chain_ms": elapsed_ms(stage_start),
+    }
+
+
 def _apply_structure_rerank(docs: List[dict], top_k: int, root_weight: float | None = None, same_root_cap: int | None = None) -> Tuple[List[dict], Dict[str, Any]]:
     return _context_apply_structure_rerank(
         docs,
@@ -734,7 +925,12 @@ def _rerank_pair_text(doc: dict, enrichment_enabled: bool) -> str:
     return _rerank_pair_text_impl(doc, enrichment_enabled, doc_text_getter=_doc_retrieval_text)
 
 
-def _rerank_documents(query: str, docs: List[dict], top_k: int) -> Tuple[List[dict], Dict[str, Any]]:
+def _rerank_documents(
+    query: str,
+    docs: List[dict],
+    top_k: int,
+    query_entities: list[Any] | None = None,
+) -> Tuple[List[dict], Dict[str, Any]]:
     runtime = RerankRuntime(
         provider=RERANK_PROVIDER,
         model=RERANK_MODEL,
@@ -749,13 +945,21 @@ def _rerank_documents(query: str, docs: List[dict], top_k: int) -> Tuple[List[di
             "metadata": RERANK_FUSION_METADATA_WEIGHT,
         },
         milvus_rrf_k=MILVUS_RRF_K,
-        effective_top_n=_effective_rerank_top_n,
+        effective_top_n=_effective_rerank_output_size,
         effective_input_k=_effective_rerank_input_k,
         get_local_reranker=_get_local_reranker,
-        cache_key=_rerank_cache_key,
+        cache_key=lambda query_value, docs_value, top_n, input_k, enrichment: _rerank_cache_key(
+            query_value,
+            docs_value,
+            top_n,
+            input_k,
+            enrichment,
+            query_entities=query_entities,
+        ),
         load_cached_result=_load_cached_rerank_result,
         store_result=_store_rerank_result,
         doc_text_getter=_doc_retrieval_text,
+        query_entities=list(query_entities or []),
     )
     return _run_rerank_documents(query, docs, top_k, runtime)
 
@@ -1401,7 +1605,8 @@ def _failed_retrieval_response(
             "candidate_count_before_rerank": 0,
             "candidate_count_after_rerank": 0,
             "candidate_count_after_structure_rerank": 0,
-            "rerank_top_n": _effective_rerank_top_n(top_k, 0),
+            "rerank_top_n": _effective_rerank_output_size(top_k, 0),
+            "rerank_candidate_pool_size": _effective_rerank_output_size(top_k, 0),
             "milvus_search_ef": MILVUS_SEARCH_EF,
             "milvus_sparse_drop_ratio": MILVUS_SPARSE_DROP_RATIO,
             "milvus_rrf_k": MILVUS_RRF_K,
@@ -1417,6 +1622,12 @@ def _failed_retrieval_response(
             "auto_merge_threshold": AUTO_MERGE_THRESHOLD,
             "auto_merge_replaced_chunks": 0,
             "auto_merge_steps": 0,
+            "step_chain_check_enabled": STEP_CHAIN_CHECK_ENABLED,
+            "step_chain_repaired_groups": [],
+            "step_chain_completion_count": 0,
+            "entity_metadata_score_applied": False,
+            "entity_type_coverage": 0.0,
+            "entity_match_density": 0.0,
             "candidate_count": 0,
             "confidence_gate_enabled": CONFIDENCE_GATE_ENABLED,
             "fallback_required": CONFIDENCE_GATE_ENABLED,
@@ -1425,6 +1636,10 @@ def _failed_retrieval_response(
             "candidates_after_rerank": [],
             "candidates_after_structure_rerank": [],
             "timings": dict(_ensure_retrieve_timing_defaults(timings)),
+            **{
+                key: timings[key]
+                for key in ("rerank_ms", "auto_merge_ms", "step_chain_ms", "structure_rerank_ms", "confidence_ms")
+            },
             "stage_errors": stage_errors,
             **trace_patch,
         }),
@@ -1666,7 +1881,12 @@ def retrieve_context_documents(filenames: list[str] | None, limit_per_file: int 
     }
 
 
-def retrieve_documents(query: str, top_k: int = 5, context_files: list[str] | None = None) -> Dict[str, Any]:
+def retrieve_documents(
+    query: str,
+    top_k: int = 5,
+    context_files: list[str] | None = None,
+    query_entities: list[Any] | None = None,
+) -> Dict[str, Any]:
     prepared = prepare_candidate_retrieval(query, top_k=top_k, context_files=context_files)
 
     if prepared.failed:
@@ -1697,4 +1917,5 @@ def retrieve_documents(query: str, top_k: int = 5, context_files: list[str] | No
         base_filter=prepared.filters.base_filter,
         retrieval_mode=prepared.retrieval_mode,
         hybrid_error=prepared.hybrid_error,
+        query_entities=query_entities,
     )

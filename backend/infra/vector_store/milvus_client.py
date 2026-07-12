@@ -17,6 +17,7 @@ _RETRIEVAL_OUTPUT_FIELDS = [
     "page_number", "page_start", "page_end",
     "chunk_id", "parent_chunk_id", "root_chunk_id",
     "chunk_level", "chunk_role", "chunk_idx",
+    "index_profile",
     "section_title", "section_type", "section_path", "anchor_id",
     "block_type",
     "list_group_id", "list_order", "list_marker", "list_level", "list_complete",

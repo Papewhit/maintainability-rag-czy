@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 
 
 class RegisterRequest(BaseModel):
@@ -61,16 +61,51 @@ class RagTrace(BaseModel):
     rerank_applied: Optional[bool] = None
     rerank_model: Optional[str] = None
     rerank_error: Optional[str] = None
+    rerank_skipped: Optional[bool] = None
     hybrid_error: Optional[str] = None
     dense_error: Optional[str] = None
     retrieval_mode: Optional[str] = None
     candidate_k: Optional[int] = None
+    rerank_candidate_pool_size: Optional[int] = None
+    candidate_count_before_rerank: Optional[int] = None
+    candidate_count_after_rerank: Optional[int] = None
+    candidate_count_after_structure_rerank: Optional[int] = None
+    final_top_k_count: Optional[int] = None
+    rerank_output_count: Optional[int] = None
+    rerank_ms: Optional[float] = None
     leaf_retrieve_level: Optional[int] = None
     auto_merge_enabled: Optional[bool] = None
     auto_merge_applied: Optional[bool] = None
     auto_merge_threshold: Optional[int] = None
     auto_merge_replaced_chunks: Optional[int] = None
     auto_merge_steps: Optional[int] = None
+    auto_merge_ms: Optional[float] = None
+    auto_merge_skipped: Optional[bool] = None
+    auto_merge_error: Optional[str] = None
+    step_chain_check_enabled: Optional[bool] = None
+    step_chain_repaired_groups: Optional[List[str]] = None
+    step_chain_completion_count: Optional[int] = None
+    step_chain_ms: Optional[float] = None
+    step_chain_skipped: Optional[bool] = None
+    step_chain_error: Optional[str] = None
+    structure_rerank_enabled: Optional[bool] = None
+    structure_rerank_applied: Optional[bool] = None
+    structure_rerank_ms: Optional[float] = None
+    structure_rerank_skipped: Optional[bool] = None
+    structure_rerank_error: Optional[str] = None
+    entity_metadata_score_applied: Optional[bool] = None
+    entity_type_coverage: Optional[float] = None
+    entity_match_density: Optional[float] = None
+    term_matches: Optional[List[Dict[str, Any]]] = None
+    query_entities: Optional[List[Dict[str, Any]]] = None
+    confidence_gate_enabled: Optional[bool] = None
+    fallback_required: Optional[bool] = None
+    confidence_reasons: Optional[List[str]] = None
+    confidence_ms: Optional[float] = None
+    confidence_gate_skipped: Optional[bool] = None
+    confidence_error: Optional[str] = None
+    timings: Optional[Dict[str, float]] = None
+    stage_errors: Optional[List[Dict[str, Any]]] = None
     retrieved_chunks: Optional[List[RetrievedChunk]] = None
     initial_retrieved_chunks: Optional[List[RetrievedChunk]] = None
     expanded_retrieved_chunks: Optional[List[RetrievedChunk]] = None

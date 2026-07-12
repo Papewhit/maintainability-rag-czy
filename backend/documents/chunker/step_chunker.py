@@ -254,6 +254,7 @@ def _chunk_list_group(
             page_start=min(page_numbers),
             page_end=max(page_numbers),
             list_group_id=group.group_id,
+            list_order=sg_idx + 1,
             list_complete=(len(sub_groups) == 1),
         )
         chunk_data.setdefault("parent_extras", {})["list_group_items"] = len(sub_items)

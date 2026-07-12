@@ -1,0 +1,128 @@
+{
+  "label": "current-pool-15",
+  "repo": "F:\\dev\\llm\\SuperHermes-postprocess-evidence",
+  "revision": "06faa1c2a74599656dffcf0b67102f532ba951a3",
+  "source_sha256": "551e3900a6ae789ac65d1a40bdbcd3aae273c03876fb8153c11517861c01eb74",
+  "pipeline": "current",
+  "candidate_pool_size": 15,
+  "sample_count": 80,
+  "p50_ms": 0.769,
+  "p95_ms": 1.221,
+  "mean_answerability": 0.5417,
+  "complete_step_groups": 4,
+  "total_cases": 8,
+  "cases": [
+    {
+      "case": "seal-basic",
+      "relevant_ranks": [
+        1,
+        2
+      ],
+      "top_k": [
+        "seal-basic-parent-first",
+        "seal-basic-parent-last",
+        "seal-basic-parent-middle"
+      ],
+      "answerability": 1.0,
+      "complete_step_group": true
+    },
+    {
+      "case": "pump-access",
+      "relevant_ranks": [
+        2,
+        8
+      ],
+      "top_k": [
+        "pump-access-parent-first",
+        "pump-access-parent-last",
+        "pump-access-parent-middle"
+      ],
+      "answerability": 1.0,
+      "complete_step_group": true
+    },
+    {
+      "case": "bearing-check",
+      "relevant_ranks": [
+        4,
+        12
+      ],
+      "top_k": [
+        "bearing-check-parent-first",
+        "bearing-check-parent-last",
+        "bearing-check-parent-middle"
+      ],
+      "answerability": 1.0,
+      "complete_step_group": true
+    },
+    {
+      "case": "valve-service",
+      "relevant_ranks": [
+        7,
+        14
+      ],
+      "top_k": [
+        "valve-service-parent-first",
+        "valve-service-parent-last",
+        "valve-service-parent-middle"
+      ],
+      "answerability": 1.0,
+      "complete_step_group": true
+    },
+    {
+      "case": "filter-change",
+      "relevant_ranks": [
+        3,
+        17
+      ],
+      "top_k": [
+        "filter-change-background-1",
+        "filter-change-background-2",
+        "filter-change-leaf-3"
+      ],
+      "answerability": 0.3333333333333333,
+      "complete_step_group": false
+    },
+    {
+      "case": "shaft-alignment",
+      "relevant_ranks": [
+        11,
+        18
+      ],
+      "top_k": [
+        "shaft-alignment-background-1",
+        "shaft-alignment-background-2",
+        "shaft-alignment-background-3"
+      ],
+      "answerability": 0.0,
+      "complete_step_group": false
+    },
+    {
+      "case": "gasket-renewal",
+      "relevant_ranks": [
+        16,
+        19
+      ],
+      "top_k": [
+        "gasket-renewal-background-1",
+        "gasket-renewal-background-2",
+        "gasket-renewal-background-3"
+      ],
+      "answerability": 0.0,
+      "complete_step_group": false
+    },
+    {
+      "case": "impeller-service",
+      "relevant_ranks": [
+        5,
+        20
+      ],
+      "top_k": [
+        "impeller-service-background-1",
+        "impeller-service-background-2",
+        "impeller-service-background-3"
+      ],
+      "answerability": 0.0,
+      "complete_step_group": false
+    }
+  ]
+}
