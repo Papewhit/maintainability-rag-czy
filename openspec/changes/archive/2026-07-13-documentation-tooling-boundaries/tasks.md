@@ -16,6 +16,7 @@
 - [x] 3.1 Update current governance workflows, catalog instructions, and operational commands to the three-command interface and fixed scan boundary.
 - [x] 3.2 Remove `docs/documentation-ignore-baseline.txt` and `scripts/validate_documentation.py` after current references and tests migrate.
 - [x] 3.3 Record the scope, warning-severity, and command-boundary decisions in this change's Finding ledger with disposition evidence.
+- [x] 3.4 Add modified-capability deltas that replace obsolete catalog, inbox, and delivery-warning contracts before main-spec sync.
 
 ## 4. Deterministic Coverage
 

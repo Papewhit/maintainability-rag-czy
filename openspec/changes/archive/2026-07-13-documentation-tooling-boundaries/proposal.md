@@ -19,7 +19,8 @@ Documentation governance currently scans all Markdown under `docs/`, maintains a
 
 ### Modified Capabilities
 
-None.
+- `documentation-evidence-governance`: Replace validator-owned catalog generation and blocking ignored-file manifest behavior with explicit catalog build and non-blocking structural delivery warnings.
+- `agent-architecture-consumption`: Replace the legacy validator flag and implicit catalog regeneration contract with the dedicated catalog `inbox` and `build` subcommands.
 
 ## Impact
 
