@@ -59,7 +59,7 @@ Agents SHALL present `Architecture impact: yes/no` and `New Finding: yes/no` in 
 - **THEN** its handoff reports `New Finding: yes` and identifies the typed destination
 
 ### Requirement: Read-only Finding Inbox query
-The documentation validator SHALL expose `--finding-inbox` as the single repository query for the Global Finding Inbox. It SHALL print only matching global records, sorted by `last_verified_date` from oldest to newest, with ID, kind, scope, date, and source path. An empty inbox SHALL succeed without modifying files.
+The documentation validator SHALL expose `--finding-inbox` as the single repository query for the Global Finding Inbox. It SHALL print only matching global records, sorted by `last_verified_date` from oldest to newest and then by Finding ID in ascending order when dates are equal, with ID, kind, scope, date, and source path. An empty inbox SHALL succeed without modifying files.
 
 #### Scenario: Agent queries the inbox
 - **WHEN** an agent runs the Finding Inbox query

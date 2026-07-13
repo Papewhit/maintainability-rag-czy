@@ -7,4 +7,8 @@ docs/rag-evaluation-system-explained.md
 docs/superhermes-docs/*
 docs/superhermes-project-contributions.md
 docs/superpowers/*/*
+docs/rag-maintainability-chunker/deepdoc-parse-metadata-final-summary.md
+docs/rag-maintainability-chunker/deepdoc-parse-metadata-quickstart.md
+docs/rag-maintainability-chunker/deepdoc-parse-metadata-results.md
+docs/rag-maintainability-chunker/deepdoc-parse-metadata-validation.md
 scripts/spike_deepdoc.py

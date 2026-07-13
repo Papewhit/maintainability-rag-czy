@@ -87,13 +87,13 @@ A global record that reaches either terminal evidence state remains at its path 
 
 ### 7. Make catalog consumption human-readable
 
-`docs/evidence-governance.md` will contain the authoritative `Finding and Using Governed Documentation` instructions. Humans and agents use the authority table first, regenerate the catalog with `uv run python scripts/validate_documentation.py` when it is absent or potentially stale, and follow catalog links to authoritative sources.
+`docs/evidence-governance.md` will contain the authoritative `Finding and Using Governed Documentation` instructions. Humans and agents use the authority table first, regenerate the ephemeral catalog with `uv run python scripts/validate_documentation.py` before each catalog-backed lookup, and follow catalog links to authoritative sources.
 
 The generated `docs/evidence-catalog.md` will identify itself as navigation, link to `docs/ARCHITECTURE.md` and evidence governance, show the regeneration command, explain the unconfirmed nature of Global Finding Inbox entries, preserve source fingerprint and governed status, and use clickable relative Markdown links for source documents. The generated file is self-explanatory enough for a human who opens it directly while leaving detailed semantics in the tracked governance authority.
 
 ### 8. Share one generated inbox query
 
-`scripts/validate_documentation.py --finding-inbox` will derive the global inbox directly from source documents, output a stable oldest-first table, return success for an empty inbox, and avoid writing catalog or report files. Normal catalog generation will use the same selector for a `Global Finding Inbox` section.
+`scripts/validate_documentation.py --finding-inbox` will derive the global inbox directly from source documents, output a stable table sorted by ascending `last_verified_date` and then ascending Finding ID, return success for an empty inbox, and avoid writing catalog or report files. Finding ID is the deterministic tie-break when verification dates are equal. Normal catalog generation will use the same selector for a `Global Finding Inbox` section.
 
 This command is the common interface for manual reporting, task-time investigation, and external periodic reporting. Its CLI help gives a concise usage description; detailed audience and timing guidance lives in the governance Operational Procedures section. Scheduling configuration and cadence stay outside repository evidence.
 

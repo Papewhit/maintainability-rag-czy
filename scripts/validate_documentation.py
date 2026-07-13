@@ -19,13 +19,14 @@ REQUIRED = {
  "enhancement": {"enhancement_id", "status", "scope", "motivation", "last_verified_commit", "last_verified_date"},
  "validation_report": {"validation_id", "status", "scope", "source_commit", "source_fingerprint", "executed_at"},
  "finding": {"id", "kind", "primary_scope", "evidence_status", "introduced_by", "disposition", "last_verified_commit", "last_verified_date"},
+ "finding_ledger": {"change", "last_verified_commit", "last_verified_date"},
 }
 EXPECTED_DIR_TYPES = {"findings": {"finding"}, "architecture/decisions": {"adr"}, "known-issues": {"known_issue"}, "enhancements": {"enhancement"}, "validation": {"validation_report", "validation_guide"}}
 TARGET_PREFIX = {"architecture": "docs/ARCHITECTURE.md", "adr": "docs/architecture/decisions/", "known_issue": "docs/known-issues/", "enhancement": "docs/enhancements/", "validation": "docs/validation/", "change": "openspec/changes/"}
 
 @dataclass
 class Finding:
- id: str; path: Path; kind: str=""; scope: str=""; evidence_status: str=""; disposition: str=""; target: str=""; evidence: str=""; resolution: str=""; residual_risk: str=""; last_verified_date: str=""
+ id: str; path: Path; kind: str=""; scope: str=""; evidence_status: str=""; disposition: str=""; target: str=""; evidence: str=""; resolution: str=""; residual_risk: str=""; last_verified_date: str=""; observation: str=""
 @dataclass
 class Result:
  errors: list[str]=field(default_factory=list); warnings: list[str]=field(default_factory=list); findings: list[Finding]=field(default_factory=list); documents: list[tuple[str,str,str,Path,list[str]]]=field(default_factory=list)
@@ -56,12 +57,12 @@ def _ledger_findings(path: Path,text: str) -> list[Finding]:
  matches=list(re.finditer(r"^## (?!Evidence Disposition Gate)([^\r\n]+)\s*$",text,re.M)); out=[]
  for i,m in enumerate(matches):
   f=_fields(text[m.end():matches[i+1].start() if i+1<len(matches) else len(text)])
-  out.append(Finding(m.group(1).strip(),path,f.get("kind",""),f.get("primary_scope",""),f.get("evidence_status",""),f.get("disposition",""),"" if f.get("disposition_target","") in {"null","None"} else f.get("disposition_target",""),f.get("evidence",""),f.get("resolution_evidence","") or f.get("invalidation_evidence",""),f.get("residual_risk","")))
+  out.append(Finding(m.group(1).strip(),path,f.get("kind",""),f.get("primary_scope",""),f.get("evidence_status",""),f.get("disposition",""),"" if f.get("disposition_target","") in {"null","None"} else f.get("disposition_target",""),f.get("evidence",""),f.get("resolution_evidence","") or f.get("invalidation_evidence",""),f.get("residual_risk",""),observation=f.get("observation","")))
  return out
 
 def _global_finding(path: Path,meta: dict,text: str) -> Finding:
  section=lambda name:(re.search(rf"^## {name}\s*$([\s\S]*?)(?=^## |\Z)",text,re.M).group(1).strip() if re.search(rf"^## {name}\s*$([\s\S]*?)(?=^## |\Z)",text,re.M) else "")
- return Finding(str(meta.get("id") or ""),path,str(meta.get("kind") or ""),str(meta.get("primary_scope") or ""),str(meta.get("evidence_status") or ""),str(meta.get("disposition") or ""),str(meta.get("disposition_target") or ""),section("Evidence"),section("Resolution Evidence") or section("Invalidation Evidence"),section("Residual Risk"),str(meta.get("last_verified_date") or ""))
+ return Finding(str(meta.get("id") or ""),path,str(meta.get("kind") or ""),str(meta.get("primary_scope") or ""),str(meta.get("evidence_status") or ""),str(meta.get("disposition") or ""),str(meta.get("disposition_target") or ""),section("Evidence"),section("Resolution Evidence") or section("Invalidation Evidence"),section("Residual Risk"),str(meta.get("last_verified_date") or ""),section("Observation"))
 
 def _relative(path: Path,root: Path) -> str:
  try: return path.resolve().relative_to(root.resolve()).as_posix()
@@ -90,6 +91,8 @@ def _validate_links(path: Path,text: str,root: Path,result: Result):
 
 def _validate_document(path: Path,root: Path,result: Result):
  text=path.read_text(encoding="utf-8"); meta=frontmatter(text); docs=root/"docs"; expected=_expected_type(path,docs) if path.is_relative_to(docs) else False; typ=str(meta.get("document_type") or "")
+ rel=_relative(path,root)
+ if re.fullmatch(r"openspec/changes/[^/]+/findings\.md",rel) and typ!="finding_ledger": result.errors.append(f"{rel}: expected document_type 'finding_ledger', got {typ!r}")
  if expected and typ not in expected: result.errors.append(f"{_relative(path,root)}: expected document_type in {sorted(expected)!r}, got {typ!r}")
  if typ in REQUIRED and "templates" not in path.relative_to(root).parts:
   missing=[k for k in REQUIRED[typ] if meta.get(k) in {None,"",()}]
@@ -163,8 +166,9 @@ def _validate_findings(result: Result,root: Path,closure_paths: set[Path]|None=N
   if f.scope.split(".",1)[0] not in TOP_SCOPES: result.errors.append(f"{f.id}: invalid scope {f.scope!r}")
   if f.evidence_status not in EVIDENCE_STATES: result.errors.append(f"{f.id}: invalid evidence status {f.evidence_status!r}")
   if f.disposition not in DISPOSITIONS: result.errors.append(f"{f.id}: invalid disposition {f.disposition!r}")
-  if f.evidence_status=="confirmed" and not f.evidence: result.errors.append(f"{f.id}: confirmed Finding lacks Evidence")
-  if f.evidence_status=="invalidated" and (f.disposition!="closed_in_place" or not f.resolution): result.errors.append(f"{f.id}: invalidation requires evidence and closed_in_place")
+  if not f.observation: result.errors.append(f"{f.id}: Finding lacks Observation")
+  if not f.evidence: result.errors.append(f"{f.id}: Finding lacks Evidence")
+  if f.evidence_status=="invalidated" and (not f.evidence or f.disposition!="closed_in_place" or not f.resolution): result.errors.append(f"{f.id}: invalidation requires Evidence and closed_in_place")
   if _is_global_finding(f,root):
    valid=(f.evidence_status=="observed" and f.disposition=="pending") or (f.evidence_status=="confirmed" and f.disposition!="pending") or (f.evidence_status=="invalidated" and f.disposition=="closed_in_place")
    if not valid: result.errors.append(f"{f.id}: invalid global Finding lifecycle combination ({f.evidence_status}/{f.disposition})")
@@ -217,9 +221,13 @@ def _catalog_link(path: Path,root: Path) -> str:
 
 def catalog(result: Result,root: Path) -> str:
  docs=root/"docs"; h=hashlib.sha256()
- for p in sorted(x for x in docs.rglob("*.md") if x.name!="evidence-catalog.md"):
+ governed_sources=list(x for x in docs.rglob("*.md") if x.name!="evidence-catalog.md")+list((root/"openspec/changes").glob("*/findings.md"))
+ for p in sorted(governed_sources):
   h.update(_relative(p,root).encode()); h.update(b"\0"); h.update(p.read_bytes()); h.update(b"\0")
- lines=["<!-- GENERATED; DO NOT EDIT OR TRACK -->","# Governed Documentation Catalog","","Generated navigation; linked source documents remain authoritative.","","- Current system behavior: [ARCHITECTURE.md](ARCHITECTURE.md)","- Usage and status meanings: [Documentation Evidence Governance](evidence-governance.md)","- Regenerate: `uv run python scripts/validate_documentation.py`","- Global Finding Inbox entries are unconfirmed evidence, not current facts or scheduled work.","",f"Source fingerprint: `sha256:{h.hexdigest()}`","","## Authority Entry Points","","| Need | Authority |","| --- | --- |","| Current behavior | [ARCHITECTURE.md](ARCHITECTURE.md) |","| Stable contracts | [OpenSpec specs](../openspec/specs/) |","| Governance and lookup workflow | [Documentation Evidence Governance](evidence-governance.md) |"]
+ active_changes=sorted(p for p in (root/"openspec/changes").iterdir() if p.is_dir() and p.name!="archive")
+ for p in active_changes: h.update(b"active-change\0"); h.update(p.name.encode()); h.update(b"\0")
+ lines=["<!-- GENERATED; DO NOT EDIT OR TRACK -->","# Governed Documentation Catalog","","Generated navigation; linked source documents remain authoritative. Regenerate before each catalog-backed lookup.","","- Current system behavior: [ARCHITECTURE.md](ARCHITECTURE.md)","- Usage and status meanings: [Documentation Evidence Governance](evidence-governance.md)","- Regenerate: `uv run python scripts/validate_documentation.py`","- Global Finding Inbox entries are unconfirmed evidence, not current facts or scheduled work.","",f"Source fingerprint: `sha256:{h.hexdigest()}`","","## Authority Entry Points","","| Need | Authority |","| --- | --- |","| Current behavior | [ARCHITECTURE.md](ARCHITECTURE.md) |","| Stable contracts | [OpenSpec specs](../openspec/specs/) |","| Intended work | [Active OpenSpec changes](../openspec/changes/) and the project issue tracker |","| Governance and lookup workflow | [Documentation Evidence Governance](evidence-governance.md) |","","## Active OpenSpec Changes","","The repository can enumerate OpenSpec changes; external issues remain in the project issue tracker.","","| Change | Source |","| --- | --- |"]
+ for path in active_changes: lines.append(f"| {path.name} | {_catalog_link(path,root)} |")
  lines += ["","## Global Finding Inbox","","Unconfirmed global evidence (`observed + pending`), oldest verified first.","","| ID | Kind | Scope | Last verified date | Source |","| --- | --- | --- | --- | --- |"]
  inbox=finding_inbox(result,root)
  if inbox:

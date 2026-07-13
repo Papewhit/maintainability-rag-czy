@@ -255,7 +255,7 @@ def test_valid_global_finding_lifecycle_combinations(
         id="FIND-0001", path=root / "docs/findings/FIND-0001.md",
         kind="design_ambiguity", scope="system", evidence_status=state,
         disposition=disposition, evidence="review", resolution=resolution,
-        last_verified_date="2026-07-01",
+        last_verified_date="2026-07-01", observation="Observed behavior.",
     )
     result = validator.Result(findings=[finding])
     validator._validate_findings(result, root)
@@ -275,6 +275,7 @@ def test_invalid_global_finding_lifecycle_combinations_are_rejected(
         id="FIND-0001", path=root / "docs/findings/FIND-0001.md",
         kind="design_ambiguity", scope="system", evidence_status=state,
         disposition=disposition, evidence="review", last_verified_date="2026-07-01",
+        observation="Observed behavior.",
     )
     result = validator.Result(findings=[finding])
     validator._validate_findings(result, root)
@@ -287,7 +288,7 @@ def test_change_local_observed_pending_remains_valid_during_work(tmp_path: Path)
     finding = validator.Finding(
         id="SAMPLE-F001", path=root / "openspec/changes/sample/findings.md",
         kind="design_ambiguity", scope="system", evidence_status="observed",
-        disposition="pending", evidence="review",
+        disposition="pending", evidence="review", observation="Observed behavior.",
     )
     result = validator.Result(findings=[finding])
     validator._validate_findings(result, root)
@@ -302,6 +303,17 @@ def test_finding_inbox_filters_global_records_and_orders_oldest_first(tmp_path: 
         validator.Finding("FIND-0001", root / "docs/findings/a.md", "evidence_gap", "test", "observed", "pending", last_verified_date="2026-07-01"),
         validator.Finding("FIND-0003", root / "docs/findings/c.md", "evidence_gap", "test", "confirmed", "closed_in_place", resolution="done", last_verified_date="2026-06-01"),
         validator.Finding("SAMPLE-F001", root / "openspec/changes/sample/findings.md", "evidence_gap", "test", "observed", "pending", last_verified_date="2026-05-01"),
+    ]
+    result = validator.Result(findings=findings)
+    assert [finding.id for finding in validator.finding_inbox(result, root)] == ["FIND-0001", "FIND-0002"]
+
+
+@pytest.mark.unit
+def test_finding_inbox_uses_id_as_equal_date_tiebreak(tmp_path: Path):
+    root = _repo(tmp_path)
+    findings = [
+        validator.Finding("FIND-0002", root / "docs/findings/b.md", "evidence_gap", "test", "observed", "pending", last_verified_date="2026-07-01"),
+        validator.Finding("FIND-0001", root / "docs/findings/a.md", "evidence_gap", "test", "observed", "pending", last_verified_date="2026-07-01"),
     ]
     result = validator.Result(findings=findings)
     assert [finding.id for finding in validator.finding_inbox(result, root)] == ["FIND-0001", "FIND-0002"]
@@ -355,3 +367,66 @@ def test_agent_routing_requires_named_workflow_anchor(tmp_path: Path):
     result = validator.Result()
     validator._validate_agent_routing(root, result)
     assert any("OpenSpec Producer Workflow" in error for error in result.errors)
+
+
+@pytest.mark.unit
+def test_malformed_change_ledger_cannot_bypass_closure(tmp_path: Path):
+    root = _repo(tmp_path)
+    (root / "openspec/changes/sample/findings.md").write_text(
+        "# Change Findings\n\n## SAMPLE-F001\n\n"
+        "- Kind: design_ambiguity\n- Primary scope: system\n"
+        "- Evidence status: observed\n- Observation: Ambiguous.\n"
+        "- Evidence: Review.\n- Disposition: pending\n",
+        encoding="utf-8",
+    )
+    result = validator.validate(root, closure_change="sample", manifest=False)
+    assert any("expected document_type 'finding_ledger'" in error for error in result.errors)
+
+
+@pytest.mark.unit
+def test_invalidated_finding_requires_evidence(tmp_path: Path):
+    root = _repo(tmp_path)
+    finding = validator.Finding(
+        "FIND-0001", root / "docs/findings/FIND-0001.md", "evidence_gap", "test",
+        "invalidated", "closed_in_place", resolution="disproved",
+        last_verified_date="2026-07-01", observation="Reported behavior.",
+    )
+    result = validator.Result(findings=[finding])
+    validator._validate_findings(result, root)
+    assert any("invalidation requires Evidence" in error for error in result.errors)
+
+
+@pytest.mark.unit
+def test_global_inbox_record_requires_observation_and_evidence(tmp_path: Path):
+    root = _repo(tmp_path)
+    path = root / "docs/findings/FIND-0001.md"
+    path.write_text(
+        "---\ndocument_type: finding\nid: FIND-0001\nkind: evidence_gap\n"
+        "primary_scope: test\nevidence_status: observed\nintroduced_by: review\n"
+        "disposition: pending\nlast_verified_commit: COMMIT\nlast_verified_date: 2026-07-01\n---\n"
+        "# Unsupported inbox entry\n## Observation\n\n## Evidence\n",
+        encoding="utf-8",
+    )
+    result = validator.validate(root, manifest=False)
+    assert any("Finding lacks Observation" in error for error in result.errors)
+    assert any("Finding lacks Evidence" in error for error in result.errors)
+
+
+@pytest.mark.unit
+def test_catalog_fingerprint_changes_when_change_ledger_changes(tmp_path: Path):
+    root = _repo(tmp_path)
+    ledger = root / "openspec/changes/sample/findings.md"
+    ledger.write_text("alpha", encoding="utf-8")
+    first = validator.catalog(validator.Result(), root)
+    ledger.write_text("bravo", encoding="utf-8")
+    second = validator.catalog(validator.Result(), root)
+    assert first != second
+
+
+@pytest.mark.unit
+def test_catalog_exposes_intended_work_and_active_changes(tmp_path: Path):
+    root = _repo(tmp_path)
+    text = validator.catalog(validator.Result(), root)
+    assert "| Intended work | [Active OpenSpec changes](../openspec/changes/)" in text
+    assert "## Active OpenSpec Changes" in text
+    assert "[openspec/changes/sample](../openspec/changes/sample)" in text

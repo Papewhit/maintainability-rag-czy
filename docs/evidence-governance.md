@@ -103,6 +103,11 @@ syncing, or archiving an OpenSpec change.
    `closed_in_place`.
 6. Assess architecture impact and complete every fixed gate item before
    completion, sync, or archive.
+7. Run the closure and delivery-manifest validation:
+
+   ```powershell
+   uv run python scripts/validate_documentation.py --closure-change <change-name> --strict-manifest
+   ```
 
 **Durable outputs:** the change ledger when findings exist, typed destination
 documents, validation evidence, and the completed gate. With no findings, the
@@ -150,8 +155,8 @@ design or review, or prevent duplicate discovery.
 
 1. Start with the Authority Routing table and open the source appropriate to
    the question. Current behavior starts at `docs/ARCHITECTURE.md`.
-2. When `docs/evidence-catalog.md` is absent or potentially stale, regenerate
-   and validate it:
+2. Before each catalog-backed lookup, regenerate and validate the ignored,
+   ephemeral catalog:
 
    ```powershell
    uv run python scripts/validate_documentation.py
@@ -280,8 +285,9 @@ Typed status vocabularies are:
 `scripts/validate_documentation.py` validates governed sources, prints a
 grouped catalog, and writes `docs/evidence-catalog.md`. The generated catalog
 is ignored and non-authoritative. It provides authority entry points,
-governed statuses, clickable source links, source fingerprint, regeneration
-instructions, and the Global Finding Inbox view.
+active OpenSpec change navigation, governed statuses, clickable source links,
+source fingerprint, regeneration instructions, and the Global Finding Inbox
+view. External issues remain discoverable through the project issue tracker.
 
 ## Operational Procedures
 
@@ -299,9 +305,10 @@ Run:
 uv run python scripts/validate_documentation.py --finding-inbox
 ```
 
-The command lists only global `observed + pending` records, oldest verified
-first, with ID, kind, scope, verification date, and source path. An empty list
-is a successful result. Present the output as a report; the procedure does not
+The command lists only global `observed + pending` records, sorted by ascending
+verification date and then ascending Finding ID, with ID, kind, scope,
+verification date, and source path. An empty list is a successful result.
+Present the output as a report; the procedure does not
 change Finding state, refresh verification dates, create work items, or commit
 repository changes. Scheduling cadence belongs to the external scheduler.
 
