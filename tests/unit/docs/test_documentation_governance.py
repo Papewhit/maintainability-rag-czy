@@ -17,7 +17,26 @@ SPEC.loader.exec_module(validator)
 
 def _repo(tmp_path: Path, finding: str = "") -> Path:
     (tmp_path / "docs/findings").mkdir(parents=True)
+    (tmp_path / "docs/templates").mkdir(parents=True)
     (tmp_path / "openspec/changes/sample").mkdir(parents=True)
+    (tmp_path / "openspec/specs").mkdir(parents=True)
+    for name in ("finding", "change-findings", "adr", "known-issue", "enhancement", "validation-report"):
+        (tmp_path / f"docs/templates/{name}.md").write_text(f"# {name}\n", encoding="utf-8")
+    (tmp_path / "docs/evidence-governance.md").write_text(
+        "# Governance\n"
+        "## OpenSpec Producer Workflow\n"
+        "## Non-OpenSpec Producer Workflow\n"
+        "## Finding and Using Governed Documentation\n"
+        "## Operational Procedures\n"
+        "### Global Finding Inbox Report Procedure\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "AGENTS.md").write_text(
+        "[Architecture](docs/ARCHITECTURE.md)\n"
+        "[Governance](docs/evidence-governance.md)\n"
+        "Architecture impact: yes/no\nNew Finding: yes/no\n",
+        encoding="utf-8",
+    )
     (tmp_path / "docs/ARCHITECTURE.md").write_text(
         "---\ndocument_type: current_architecture\n---\n# Architecture\n## Feature Status Matrix\n", encoding="utf-8"
     )
@@ -122,6 +141,9 @@ def test_catalog_is_grouped_and_fingerprinted(tmp_path: Path, monkeypatch):
     assert "Source fingerprint: `sha256:" in text
     assert "## Findings" in text
     assert "## Decisions" in text
+    assert "# Governed Documentation Catalog" in text
+    assert "Regenerate: `uv run python scripts/validate_documentation.py`" in text
+    assert "[Documentation Evidence Governance](evidence-governance.md)" in text
 
 
 @pytest.mark.unit
@@ -214,3 +236,122 @@ def test_validation_directory_requires_typed_document(tmp_path: Path):
     result = validator.Result()
     validator._validate_document(path, root, result)
     assert any("expected document_type" in error for error in result.errors)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("state", "disposition", "resolution"),
+    [
+        ("observed", "pending", ""),
+        ("confirmed", "closed_in_place", "verified and accepted"),
+        ("invalidated", "closed_in_place", "disproved"),
+    ],
+)
+def test_valid_global_finding_lifecycle_combinations(
+    tmp_path: Path, state: str, disposition: str, resolution: str
+):
+    root = _repo(tmp_path)
+    finding = validator.Finding(
+        id="FIND-0001", path=root / "docs/findings/FIND-0001.md",
+        kind="design_ambiguity", scope="system", evidence_status=state,
+        disposition=disposition, evidence="review", resolution=resolution,
+        last_verified_date="2026-07-01",
+    )
+    result = validator.Result(findings=[finding])
+    validator._validate_findings(result, root)
+    assert not any("invalid global Finding lifecycle" in error for error in result.errors)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("state", "disposition"),
+    [("observed", "architecture"), ("confirmed", "pending"), ("invalidated", "pending")],
+)
+def test_invalid_global_finding_lifecycle_combinations_are_rejected(
+    tmp_path: Path, state: str, disposition: str
+):
+    root = _repo(tmp_path)
+    finding = validator.Finding(
+        id="FIND-0001", path=root / "docs/findings/FIND-0001.md",
+        kind="design_ambiguity", scope="system", evidence_status=state,
+        disposition=disposition, evidence="review", last_verified_date="2026-07-01",
+    )
+    result = validator.Result(findings=[finding])
+    validator._validate_findings(result, root)
+    assert any("invalid global Finding lifecycle" in error for error in result.errors)
+
+
+@pytest.mark.unit
+def test_change_local_observed_pending_remains_valid_during_work(tmp_path: Path):
+    root = _repo(tmp_path)
+    finding = validator.Finding(
+        id="SAMPLE-F001", path=root / "openspec/changes/sample/findings.md",
+        kind="design_ambiguity", scope="system", evidence_status="observed",
+        disposition="pending", evidence="review",
+    )
+    result = validator.Result(findings=[finding])
+    validator._validate_findings(result, root)
+    assert not any("invalid global Finding lifecycle" in error for error in result.errors)
+
+
+@pytest.mark.unit
+def test_finding_inbox_filters_global_records_and_orders_oldest_first(tmp_path: Path):
+    root = _repo(tmp_path)
+    findings = [
+        validator.Finding("FIND-0002", root / "docs/findings/b.md", "evidence_gap", "test", "observed", "pending", last_verified_date="2026-07-02"),
+        validator.Finding("FIND-0001", root / "docs/findings/a.md", "evidence_gap", "test", "observed", "pending", last_verified_date="2026-07-01"),
+        validator.Finding("FIND-0003", root / "docs/findings/c.md", "evidence_gap", "test", "confirmed", "closed_in_place", resolution="done", last_verified_date="2026-06-01"),
+        validator.Finding("SAMPLE-F001", root / "openspec/changes/sample/findings.md", "evidence_gap", "test", "observed", "pending", last_verified_date="2026-05-01"),
+    ]
+    result = validator.Result(findings=findings)
+    assert [finding.id for finding in validator.finding_inbox(result, root)] == ["FIND-0001", "FIND-0002"]
+
+
+@pytest.mark.unit
+def test_finding_inbox_report_has_required_columns_and_empty_success(tmp_path: Path):
+    root = _repo(tmp_path)
+    text = validator.finding_inbox_report(validator.Result(), root)
+    assert "| ID | Kind | Scope | Last verified date | Source |" in text
+    assert "| _None_ |" in text
+
+
+@pytest.mark.unit
+def test_finding_inbox_cli_does_not_write_catalog(tmp_path: Path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.setattr(validator, "DEFAULT_ROOT", root)
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--finding-inbox"])
+    assert validator.main() == 0
+    assert not (root / "docs/evidence-catalog.md").exists()
+
+
+@pytest.mark.unit
+def test_catalog_inbox_matches_selector_and_uses_clickable_links(tmp_path: Path):
+    root = _repo(tmp_path)
+    source = root / "docs/findings/FIND-0001.md"
+    source.write_text("# Finding\n", encoding="utf-8")
+    finding = validator.Finding(
+        "FIND-0001", source, "evidence_gap", "test",
+        "observed", "pending", last_verified_date="2026-07-01",
+    )
+    result = validator.Result(findings=[finding])
+    text = validator.catalog(result, root)
+    inbox = validator.finding_inbox(result, root)
+    assert [item.id for item in inbox] == ["FIND-0001"]
+    assert "## Global Finding Inbox" in text
+    assert "[docs/findings/FIND-0001.md](findings/FIND-0001.md)" in text
+    assert "`docs/findings/FIND-0001.md`" not in text
+    catalog_path = root / "docs/evidence-catalog.md"
+    catalog_path.write_text(text, encoding="utf-8")
+    link_result = validator.Result()
+    validator._validate_links(catalog_path, text, root, link_result)
+    assert link_result.errors == []
+
+
+@pytest.mark.unit
+def test_agent_routing_requires_named_workflow_anchor(tmp_path: Path):
+    root = _repo(tmp_path)
+    governance = root / "docs/evidence-governance.md"
+    governance.write_text(governance.read_text(encoding="utf-8").replace("## OpenSpec Producer Workflow", "## Missing"), encoding="utf-8")
+    result = validator.Result()
+    validator._validate_agent_routing(root, result)
+    assert any("OpenSpec Producer Workflow" in error for error in result.errors)

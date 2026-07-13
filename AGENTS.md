@@ -32,6 +32,33 @@ DeepDoc parse metadata validation scripts live under
 `tests/e2e/deepdoc_parse_metadata/`; do not recreate milestone-numbered
 validation scripts at the repository root.
 
+## Architecture and Evidence Routing
+
+Use [the current architecture](docs/ARCHITECTURE.md) when work may assess or
+change component responsibilities, cross-module flows, storage boundaries,
+metadata or wire contracts, runtime defaults, feature status, degradation,
+trace behavior, or evaluation contracts. The evidence boundary, relevant
+component sections, feature status matrix, and known limitations are useful
+starting points; expand reading when the impact is broader or unclear.
+
+For design, OpenSpec, review, governed documentation, known limitations,
+technical debt, enhancements, or validation evidence, first read
+[documentation evidence governance](docs/evidence-governance.md) and follow
+the applicable named workflow. Re-evaluate both routes if task scope expands
+during implementation.
+
+Before handing off work, report:
+
+- `Architecture impact: yes/no` — would leaving `docs/ARCHITECTURE.md`
+  unchanged materially mislead readers about the current system or its
+  explicit planning boundary?
+- `New Finding: yes/no` — did the task produce material knowledge whose loss
+  could cause a future maintainer to misjudge behavior, boundaries, risk, or
+  evidence confidence?
+
+When either answer is `yes`, include the governed destination or updated
+authority path in the handoff.
+
 ## Review Guidelines
 
 When reviewing pull requests in this repository, use a normal code-review stance unless

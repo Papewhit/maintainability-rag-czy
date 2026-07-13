@@ -25,7 +25,7 @@ TARGET_PREFIX = {"architecture": "docs/ARCHITECTURE.md", "adr": "docs/architectu
 
 @dataclass
 class Finding:
- id: str; path: Path; kind: str=""; scope: str=""; evidence_status: str=""; disposition: str=""; target: str=""; evidence: str=""; resolution: str=""; residual_risk: str=""
+ id: str; path: Path; kind: str=""; scope: str=""; evidence_status: str=""; disposition: str=""; target: str=""; evidence: str=""; resolution: str=""; residual_risk: str=""; last_verified_date: str=""
 @dataclass
 class Result:
  errors: list[str]=field(default_factory=list); warnings: list[str]=field(default_factory=list); findings: list[Finding]=field(default_factory=list); documents: list[tuple[str,str,str,Path,list[str]]]=field(default_factory=list)
@@ -61,7 +61,7 @@ def _ledger_findings(path: Path,text: str) -> list[Finding]:
 
 def _global_finding(path: Path,meta: dict,text: str) -> Finding:
  section=lambda name:(re.search(rf"^## {name}\s*$([\s\S]*?)(?=^## |\Z)",text,re.M).group(1).strip() if re.search(rf"^## {name}\s*$([\s\S]*?)(?=^## |\Z)",text,re.M) else "")
- return Finding(str(meta.get("id") or ""),path,str(meta.get("kind") or ""),str(meta.get("primary_scope") or ""),str(meta.get("evidence_status") or ""),str(meta.get("disposition") or ""),str(meta.get("disposition_target") or ""),section("Evidence"),section("Resolution Evidence") or section("Invalidation Evidence"),section("Residual Risk"))
+ return Finding(str(meta.get("id") or ""),path,str(meta.get("kind") or ""),str(meta.get("primary_scope") or ""),str(meta.get("evidence_status") or ""),str(meta.get("disposition") or ""),str(meta.get("disposition_target") or ""),section("Evidence"),section("Resolution Evidence") or section("Invalidation Evidence"),section("Residual Risk"),str(meta.get("last_verified_date") or ""))
 
 def _relative(path: Path,root: Path) -> str:
  try: return path.resolve().relative_to(root.resolve()).as_posix()
@@ -121,6 +121,23 @@ def _validate_architecture(root: Path,result: Result):
  for planned in ("rag-intent-routing","rag-multilevel-fallback"):
   if planned in active: result.errors.append(f"docs/ARCHITECTURE.md: planned change {planned} appears in active flow")
 
+def _validate_agent_routing(root: Path,result: Result):
+ path=root/"AGENTS.md"
+ if not path.exists(): result.errors.append("AGENTS.md: missing repository instruction entry point"); return
+ text=path.read_text(encoding="utf-8")
+ _validate_links(path,text,root,result)
+ for required in ("docs/ARCHITECTURE.md","docs/evidence-governance.md","Architecture impact: yes/no","New Finding: yes/no"):
+  if required not in text: result.errors.append(f"AGENTS.md: missing architecture/evidence routing token {required!r}")
+ governance=root/"docs/evidence-governance.md"; governed=governance.read_text(encoding="utf-8") if governance.exists() else ""
+ for heading in ("## OpenSpec Producer Workflow","## Non-OpenSpec Producer Workflow","## Finding and Using Governed Documentation","## Operational Procedures","### Global Finding Inbox Report Procedure"):
+  if heading not in governed: result.errors.append(f"docs/evidence-governance.md: missing required workflow/procedure heading {heading}")
+ for rel in ("docs/templates/finding.md","docs/templates/change-findings.md","docs/templates/adr.md","docs/templates/known-issue.md","docs/templates/enhancement.md","docs/templates/validation-report.md"):
+  if not (root/rel).is_file(): result.errors.append(f"agent governance: missing template path {rel}")
+
+def _is_global_finding(f: Finding,root: Path) -> bool:
+ try: return f.path.resolve().is_relative_to((root/"docs/findings").resolve()) and f.path.name!="README.md"
+ except ValueError: return False
+
 def _target_ok(f: Finding,root: Path,doc_sources: dict[str,list[str]]) -> bool:
  if f.disposition=="closed_in_place": return not f.target and bool(f.resolution)
  if f.disposition=="issue": return bool(re.match(r"^https://",f.target))
@@ -148,6 +165,9 @@ def _validate_findings(result: Result,root: Path,closure_paths: set[Path]|None=N
   if f.disposition not in DISPOSITIONS: result.errors.append(f"{f.id}: invalid disposition {f.disposition!r}")
   if f.evidence_status=="confirmed" and not f.evidence: result.errors.append(f"{f.id}: confirmed Finding lacks Evidence")
   if f.evidence_status=="invalidated" and (f.disposition!="closed_in_place" or not f.resolution): result.errors.append(f"{f.id}: invalidation requires evidence and closed_in_place")
+  if _is_global_finding(f,root):
+   valid=(f.evidence_status=="observed" and f.disposition=="pending") or (f.evidence_status=="confirmed" and f.disposition!="pending") or (f.evidence_status=="invalidated" and f.disposition=="closed_in_place")
+   if not valid: result.errors.append(f"{f.id}: invalid global Finding lifecycle combination ({f.evidence_status}/{f.disposition})")
   if f.residual_risk and f.residual_risk.lower() not in {"none","n/a"} and f.disposition not in {"pending","known_issue","enhancement","change","issue"}: result.errors.append(f"{f.id}: residual risk has non-durable disposition")
   if f.disposition not in {"pending"} and not _target_ok(f,root,doc_sources): result.errors.append(f"{f.id}: invalid/missing disposition target or backlink")
   if closure_paths and f.path.resolve() in closure_paths and (f.evidence_status=="observed" or f.disposition=="pending"): result.errors.append(f"{f.id}: blocks closure ({f.evidence_status}/{f.disposition})")
@@ -179,16 +199,37 @@ def _manifest(root: Path,result: Result):
   if rel=="docs/evidence-catalog.md" or "/__pycache__/" in rel or rel.endswith(".pyc") or any(fnmatch.fnmatch(rel,pattern) for pattern in baseline): continue
   result.warnings.append(f"tracking decision required: {rel}")
 
+def finding_inbox(result: Result,root: Path) -> list[Finding]:
+ return sorted((f for f in result.findings if _is_global_finding(f,root) and f.evidence_status=="observed" and f.disposition=="pending"),key=lambda f:(f.last_verified_date,f.id))
+
+def finding_inbox_report(result: Result,root: Path) -> str:
+ lines=["# Global Finding Inbox","","Unconfirmed global evidence (`observed + pending`), oldest verified first.","","| ID | Kind | Scope | Last verified date | Source |","| --- | --- | --- | --- | --- |"]
+ inbox=finding_inbox(result,root)
+ if inbox:
+  for f in inbox: lines.append(f"| {f.id} | {f.kind} | {f.scope} | {f.last_verified_date} | `{_relative(f.path,root)}` |")
+ else: lines.append("| _None_ |  |  |  |  |")
+ return "\n".join(lines)+"\n"
+
+def _catalog_link(path: Path,root: Path) -> str:
+ rel=_relative(path,root)
+ href=rel[5:] if rel.startswith("docs/") else "../"+rel
+ return f"[{rel}]({href})"
+
 def catalog(result: Result,root: Path) -> str:
  docs=root/"docs"; h=hashlib.sha256()
  for p in sorted(x for x in docs.rglob("*.md") if x.name!="evidence-catalog.md"):
   h.update(_relative(p,root).encode()); h.update(b"\0"); h.update(p.read_bytes()); h.update(b"\0")
- lines=["<!-- GENERATED; DO NOT EDIT OR TRACK -->","# Evidence Catalog","",f"Source fingerprint: `sha256:{h.hexdigest()}`",""]
- lines += ["## Findings","","| ID | Kind | Scope | Evidence | Disposition | Source |","| --- | --- | --- | --- | --- | --- |"]
- for f in sorted(result.findings,key=lambda x:x.id): lines.append(f"| {f.id} | {f.kind} | {f.scope} | {f.evidence_status} | {f.disposition} | `{_relative(f.path,root)}` |")
+ lines=["<!-- GENERATED; DO NOT EDIT OR TRACK -->","# Governed Documentation Catalog","","Generated navigation; linked source documents remain authoritative.","","- Current system behavior: [ARCHITECTURE.md](ARCHITECTURE.md)","- Usage and status meanings: [Documentation Evidence Governance](evidence-governance.md)","- Regenerate: `uv run python scripts/validate_documentation.py`","- Global Finding Inbox entries are unconfirmed evidence, not current facts or scheduled work.","",f"Source fingerprint: `sha256:{h.hexdigest()}`","","## Authority Entry Points","","| Need | Authority |","| --- | --- |","| Current behavior | [ARCHITECTURE.md](ARCHITECTURE.md) |","| Stable contracts | [OpenSpec specs](../openspec/specs/) |","| Governance and lookup workflow | [Documentation Evidence Governance](evidence-governance.md) |"]
+ lines += ["","## Global Finding Inbox","","Unconfirmed global evidence (`observed + pending`), oldest verified first.","","| ID | Kind | Scope | Last verified date | Source |","| --- | --- | --- | --- | --- |"]
+ inbox=finding_inbox(result,root)
+ if inbox:
+  for f in inbox: lines.append(f"| {f.id} | {f.kind} | {f.scope} | {f.last_verified_date} | {_catalog_link(f.path,root)} |")
+ else: lines.append("| _None_ |  |  |  |  |")
+ lines += ["","## Findings","","| ID | Kind | Scope | Evidence | Disposition | Source |","| --- | --- | --- | --- | --- | --- |"]
+ for f in sorted(result.findings,key=lambda x:x.id): lines.append(f"| {f.id} | {f.kind} | {f.scope} | {f.evidence_status} | {f.disposition} | {_catalog_link(f.path,root)} |")
  for title,kind in (("Decisions","adr"),("Known Issues","known_issue"),("Enhancements","enhancement"),("Validation Evidence","validation_report")):
   lines += ["",f"## {title}","","| ID | Status | Source |","| --- | --- | --- |"]
-  for _,identity,status,path,_ in sorted(d for d in result.documents if d[0]==kind): lines.append(f"| {identity} | {status} | `{_relative(path,root)}` |")
+  for _,identity,status,path,_ in sorted(d for d in result.documents if d[0]==kind): lines.append(f"| {identity} | {status} | {_catalog_link(path,root)} |")
  return "\n".join(lines)+"\n"
 
 def validate(root: Path=DEFAULT_ROOT,*,closure_change: str|None=None,manifest: bool=True) -> Result:
@@ -197,6 +238,7 @@ def validate(root: Path=DEFAULT_ROOT,*,closure_change: str|None=None,manifest: b
   if path.name!="evidence-catalog.md": _validate_document(path,root,result)
  for path in sorted((root/"openspec/changes").glob("*/findings.md")): _validate_document(path,root,result)
  _validate_architecture(root,result)
+ _validate_agent_routing(root,result)
  closure_paths=None
  if closure_change:
   change=root/"openspec/changes"/closure_change; validate_change_gate(change,result); closure_paths={(change/"findings.md").resolve()} if (change/"findings.md").exists() else set()
@@ -205,9 +247,9 @@ def validate(root: Path=DEFAULT_ROOT,*,closure_change: str|None=None,manifest: b
  return result
 
 def main() -> int:
- ap=argparse.ArgumentParser(); ap.add_argument("--closure-change"); ap.add_argument("--strict-manifest",action="store_true"); ap.add_argument("--no-catalog",action="store_true"); args=ap.parse_args()
- root=DEFAULT_ROOT; result=validate(root,closure_change=args.closure_change); output=catalog(result,root)
- if not args.no_catalog: (root/"docs/evidence-catalog.md").write_text(output,encoding="utf-8")
+ ap=argparse.ArgumentParser(); ap.add_argument("--closure-change"); ap.add_argument("--strict-manifest",action="store_true"); ap.add_argument("--no-catalog",action="store_true"); ap.add_argument("--finding-inbox",action="store_true",help="print the read-only Global Finding Inbox without writing catalog or report files"); args=ap.parse_args()
+ root=DEFAULT_ROOT; result=validate(root,closure_change=args.closure_change); output=finding_inbox_report(result,root) if args.finding_inbox else catalog(result,root)
+ if not args.finding_inbox and not args.no_catalog: (root/"docs/evidence-catalog.md").write_text(output,encoding="utf-8")
  print(output,end="")
  for w in result.warnings: print("WARNING: "+w,file=sys.stderr)
  for e in result.errors: print("ERROR: "+e,file=sys.stderr)

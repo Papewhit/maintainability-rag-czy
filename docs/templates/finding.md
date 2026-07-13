@@ -20,4 +20,7 @@ last_verified_date: 2000-01-01
 ## Evidence
 ## Disposition
 
-For `closed_in_place`, record Resolution Evidence or Invalidation Evidence and leave the target null.
+Keep an unconfirmed global record as `observed + pending`. On confirmation,
+select a governed non-pending disposition; on disproof, use
+`invalidated + closed_in_place`. For `closed_in_place`, record Resolution
+Evidence or Invalidation Evidence and leave the target null.

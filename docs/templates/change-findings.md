@@ -7,6 +7,10 @@ last_verified_date: 2000-01-01
 
 # Change Findings
 
+Use this conditional ledger for material findings produced by an OpenSpec
+change. `observed + pending` is allowed during implementation but must be
+confirmed or invalidated and dispositioned before the change closure gate.
+
 ## CHANGE-F001
 
 - Kind: design_ambiguity

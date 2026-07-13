@@ -8,4 +8,19 @@ last_verified_date: 2026-07-12
 
 # Global Findings
 
-This directory holds material Findings outside OpenSpec that have no natural typed destination. Use one file per Finding, a stable `FIND-NNNN` ID, and `docs/templates/finding.md`. Closed/invalidated files remain in place. Do not hand-maintain an index; generate `docs/evidence-catalog.md` with the validator. This directory is not a backlog.
+This directory is the durable inbox for material findings discovered outside
+OpenSpec whose evidence or typed destination is not yet sufficiently known.
+Use one file per Finding, a stable `FIND-NNNN` ID, and
+`docs/templates/finding.md`.
+
+Global records use one of three stable combinations:
+
+- `observed + pending`: appears in the generated Global Finding Inbox;
+- `confirmed + non-pending disposition`: linked to its durable destination;
+- `invalidated + closed_in_place`: retained with invalidation evidence.
+
+If a non-OpenSpec discovery is already confirmed and clearly classified,
+create or update its typed document directly. Closed and invalidated Finding
+files remain at their stable paths. Do not hand-maintain an index; generate
+`docs/evidence-catalog.md` or query `--finding-inbox` through the documentation
+validator. The inbox is unconfirmed evidence, not a backlog.
