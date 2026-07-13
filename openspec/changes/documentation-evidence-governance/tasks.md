@@ -40,7 +40,7 @@
 - [x] 6.1 Confirm every new Finding is classified.
 - [x] 6.2 Confirm code, test, review, runtime, or invalidation evidence is linked.
 - [x] 6.3 Confirm every confirmed Finding has a durable disposition or justified in-place closure.
-- [x] 6.4 Confirm every unresolved matter has a durable typed document.
-- [x] 6.5 Confirm follow-up work is represented by an OpenSpec change or issue rather than evidence-document scheduling.
+- [x] 6.4 Confirm every residual risk has a durable typed destination.
+- [x] 6.5 Confirm planned work has an OpenSpec change or issue owner rather than evidence-document scheduling.
 - [x] 6.6 Confirm architecture impact is applied.
 - [x] 6.7 Confirm no undispositioned design ambiguity remains and complete the approved ignored/tracked PR manifest.

@@ -119,8 +119,8 @@ Every change created or materially updated after governance adoption, and every 
 - [ ] New findings classified, or `No new findings` recorded
 - [ ] Code, test, review, runtime, or invalidation evidence linked
 - [ ] Every confirmed Finding has a durable disposition or evidenced in-place closure
-- [ ] Unresolved matters have durable typed documents
-- [ ] Follow-up work has an OpenSpec change or issue where required
+- [ ] Residual risks have durable typed destinations
+- [ ] Planned work has an OpenSpec change or issue owner where required
 - [ ] ARCHITECTURE impact assessed
 - [ ] No undispositioned design ambiguity remains
 ```
