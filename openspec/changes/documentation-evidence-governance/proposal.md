@@ -6,7 +6,7 @@ Ragtenance documentation mixes current implementation facts, historical snapshot
 
 - Rebuild `docs/ARCHITECTURE.md` as the single English-language current-system map, verified against a named commit and explicitly separating default-enabled, implemented-but-default-disabled, and planned capabilities.
 - Mark superseded or historical generated architecture material without creating competing current-system descriptions.
-- Introduce purpose-specific templates for change-local and global Findings, ADRs, known issues, enhancements, and validation reports; Finding defines the maximal discovery vocabulary but is not a universal document template.
+- Introduce two Finding serializations backed by one Finding record vocabulary, plus independent purpose-specific contracts for ADRs, known issues, enhancements, and validation reports.
 - Add a global one-Finding-per-file intake under `docs/findings/` and conditional per-change `findings.md` ledgers.
 - Define evidence confirmation, durable disposition, source/target linking, and an explicit OpenSpec Evidence Disposition Gate.
 - Migrate RAG postprocess evidence and archived terminology/chunker decisions so resolved decisions, open issues, enhancements, and reproducible evidence no longer share ambiguous ownership.

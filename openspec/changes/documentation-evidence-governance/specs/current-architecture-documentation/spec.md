@@ -8,7 +8,7 @@
 - **THEN** a prominent status notice identifies it as superseded or historical and directs the reader to `docs/ARCHITECTURE.md`
 
 ### Requirement: Verification and status boundary
-The architecture overview SHALL identify its verified commit, verification time, evidence boundary, current facts, implemented-but-default-disabled behavior, and planned behavior. Planned `rag-intent-routing` and `rag-multilevel-fallback` behavior SHALL NOT appear in the active flow.
+The architecture overview SHALL identify its verified commit, verification date, evidence boundary, current facts, implemented-but-default-disabled behavior, and planned behavior. Planned `rag-intent-routing` and `rag-multilevel-fallback` behavior SHALL NOT appear in the active flow.
 
 #### Scenario: Runtime feature status is documented
 - **WHEN** the architecture status matrix lists step-chain checking, confidence gating, score fusion, auto-merge, structure reranking, or candidate strategy
@@ -41,4 +41,3 @@ The architecture overview SHALL document trace contracts, evaluation boundaries,
 #### Scenario: Reader verifies architecture claims
 - **WHEN** a reader follows the architecture verification section
 - **THEN** the listed commands validate code paths, documentation governance, relevant unit tests, and OpenSpec status without requiring undocumented steps
-

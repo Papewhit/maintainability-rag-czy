@@ -87,6 +87,34 @@ def test_duplicate_finding_ids_are_rejected():
 
 
 @pytest.mark.unit
+def test_residual_risk_requires_durable_disposition():
+    result = validator.Result(findings=[validator.Finding(
+        id="FIND-0001", path=Path("finding.md"), kind="system_limitation",
+        scope="system", evidence_status="confirmed", disposition="closed_in_place",
+        evidence="code", resolution="accepted", residual_risk="Failure can recur.",
+    )])
+    validator._validate_findings(result, Path.cwd())
+    assert any("residual risk has non-durable disposition" in error for error in result.errors)
+
+
+@pytest.mark.unit
+def test_last_verified_date_rejects_timestamp(tmp_path: Path):
+    root = _repo(tmp_path)
+    path = root / "docs/findings/FIND-0001.md"
+    path.write_text(
+        "---\ndocument_type: finding\nid: FIND-0001\nkind: documentation_drift\n"
+        "primary_scope: documentation\nevidence_status: observed\nintroduced_by: review\n"
+        "disposition: pending\nlast_verified_commit: COMMIT\n"
+        "last_verified_date: 2026-07-12T00:00:00Z\n---\n"
+        "# Finding\n## Observation\nDrift.\n## Evidence\nReview.\n",
+        encoding="utf-8",
+    )
+    result = validator.Result()
+    validator._validate_document(path, root, result)
+    assert any("last_verified_date must use YYYY-MM-DD" in error for error in result.errors)
+
+
+@pytest.mark.unit
 def test_catalog_is_grouped_and_fingerprinted(tmp_path: Path, monkeypatch):
     root = _repo(tmp_path)
     result = validator.Result(findings=[validator.Finding(id="FIND-0001", path=root / "docs/findings/a.md", kind="implementation_fact", scope="system", evidence_status="confirmed", disposition="closed_in_place")])

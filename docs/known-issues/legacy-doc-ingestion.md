@@ -6,10 +6,9 @@ scope: rag.ingestion
 severity: medium
 first_confirmed: 2026-07-12
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 source_findings:
   - DOC-EVG-F007
-follow_up: null
 ---
 
 # Legacy DOC Extension Is Registered Without a DOC Parser

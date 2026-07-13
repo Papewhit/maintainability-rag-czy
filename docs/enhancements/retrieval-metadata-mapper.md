@@ -5,10 +5,9 @@ status: candidate
 scope: rag.retrieval
 motivation: Reduce field omissions across retrieval result normalization paths.
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 source_findings: []
 related_issues: []
-follow_up: null
 ---
 
 # Declarative Retrieval Metadata Mapper
@@ -32,4 +31,3 @@ Current `_RETRIEVAL_OUTPUT_FIELDS`, Milvus formatting, trace, and codec contract
 ## Planning Status
 
 Candidate only; create an OpenSpec change or issue before implementation.
-

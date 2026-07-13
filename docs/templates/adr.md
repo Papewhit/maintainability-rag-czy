@@ -5,7 +5,7 @@ status: proposed
 scope: system
 decision_date: 2000-01-01
 last_verified_commit: COMMIT
-last_verified_time: 2000-01-01T00:00:00Z
+last_verified_date: 2000-01-01
 source_findings: []
 supersedes: []
 superseded_by: null
@@ -18,4 +18,3 @@ superseded_by: null
 ## Alternatives
 ## Consequences
 ## Evidence
-

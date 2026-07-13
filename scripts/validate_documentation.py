@@ -14,18 +14,18 @@ EVIDENCE_STATES = {"observed", "confirmed", "invalidated"}
 DISPOSITIONS = {"pending", "architecture", "adr", "known_issue", "enhancement", "validation", "change", "issue", "closed_in_place"}
 TYPE_STATUS = {"adr": {"proposed", "accepted", "superseded", "rejected"}, "known_issue": {"open", "mitigated", "resolved", "invalidated"}, "enhancement": {"candidate", "planned", "delivered", "declined"}, "validation_report": {"passed", "failed", "partial", "historical", "superseded"}}
 REQUIRED = {
- "adr": {"adr_id", "status", "scope", "decision_date", "last_verified_commit", "last_verified_time"},
- "known_issue": {"issue_id", "status", "scope", "severity", "first_confirmed", "last_verified_commit", "last_verified_time"},
- "enhancement": {"enhancement_id", "status", "scope", "motivation", "last_verified_commit", "last_verified_time"},
+ "adr": {"adr_id", "status", "scope", "decision_date", "last_verified_commit", "last_verified_date"},
+ "known_issue": {"issue_id", "status", "scope", "severity", "first_confirmed", "last_verified_commit", "last_verified_date"},
+ "enhancement": {"enhancement_id", "status", "scope", "motivation", "last_verified_commit", "last_verified_date"},
  "validation_report": {"validation_id", "status", "scope", "source_commit", "source_fingerprint", "executed_at"},
- "finding": {"id", "kind", "primary_scope", "evidence_status", "introduced_by", "disposition", "unresolved", "last_verified_commit", "last_verified_time"},
+ "finding": {"id", "kind", "primary_scope", "evidence_status", "introduced_by", "disposition", "last_verified_commit", "last_verified_date"},
 }
 EXPECTED_DIR_TYPES = {"findings": {"finding"}, "architecture/decisions": {"adr"}, "known-issues": {"known_issue"}, "enhancements": {"enhancement"}, "validation": {"validation_report", "validation_guide"}}
 TARGET_PREFIX = {"architecture": "docs/ARCHITECTURE.md", "adr": "docs/architecture/decisions/", "known_issue": "docs/known-issues/", "enhancement": "docs/enhancements/", "validation": "docs/validation/", "change": "openspec/changes/"}
 
 @dataclass
 class Finding:
- id: str; path: Path; kind: str=""; scope: str=""; evidence_status: str=""; disposition: str=""; target: str=""; evidence: str=""; resolution: str=""; unresolved: bool|None=None; residual_risk: str=""
+ id: str; path: Path; kind: str=""; scope: str=""; evidence_status: str=""; disposition: str=""; target: str=""; evidence: str=""; resolution: str=""; residual_risk: str=""
 @dataclass
 class Result:
  errors: list[str]=field(default_factory=list); warnings: list[str]=field(default_factory=list); findings: list[Finding]=field(default_factory=list); documents: list[tuple[str,str,str,Path,list[str]]]=field(default_factory=list)
@@ -56,14 +56,12 @@ def _ledger_findings(path: Path,text: str) -> list[Finding]:
  matches=list(re.finditer(r"^## (?!Evidence Disposition Gate)([^\r\n]+)\s*$",text,re.M)); out=[]
  for i,m in enumerate(matches):
   f=_fields(text[m.end():matches[i+1].start() if i+1<len(matches) else len(text)])
-  raw_unresolved=f.get("unresolved")
-  unresolved=None if raw_unresolved is None else raw_unresolved.lower()=="true"
-  out.append(Finding(m.group(1).strip(),path,f.get("kind",""),f.get("primary_scope",""),f.get("evidence_status",""),f.get("disposition",""),"" if f.get("disposition_target","") in {"null","None"} else f.get("disposition_target",""),f.get("evidence",""),f.get("resolution_evidence","") or f.get("invalidation_evidence",""),unresolved,f.get("residual_risk","")))
+  out.append(Finding(m.group(1).strip(),path,f.get("kind",""),f.get("primary_scope",""),f.get("evidence_status",""),f.get("disposition",""),"" if f.get("disposition_target","") in {"null","None"} else f.get("disposition_target",""),f.get("evidence",""),f.get("resolution_evidence","") or f.get("invalidation_evidence",""),f.get("residual_risk","")))
  return out
 
 def _global_finding(path: Path,meta: dict,text: str) -> Finding:
  section=lambda name:(re.search(rf"^## {name}\s*$([\s\S]*?)(?=^## |\Z)",text,re.M).group(1).strip() if re.search(rf"^## {name}\s*$([\s\S]*?)(?=^## |\Z)",text,re.M) else "")
- return Finding(str(meta.get("id") or ""),path,str(meta.get("kind") or ""),str(meta.get("primary_scope") or ""),str(meta.get("evidence_status") or ""),str(meta.get("disposition") or ""),str(meta.get("disposition_target") or ""),section("Evidence"),section("Resolution Evidence") or section("Invalidation Evidence"),meta.get("unresolved"),section("Residual Risk"))
+ return Finding(str(meta.get("id") or ""),path,str(meta.get("kind") or ""),str(meta.get("primary_scope") or ""),str(meta.get("evidence_status") or ""),str(meta.get("disposition") or ""),str(meta.get("disposition_target") or ""),section("Evidence"),section("Resolution Evidence") or section("Invalidation Evidence"),section("Residual Risk"))
 
 def _relative(path: Path,root: Path) -> str:
  try: return path.resolve().relative_to(root.resolve()).as_posix()
@@ -96,6 +94,7 @@ def _validate_document(path: Path,root: Path,result: Result):
  if typ in REQUIRED and "templates" not in path.relative_to(root).parts:
   missing=[k for k in REQUIRED[typ] if meta.get(k) in {None,"",()}]
   if missing: result.errors.append(f"{_relative(path,root)}: missing/empty metadata {', '.join(sorted(missing))}")
+ if "last_verified_date" in meta and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",str(meta["last_verified_date"])): result.errors.append(f"{_relative(path,root)}: last_verified_date must use YYYY-MM-DD")
  if typ=="finding" and "templates" not in path.parts: result.findings.append(_global_finding(path,meta,text))
  if typ=="finding_ledger" and "templates" not in path.parts: result.findings.extend(_ledger_findings(path,text))
  identity=str(meta.get({"adr":"adr_id","known_issue":"issue_id","enhancement":"enhancement_id","validation_report":"validation_id"}.get(typ,"") ) or "")
@@ -148,10 +147,8 @@ def _validate_findings(result: Result,root: Path,closure_paths: set[Path]|None=N
   if f.evidence_status not in EVIDENCE_STATES: result.errors.append(f"{f.id}: invalid evidence status {f.evidence_status!r}")
   if f.disposition not in DISPOSITIONS: result.errors.append(f"{f.id}: invalid disposition {f.disposition!r}")
   if f.evidence_status=="confirmed" and not f.evidence: result.errors.append(f"{f.id}: confirmed Finding lacks Evidence")
-  if f.unresolved is None: result.errors.append(f"{f.id}: Unresolved must be explicitly true or false")
-  if f.residual_risk and f.residual_risk.lower() not in {"none","n/a"} and f.unresolved is not True: result.errors.append(f"{f.id}: non-empty Residual risk requires Unresolved: true")
   if f.evidence_status=="invalidated" and (f.disposition!="closed_in_place" or not f.resolution): result.errors.append(f"{f.id}: invalidation requires evidence and closed_in_place")
-  if f.unresolved and f.disposition not in {"pending","known_issue","enhancement","change","issue"}: result.errors.append(f"{f.id}: unresolved Finding has non-durable disposition")
+  if f.residual_risk and f.residual_risk.lower() not in {"none","n/a"} and f.disposition not in {"pending","known_issue","enhancement","change","issue"}: result.errors.append(f"{f.id}: residual risk has non-durable disposition")
   if f.disposition not in {"pending"} and not _target_ok(f,root,doc_sources): result.errors.append(f"{f.id}: invalid/missing disposition target or backlink")
   if closure_paths and f.path.resolve() in closure_paths and (f.evidence_status=="observed" or f.disposition=="pending"): result.errors.append(f"{f.id}: blocks closure ({f.evidence_status}/{f.disposition})")
 

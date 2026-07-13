@@ -6,10 +6,9 @@ scope: rag.embedding
 severity: medium
 first_confirmed: 2026-07-12
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 source_findings:
   - DOC-EVG-F006
-follow_up: null
 ---
 
 # Index Profiles Do Not Automatically Isolate BM25 State
@@ -33,4 +32,3 @@ Configure a distinct `BM25_STATE_PATH` for every index profile.
 ## Resolution Criteria
 
 Derive profile-aware default paths or enforce explicit configuration with tests and migration guidance.
-

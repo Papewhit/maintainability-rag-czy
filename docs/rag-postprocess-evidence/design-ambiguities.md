@@ -3,7 +3,7 @@ document_type: migrated_change_evidence
 status: superseded
 superseded_by: docs/architecture/decisions/ADR-0001-parent-leaf-evidence-storage.md
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 source_change: rag-postprocess-evidence
 ---
 
@@ -28,4 +28,3 @@ This document no longer mixes resolved decisions and open debt. It preserves the
 | Entity metadata observability | Enhancement | [ENH-RAG-0002](../enhancements/entity-metadata-observability.md) |
 
 The detailed historical reasoning remains in `openspec/changes/rag-postprocess-evidence/design.md` and its archived/active change record. Current behavior is authoritative only in [ARCHITECTURE.md](../ARCHITECTURE.md).
-

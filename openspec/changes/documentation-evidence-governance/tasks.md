@@ -8,7 +8,7 @@
 ## 2. Evidence Governance Model
 
 - [x] 2.1 Create the governance authority document defining ownership, capture/disposition/consumption layers, Finding vocabulary, kinds, scopes, evidence states, dispositions, linking, and catalog semantics.
-- [x] 2.2 Create purpose-specific templates for global Findings, change Finding ledgers, ADRs, known issues, enhancements, and validation reports using appropriate metadata subsets.
+- [x] 2.2 Create global/change Finding serializations and independent purpose-specific templates for ADRs, known issues, enhancements, and validation reports.
 - [x] 2.3 Create `docs/findings/README.md` and the global one-Finding-per-file conventions without a hand-maintained register.
 - [x] 2.4 Define the mandatory Evidence Disposition Gate and conditional `findings.md` behavior for OpenSpec changes.
 

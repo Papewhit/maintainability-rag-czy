@@ -30,7 +30,7 @@ A Finding SHALL use `observed`, `confirmed`, or `invalidated` as its evidence st
 - **THEN** the Finding records invalidation evidence and uses `closed_in_place`
 
 ### Requirement: Purpose-specific templates
-The repository SHALL provide separate templates and required metadata subsets for Finding ledgers/files, ADRs, known issues, enhancements, and validation reports. Enhancements SHALL be permitted without a source Finding.
+The repository SHALL define one Finding record vocabulary with metadata and body concepts, and SHALL provide separate templates for global Findings, change Finding ledgers, ADRs, known issues, enhancements, and validation reports. Finding narrative concepts SHALL NOT be duplicated in frontmatter. Typed non-Finding documents SHALL have independent contracts rather than inherit a Finding schema. Enhancements SHALL be permitted without a source Finding.
 
 #### Scenario: ADR is created from a finding
 - **WHEN** a confirmed Finding results in a long-lived design decision
@@ -40,15 +40,15 @@ The repository SHALL provide separate templates and required metadata subsets fo
 - **WHEN** a future opportunity is not based on confirmed evidence
 - **THEN** an enhancement document can be created without a `source_findings` value
 
-### Requirement: Typed targets and unresolved risk
-The repository SHALL define machine-valid target formats, typed artifact status vocabularies, and backlink rules. A Finding with unresolved risk SHALL route to a known issue, enhancement, change, or issue and SHALL NOT close in place.
+### Requirement: Typed targets and residual risk
+The repository SHALL define machine-valid target formats, typed artifact status vocabularies, and backlink rules. A Finding with residual risk SHALL route to a known issue, enhancement, change, or issue and SHALL NOT close in place. It SHALL NOT use a separate `unresolved` or `follow_up` field.
 
 #### Scenario: Finding routes to an ADR
 - **WHEN** a Finding uses `disposition: adr`
 - **THEN** its repository-relative ADR target exists and the ADR backlinks through `source_findings`
 
-#### Scenario: Finding retains unresolved risk
-- **WHEN** a Finding declares `unresolved: true`
+#### Scenario: Finding retains residual risk
+- **WHEN** a Finding records substantive Residual Risk
 - **THEN** its disposition is `known_issue`, `enhancement`, `change`, or `issue`
 
 ### Requirement: Evidence catalog generation

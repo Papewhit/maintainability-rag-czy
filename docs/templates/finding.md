@@ -7,9 +7,8 @@ evidence_status: observed
 introduced_by: review-or-event
 disposition: pending
 disposition_target: null
-unresolved: false
 last_verified_commit: COMMIT
-last_verified_time: 2000-01-01T00:00:00Z
+last_verified_date: 2000-01-01
 ---
 
 # Finding title

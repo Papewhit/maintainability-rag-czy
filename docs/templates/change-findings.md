@@ -2,7 +2,7 @@
 document_type: finding_ledger
 change: change-name
 last_verified_commit: COMMIT
-last_verified_time: 2000-01-01T00:00:00Z
+last_verified_date: 2000-01-01
 ---
 
 # Change Findings
@@ -16,7 +16,6 @@ last_verified_time: 2000-01-01T00:00:00Z
 - Inference: Optional interpretation.
 - Decision: Optional decision, separate from observation and inference.
 - Residual risk: none
-- Unresolved: false
 - Evidence: Reproducible evidence.
 - Disposition: pending
 - Disposition target: null

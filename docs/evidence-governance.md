@@ -3,7 +3,7 @@ document_type: governance
 status: current
 scope: documentation
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 ---
 
 # Documentation Evidence Governance
@@ -29,17 +29,24 @@ This governance records what is known and why. Evidence is not a backlog: Findin
 2. **Disposition** it by confirming or invalidating evidence and selecting a durable target.
 3. **Consume** the typed authority appropriate to the question; use the generated catalog only to discover and trace it.
 
-A Finding is a discovery protocol, not a universal document template. ADRs, known issues, enhancements, and validation reports have purpose-specific templates. An enhancement may originate as an idea and need no source Finding.
+A Finding is a discovery protocol that supports the consolidation of temporary findings. ADRs, known issues, enhancements, and validation reports have purpose-specific templates. An enhancement may originate as an idea and need no source Finding.
 
 ## Finding Capture
 
-Use `openspec/changes/<change>/findings.md` for change findings. Outside OpenSpec, use one file per Finding in `docs/findings/`. Do not record casual ideas, ordinary task progress, or schedules.
+Use `openspec/changes/<change>/findings.md` for change-related findings. Outside OpenSpec workflow, use one file per Finding in `docs/findings/`. Do not record casual ideas, ordinary task progress, or schedules.
 
 Record a Finding when it may change design/acceptance, become a limitation/debt/enhancement, needs evidence to close, or must be dispositioned before change closure.
 
-### Maximum Vocabulary
+### Finding Record Vocabulary
 
-This is a field vocabulary, not one mandatory schema:
+This is the maximum vocabulary for a Finding record, not a frontmatter schema and not a base schema inherited by other document types. It has two representations:
+
+- **Metadata** exists for identity, indexing, relationships, and verification.
+- **Body sections** hold the knowledge narrative. They are not duplicated into frontmatter.
+
+Global and change-local Finding templates select different serializations of this same record vocabulary. ADR, known-issue, enhancement, and validation templates are independent typed contracts; they may reuse common field meanings such as `scope` or `last_verified_date`, but they do not inherit the Finding vocabulary.
+
+Finding metadata:
 
 ```yaml
 id:                 # stable identity
@@ -48,18 +55,13 @@ primary_scope:      # governed top-level or dotted scope
 scopes:             # optional additional scopes
 evidence_status:    # observed | confirmed | invalidated
 introduced_by:      # origin
-observation:        # directly observed fact
-inference:          # interpretation, kept separate
-decision:           # decision made during disposition
-residual_risk:      # remaining uncertainty/risk
-unresolved:         # true | false; machine-readable gate signal
-evidence:           # reproducible sources
 disposition:        # durable route
 disposition_target: # target identity/path
-follow_up:          # optional change/issue
 last_verified_commit:
-last_verified_time:
+last_verified_date: # YYYY-MM-DD
 ```
+
+Finding body sections are `Observation`, `Inference`, `Decision`, `Residual Risk`, `Evidence`, and `Disposition`. `Observation` and `Evidence` are required; the other sections are completed when applicable. A change ledger expresses the same body concepts as labeled list items under each Finding heading, not as ledger frontmatter.
 
 Kinds: `implementation_fact`, `documentation_drift`, `design_ambiguity`, `behavior_defect`, `system_limitation`, `technical_debt`, `evidence_gap`, `evaluation_result`, `delivery_risk`.
 
@@ -73,7 +75,7 @@ Top-level scopes: `system`, `documentation`, `rag`, `test`, `evaluation`, `deliv
 
 Disposition values: `pending`, `architecture`, `adr`, `known_issue`, `enhancement`, `validation`, `change`, `issue`, `closed_in_place`.
 
-Finding state never tracks planned/completed work. That lifecycle belongs to the target. `observed` or `pending` blocks closure. `confirmed` requires evidence and a target, or explicit resolution evidence for `closed_in_place`. `invalidated` requires invalidation evidence and `closed_in_place`. `unresolved: true` requires `known_issue`, `enhancement`, `change`, or `issue`; it cannot close in place. Identity, provenance, and original Observation remain stable while later evidence may refine inference and disposition.
+Finding state never tracks planned/completed work. That lifecycle belongs to the target. `observed` or `pending` blocks closure. `confirmed` requires evidence and a target, or explicit resolution evidence for `closed_in_place`. `invalidated` requires invalidation evidence and `closed_in_place`. A Finding with residual risk routes to `known_issue`, `enhancement`, `change`, or `issue`; `closed_in_place` asserts that no durable follow-on risk remains. Identity, provenance, and original Observation remain stable while later evidence may refine inference and disposition.
 
 ### Target and Backlink Contract
 

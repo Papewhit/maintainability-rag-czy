@@ -3,7 +3,7 @@ document_type: generated_historical_analysis
 status: historical
 superseded_by: docs/ARCHITECTURE.md
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 ---
 
 > **Historical generated document:** The body below is intentionally not maintained and must not be used as current implementation evidence. See [ARCHITECTURE.md](ARCHITECTURE.md).

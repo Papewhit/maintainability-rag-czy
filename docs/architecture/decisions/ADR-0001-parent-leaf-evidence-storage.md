@@ -5,7 +5,7 @@ status: accepted
 scope: rag.storage
 decision_date: 2026-07-12
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 source_findings: []
 supersedes: []
 superseded_by: null
@@ -38,4 +38,3 @@ Parent store availability affects context expansion but not initial leaf retriev
 - `backend/infra/vector_store/milvus_writer.py`
 - `backend/rag/utils.py::_fetch_adjacent_chunks`
 - archived `rag-maintainability-chunker` and `rag-postprocess-evidence` designs
-

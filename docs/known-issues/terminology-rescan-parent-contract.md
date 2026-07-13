@@ -6,10 +6,9 @@ scope: rag.terminology
 severity: high
 first_confirmed: 2026-07-12
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 source_findings:
   - DOC-EVG-F005
-follow_up: null
 ---
 
 # Terminology Rescan Violates the Parent Store Contract
@@ -33,4 +32,3 @@ Avoid terminology rescan where parent metadata consistency is required; rebuild 
 ## Resolution Criteria
 
 Resolve leaf-to-parent IDs before snapshot/update, update actual parents only, and add rollback/integration tests.
-

@@ -6,9 +6,8 @@ scope: rag.storage
 severity: medium
 first_confirmed: 2026-07-11
 last_verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_time: 2026-07-12T00:00:00+08:00
+last_verified_date: 2026-07-12
 source_findings: []
-follow_up: null
 ---
 
 # Entity Metadata Has No Explicit Milvus Schema
@@ -32,4 +31,3 @@ Runtime decoding accepts compatible historical shapes and degrades malformed val
 ## Resolution Criteria
 
 Define a versioned collection schema, migration/alias switch, rollback, and real Milvus integration validation in a separately scheduled change.
-

@@ -12,7 +12,7 @@ The governance model must work both inside and outside OpenSpec. It must support
 
 - Make `docs/ARCHITECTURE.md` the only current-system overview and bind its claims to reproducible code evidence.
 - Separate discovery capture, durable disposition, and typed consumption.
-- Provide purpose-specific metadata and content templates derived from a shared maximum Finding vocabulary.
+- Define one maximum Finding record vocabulary, split between metadata and body concepts, while keeping purpose-specific document templates independent.
 - Make undispositioned Findings and ambiguous planned/current statements mechanically detectable.
 - Prevent ignored documentation and validator files from silently disappearing from the proposed PR manifest.
 - Preserve historical evidence with explicit status and supersession metadata instead of unsupported deletion or content rewriting.
@@ -34,9 +34,11 @@ A Finding is a discovery record, not a universal document type. Findings are cap
 
 Alternative rejected: storing every artifact as a Finding. It makes ADR and validation structures unnatural, treats ideas as evidence, and produces an undifferentiated consumption surface.
 
-### 2. Use a maximum Finding vocabulary and typed subsets
+### 2. Use one Finding record vocabulary without schema inheritance
 
-The maximum vocabulary includes identity, kind, scope, evidence state, provenance, observation, inference, decision, residual risk, evidence, disposition, target, follow-up, and verification binding. Finding ledgers use the discovery subset; ADR, known-issue, enhancement, and validation templates define their own required subsets and bodies. An enhancement may originate from an idea and therefore does not require `source_findings`.
+The maximum Finding record vocabulary has two explicit parts. Metadata contains identity, kind, scope, evidence state, provenance, disposition, target, and commit/date verification binding. Body concepts contain Observation, Inference, Decision, Residual Risk, Evidence, and Disposition narrative. Narrative concepts are not duplicated into frontmatter.
+
+The global Finding template and change ledger are two serializations of this record vocabulary. ADR, known-issue, enhancement, and validation templates are independent typed contracts rather than Finding subsets or subclasses. They may reuse common field semantics, but their required fields and bodies come only from their own template. An enhancement may originate from an idea and therefore does not require `source_findings`.
 
 Finding `kind` describes discovery nature, not destination: `implementation_fact`, `documentation_drift`, `design_ambiguity`, `behavior_defect`, `system_limitation`, `technical_debt`, `evidence_gap`, `evaluation_result`, or `delivery_risk`.
 
@@ -60,7 +62,7 @@ Alternative rejected: a hand-maintained tracked register, which creates a second
 
 An OpenSpec change creates `findings.md` when implementation, validation, evaluation, or review produces Findings. If it produces none, its tasks record `No new findings` in the mandatory Evidence Disposition Gate. Absence alone never proves that no Findings exist.
 
-The gate checks classification, linked code/test/review/runtime evidence, durable disposition, unresolved-item durability, follow-up ownership, architecture impact, and remaining design ambiguity.
+The gate checks classification, linked code/test/review/runtime evidence, durable disposition, residual-risk durability, work ownership through a disposition target, architecture impact, and remaining design ambiguity.
 
 ### 6. Preserve typed authority boundaries
 
@@ -108,4 +110,3 @@ Rollback is documentation-only: revert tracked governance artifacts and architec
 ## Open Questions
 
 - Final `.gitignore` rules and tracking treatment for `scripts/validate_documentation.py` and generated `docs/evidence-catalog.md` remain intentionally open until closeout.
-
