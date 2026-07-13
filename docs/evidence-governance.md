@@ -103,10 +103,12 @@ syncing, or archiving an OpenSpec change.
    `closed_in_place`.
 6. Assess architecture impact and complete every fixed gate item before
    completion, sync, or archive.
-7. Run the closure and delivery-manifest validation:
+7. Run general governed-document validation and the change evidence closure
+   check:
 
    ```powershell
-   uv run python scripts/validate_documentation.py --closure-change <change-name> --strict-manifest
+   uv run python scripts/documentation/validate.py
+   uv run python scripts/documentation/check_change.py <change-name>
    ```
 
 **Durable outputs:** the change ledger when findings exist, typed destination
@@ -155,11 +157,11 @@ design or review, or prevent duplicate discovery.
 
 1. Start with the Authority Routing table and open the source appropriate to
    the question. Current behavior starts at `docs/ARCHITECTURE.md`.
-2. Before each catalog-backed lookup, regenerate and validate the ignored,
-   ephemeral catalog:
+2. Before each catalog-backed lookup, explicitly rebuild the ignored,
+   ephemeral catalog from governed sources:
 
    ```powershell
-   uv run python scripts/validate_documentation.py
+   uv run python scripts/documentation/catalog.py build
    ```
 
 3. Open `docs/evidence-catalog.md`, choose the relevant governed group, and
@@ -282,12 +284,22 @@ Typed status vocabularies are:
   change or issue justifies `planned`;
 - validation: `passed | failed | partial | historical | superseded`.
 
-`scripts/validate_documentation.py` validates governed sources, prints a
-grouped catalog, and writes `docs/evidence-catalog.md`. The generated catalog
-is ignored and non-authoritative. It provides authority entry points,
-active OpenSpec change navigation, governed statuses, clickable source links,
-source fingerprint, regeneration instructions, and the Global Finding Inbox
-view. External issues remain discoverable through the project issue tracker.
+The tooling scans only the named architecture and governance authorities,
+direct Markdown children of the typed-document and template directories in
+the Authority Routing table, and active OpenSpec Finding ledgers. It does not
+scan unrelated documentation trees or provide a full-repository scan mode.
+
+`scripts/documentation/validate.py` validates that fixed source set without
+writing files. Ignored and untracked files inside the governed paths or
+`scripts/documentation/` produce visible delivery warnings, but warnings do
+not fail validation because a user may intentionally keep details local.
+
+`scripts/documentation/catalog.py build` writes the ignored,
+non-authoritative `docs/evidence-catalog.md`. The catalog provides authority
+entry points, active OpenSpec change navigation, governed statuses, clickable
+source links, a source fingerprint, regeneration instructions, and the Global
+Finding Inbox view. External issues remain discoverable through the project
+issue tracker.
 
 ## Operational Procedures
 
@@ -302,7 +314,7 @@ including periodic visibility checks.
 Run:
 
 ```powershell
-uv run python scripts/validate_documentation.py --finding-inbox
+uv run python scripts/documentation/catalog.py inbox
 ```
 
 The command lists only global `observed + pending` records, sorted by ascending
@@ -349,6 +361,6 @@ Validation and evaluation reports require `source_commit`,
 `source_fingerprint`, `executed_at`, and result status, and distinguish
 substitutes from real infrastructure.
 
-The validator reports ignored governance files absent from the tracked PR
-manifest. It never edits `.gitignore`, stages, or force-adds files; tracking
-remains an explicit repository decision.
+General validation warns about ignored and untracked files within the fixed
+governed paths. It never edits `.gitignore`, stages, or force-adds files;
+tracking and disclosure remain explicit repository decisions.

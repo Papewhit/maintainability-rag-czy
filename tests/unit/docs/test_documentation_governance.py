@@ -1,18 +1,29 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "validate_documentation.py"
-SPEC = importlib.util.spec_from_file_location("validate_documentation", SCRIPT)
-validator = importlib.util.module_from_spec(SPEC)
-assert SPEC and SPEC.loader
-sys.modules[SPEC.name] = validator
-SPEC.loader.exec_module(validator)
+TOOLS = Path(__file__).resolve().parents[3] / "scripts" / "documentation"
+sys.path.insert(0, str(TOOLS))
+import _governance as validator
+
+
+def _load_cli(filename: str, module_name: str):
+    spec = importlib.util.spec_from_file_location(module_name, TOOLS / filename)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+validate_cli = _load_cli("validate.py", "documentation_validate_cli")
+check_change_cli = _load_cli("check_change.py", "documentation_check_change_cli")
+catalog_cli = _load_cli("catalog.py", "documentation_catalog_cli")
 
 
 def _repo(tmp_path: Path, finding: str = "") -> Path:
@@ -142,19 +153,19 @@ def test_catalog_is_grouped_and_fingerprinted(tmp_path: Path, monkeypatch):
     assert "## Findings" in text
     assert "## Decisions" in text
     assert "# Governed Documentation Catalog" in text
-    assert "Regenerate: `uv run python scripts/validate_documentation.py`" in text
+    assert "Regenerate: `uv run python scripts/documentation/catalog.py build`" in text
     assert "[Documentation Evidence Governance](evidence-governance.md)" in text
 
 
 @pytest.mark.unit
-def test_catalog_fingerprint_changes_for_equal_length_edit(tmp_path: Path):
+def test_catalog_fingerprint_ignores_unrelated_equal_length_edit(tmp_path: Path):
     root = _repo(tmp_path)
     path = root / "docs/note.md"
     path.write_text("alpha", encoding="utf-8")
     first = validator.catalog(validator.Result(), root)
     path.write_text("bravo", encoding="utf-8")
     second = validator.catalog(validator.Result(), root)
-    assert first != second
+    assert first == second
 
 
 @pytest.mark.unit
@@ -330,9 +341,9 @@ def test_finding_inbox_report_has_required_columns_and_empty_success(tmp_path: P
 @pytest.mark.unit
 def test_finding_inbox_cli_does_not_write_catalog(tmp_path: Path, monkeypatch):
     root = _repo(tmp_path)
-    monkeypatch.setattr(validator, "DEFAULT_ROOT", root)
-    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--finding-inbox"])
-    assert validator.main() == 0
+    monkeypatch.setattr(catalog_cli, "DEFAULT_ROOT", root)
+    monkeypatch.setattr(sys, "argv", [str(TOOLS / "catalog.py"), "inbox"])
+    assert catalog_cli.main() == 0
     assert not (root / "docs/evidence-catalog.md").exists()
 
 
@@ -379,7 +390,7 @@ def test_malformed_change_ledger_cannot_bypass_closure(tmp_path: Path):
         "- Evidence: Review.\n- Disposition: pending\n",
         encoding="utf-8",
     )
-    result = validator.validate(root, closure_change="sample", manifest=False)
+    result = validator.check_change(root, "sample")
     assert any("expected document_type 'finding_ledger'" in error for error in result.errors)
 
 
@@ -407,7 +418,7 @@ def test_global_inbox_record_requires_observation_and_evidence(tmp_path: Path):
         "# Unsupported inbox entry\n## Observation\n\n## Evidence\n",
         encoding="utf-8",
     )
-    result = validator.validate(root, manifest=False)
+    result = validator.validate(root, delivery=False)
     assert any("Finding lacks Observation" in error for error in result.errors)
     assert any("Finding lacks Evidence" in error for error in result.errors)
 
@@ -430,3 +441,107 @@ def test_catalog_exposes_intended_work_and_active_changes(tmp_path: Path):
     assert "| Intended work | [Active OpenSpec changes](../openspec/changes/)" in text
     assert "## Active OpenSpec Changes" in text
     assert "[openspec/changes/sample](../openspec/changes/sample)" in text
+
+
+@pytest.mark.unit
+def test_governed_discovery_is_fixed_and_non_recursive(tmp_path: Path):
+    root = _repo(tmp_path)
+    (root / "docs/known-issues").mkdir()
+    direct = root / "docs/known-issues/direct.md"
+    direct.write_text("# Direct\n", encoding="utf-8")
+    (root / "docs/known-issues/nested").mkdir()
+    nested = root / "docs/known-issues/nested/hidden.md"
+    nested.write_text("# Nested\n", encoding="utf-8")
+    unrelated = root / "docs/unrelated.md"
+    unrelated.write_text("# Unrelated\n", encoding="utf-8")
+
+    discovered = set(validator.governed_sources(root))
+
+    assert direct in discovered
+    assert nested not in discovered
+    assert unrelated not in discovered
+
+
+@pytest.mark.unit
+def test_structural_delivery_warnings_ignore_unrelated_files_and_baseline(tmp_path: Path):
+    root = tmp_path
+    (root / "docs/known-issues").mkdir(parents=True)
+    (root / "scripts/documentation").mkdir(parents=True)
+    (root / "docs/known-issues/local.md").write_text("local", encoding="utf-8")
+    (root / "docs/unrelated.md").write_text("unrelated", encoding="utf-8")
+    (root / "scripts/documentation/local.py").write_text("", encoding="utf-8")
+    (root / "scripts/spike.py").write_text("", encoding="utf-8")
+    (root / "docs/documentation-ignore-baseline.txt").write_text("docs/known-issues/*\n", encoding="utf-8")
+    (root / ".gitignore").write_text("docs/*\nscripts/\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    result = validator.Result()
+
+    validator._delivery_warnings(root, result)
+
+    assert any("docs/known-issues/local.md" in warning for warning in result.warnings)
+    assert any("scripts/documentation/local.py" in warning for warning in result.warnings)
+    assert not any("docs/unrelated.md" in warning for warning in result.warnings)
+    assert not any("scripts/spike.py" in warning for warning in result.warnings)
+
+
+@pytest.mark.unit
+def test_validate_command_is_read_only_and_warnings_do_not_fail(tmp_path: Path, monkeypatch):
+    root = _repo(tmp_path)
+    catalog_path = root / "docs/evidence-catalog.md"
+    catalog_path.write_text("unchanged", encoding="utf-8")
+    monkeypatch.setattr(validate_cli, "DEFAULT_ROOT", root)
+    monkeypatch.setattr(validator, "_delivery_warnings", lambda _root, result: result.warnings.append("local detail"))
+
+    assert validate_cli.main([]) == 0
+    assert catalog_path.read_text(encoding="utf-8") == "unchanged"
+
+
+@pytest.mark.unit
+def test_check_change_command_has_one_read_only_purpose(tmp_path: Path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.setattr(check_change_cli, "DEFAULT_ROOT", root)
+    monkeypatch.setattr(sys, "argv", [str(TOOLS / "check_change.py"), "sample"])
+
+    assert check_change_cli.main() == 0
+    assert not (root / "docs/evidence-catalog.md").exists()
+
+
+@pytest.mark.unit
+def test_catalog_build_is_atomic_when_sources_are_invalid(tmp_path: Path, monkeypatch):
+    root = _repo(tmp_path)
+    (root / "docs/known-issues").mkdir()
+    (root / "docs/known-issues/invalid.md").write_text("# Missing metadata\n", encoding="utf-8")
+    catalog_path = root / "docs/evidence-catalog.md"
+    catalog_path.write_text("previous", encoding="utf-8")
+    monkeypatch.setattr(catalog_cli, "DEFAULT_ROOT", root)
+    monkeypatch.setattr(sys, "argv", [str(TOOLS / "catalog.py"), "build"])
+
+    assert catalog_cli.main() == 1
+    assert catalog_path.read_text(encoding="utf-8") == "previous"
+    assert not (root / "docs/.evidence-catalog.md.tmp").exists()
+
+
+@pytest.mark.unit
+def test_catalog_build_writes_concise_summary(tmp_path: Path, monkeypatch, capsys):
+    root = _repo(tmp_path)
+    monkeypatch.setattr(catalog_cli, "DEFAULT_ROOT", root)
+    monkeypatch.setattr(sys, "argv", [str(TOOLS / "catalog.py"), "build"])
+
+    assert catalog_cli.main() == 0
+    output = capsys.readouterr().out
+    assert "Wrote docs/evidence-catalog.md" in output
+    assert "Documents:" in output
+    assert "Inbox entries:" in output
+    assert "Fingerprint: sha256:" in output
+    assert "# Governed Documentation Catalog" not in output
+
+
+@pytest.mark.unit
+def test_current_governance_uses_three_command_surface():
+    governance = (Path(__file__).resolve().parents[3] / "docs/evidence-governance.md").read_text(encoding="utf-8")
+    assert "scripts/documentation/validate.py" in governance
+    assert "scripts/documentation/check_change.py" in governance
+    assert "scripts/documentation/catalog.py build" in governance
+    assert "scripts/documentation/catalog.py inbox" in governance
+    assert "scripts/validate_documentation.py" not in governance
+    assert "documentation-ignore-baseline.txt" not in governance

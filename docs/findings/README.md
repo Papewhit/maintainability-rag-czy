@@ -22,5 +22,7 @@ Global records use one of three stable combinations:
 If a non-OpenSpec discovery is already confirmed and clearly classified,
 create or update its typed document directly. Closed and invalidated Finding
 files remain at their stable paths. Do not hand-maintain an index; generate
-`docs/evidence-catalog.md` or query `--finding-inbox` through the documentation
-validator. The inbox is unconfirmed evidence, not a backlog.
+`docs/evidence-catalog.md` with
+`uv run python scripts/documentation/catalog.py build` or query the inbox with
+`uv run python scripts/documentation/catalog.py inbox`. The inbox is
+unconfirmed evidence, not a backlog.

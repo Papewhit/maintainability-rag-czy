@@ -197,7 +197,7 @@ See [Evidence Governance](evidence-governance.md), [ADRs](architecture/decisions
 ## Architecture Verification
 
 ```powershell
-python scripts/validate_documentation.py
+uv run python scripts/documentation/validate.py
 uv run pytest tests/unit/docs -q
 uv run pytest tests/unit/backend/documents tests/unit/backend/rag tests/unit/backend/infra/vector_store -q
 openspec status --change documentation-evidence-governance --json
