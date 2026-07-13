@@ -1,6 +1,6 @@
 ## Why
 
-SuperHermes documentation mixes current implementation facts, historical snapshots, design decisions, open ambiguities, validation evidence, and future work, while the current architecture overview has drifted from the active ingestion and retrieval pipelines. A durable evidence-governance contract is needed now so architecture updates and OpenSpec closure decisions remain traceable to code, tests, reviews, and reproducible validation.
+Ragtenance documentation mixes current implementation facts, historical snapshots, design decisions, open ambiguities, validation evidence, and future work, while the current architecture overview has drifted from the active ingestion and retrieval pipelines. A durable evidence-governance contract is needed now so architecture updates and OpenSpec closure decisions remain traceable to code, tests, reviews, and reproducible validation.
 
 ## What Changes
 

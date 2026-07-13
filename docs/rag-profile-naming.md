@@ -1,6 +1,6 @@
 # RAG Profile Naming
 
-本文档固定 SuperHermes RAG 的短命名规则，避免继续混用 `S1_linear`、`V3Q`、`V3Q_OPT`、`V4_ACTIVE` 这类历史实验名。
+本文档固定 Ragtenance RAG 的短命名规则，避免继续混用 `S1_linear`、`V3Q`、`V3Q_OPT`、`V4_ACTIVE` 这类历史实验名。
 
 ## 命名目标
 

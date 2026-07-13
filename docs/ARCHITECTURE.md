@@ -6,11 +6,11 @@ last_verified_time: 2026-07-12T00:00:00+08:00
 authority: current-system-overview
 ---
 
-# SuperHermes Architecture
+# Ragtenance Architecture
 
 ## Purpose and Evidence Boundary
 
-This is the single current-system overview for SuperHermes. Stable contracts live in `openspec/specs/`; rationale, known issues, enhancements, and reproducible evidence live in the governed locations defined by [Evidence Governance](evidence-governance.md).
+This is the single current-system overview for Ragtenance. Stable contracts live in `openspec/specs/`; rationale, known issues, enhancements, and reproducible evidence live in the governed locations defined by [Evidence Governance](evidence-governance.md).
 
 Current facts were verified against commit `8babe339cda636936c6c0af3c95a99e7c77c2f19` on 2026-07-12 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
 
