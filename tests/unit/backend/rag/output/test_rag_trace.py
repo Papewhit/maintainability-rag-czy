@@ -58,7 +58,6 @@ class RagTraceTests(unittest.TestCase):
                 "candidate_count_after_structure_rerank": 18,
                 "final_top_k_count": 5,
                 "term_matches": [{"entity_type": "component", "canonical": "pump"}],
-                "query_entities": [{"type": "component", "value": "pump"}],
                 "auto_merge_skipped": True,
                 "auto_merge_error": "recovered",
                 "step_chain_check_enabled": True,

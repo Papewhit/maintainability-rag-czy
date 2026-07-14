@@ -94,7 +94,6 @@ class RetrievalMeta(TypedDict, total=False):
     entity_type_coverage: float
     entity_match_density: float
     term_matches: list[dict[str, Any]]
-    query_entities: list[dict[str, Any]]
     confidence_gate_enabled: bool
     confidence_ms: float
     confidence_gate_skipped: bool
@@ -162,7 +161,6 @@ class RagTrace(TypedDict, total=False):
     entity_type_coverage: float
     entity_match_density: float
     term_matches: list[dict[str, Any]]
-    query_entities: list[dict[str, Any]]
     confidence_gate_enabled: bool
     confidence_ms: float
     confidence_gate_skipped: bool

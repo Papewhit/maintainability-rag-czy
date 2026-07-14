@@ -166,7 +166,7 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertEqual(pool.call_args.kwargs["candidate_k"], 17)
         finish.assert_called_once()
         self.assertEqual(
-            finish.call_args.kwargs["query_entities"],
+            finish.call_args.kwargs["query_term_matches"],
             [{"entity_type": "component", "canonical": "pump"}],
         )
         trace = result["rag_trace"]

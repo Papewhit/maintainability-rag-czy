@@ -252,14 +252,14 @@ def _rerank_rrf_score(doc: dict) -> float:
     return _rerank_rrf_score_impl(doc, milvus_rrf_k=MILVUS_RRF_K)
 
 
-def _metadata_score(doc: dict, query_entities: list[Any] | None) -> float:
-    return _rerank_metadata_score(doc, query_entities)
+def _metadata_score(doc: dict, query_term_matches: list[Any] | None) -> float:
+    return _rerank_metadata_score(doc, query_term_matches)
 
 
 def _apply_rerank_score_fusion(
     indexed_scores: list[tuple[int, float]],
     docs_for_rerank: list[dict],
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
 ) -> list[tuple[int, float]]:
     weights = {
         "rerank": max(0.0, RERANK_FUSION_RERANK_WEIGHT),
@@ -273,7 +273,7 @@ def _apply_rerank_score_fusion(
         enabled=RERANK_SCORE_FUSION_ENABLED,
         weights=weights,
         milvus_rrf_k=MILVUS_RRF_K,
-        query_entities=query_entities,
+        query_term_matches=query_term_matches,
     )
 
 
@@ -302,15 +302,15 @@ def _finish_retrieval_pipeline(
     base_filter: str | None = None,
     retrieval_mode: str = "hybrid",
     hybrid_error: str | None = None,
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
 ) -> Dict[str, Any]:
     """Complete the retrieval evidence post-processing pipeline."""
     candidate_pool_size = _effective_rerank_output_size(top_k, len(retrieved))
-    effective_query_entities = list(
-        query_entities
-        or (extra_trace or {}).get("query_entities")
-        or (extra_trace or {}).get("term_matches")
-        or []
+    safe_extra_trace = {
+        key: value for key, value in (extra_trace or {}).items() if key != "query_entities"
+    }
+    effective_term_matches = list(
+        query_term_matches or safe_extra_trace.get("term_matches") or []
     )
 
     stage_start = time.perf_counter()
@@ -320,8 +320,8 @@ def _finish_retrieval_pipeline(
             "docs": retrieved,
             "top_k": candidate_pool_size,
         }
-        if effective_query_entities:
-            rerank_kwargs["query_entities"] = effective_query_entities
+        if effective_term_matches:
+            rerank_kwargs["query_term_matches"] = effective_term_matches
         reranked, rerank_meta = _rerank_documents(**rerank_kwargs)
     except Exception as exc:
         reranked = list(retrieved[:candidate_pool_size])
@@ -332,9 +332,9 @@ def _finish_retrieval_pipeline(
             "rerank_error": str(exc),
             "rerank_skipped": True,
             "rerank_output_count": len(reranked),
-            "entity_metadata_score_applied": False,
-            "entity_type_coverage": 0.0,
-            "entity_match_density": 0.0,
+            "terminology_metadata_score_applied": False,
+            "terminology_type_coverage": 0.0,
+            "chunk_term_match_density": 0.0,
         }
         stage_errors.append(_stage_error("rerank", str(exc), "retrieved_candidates"))
     timings["rerank_ms"] = elapsed_ms(stage_start)
@@ -454,12 +454,10 @@ def _finish_retrieval_pipeline(
     rerank_meta["candidates_before_rerank"] = _candidate_trace(retrieved)
     rerank_meta["candidates_after_rerank"] = _candidate_trace(reranked)
     rerank_meta["candidates_after_structure_rerank"] = _candidate_trace(reranked_pool)
-    if effective_query_entities:
-        rerank_meta["query_entities"] = effective_query_entities
     for timing_key in ("rerank_ms", "auto_merge_ms", "step_chain_ms", "structure_rerank_ms", "confidence_ms"):
         rerank_meta[timing_key] = timings[timing_key]
-    if extra_trace:
-        rerank_meta.update(extra_trace)
+    if safe_extra_trace:
+        rerank_meta.update(safe_extra_trace)
 
     return {"docs": reranked_docs, "meta": build_retrieval_meta(rerank_meta)}
 
@@ -615,21 +613,21 @@ def _rerank_cache_key(
     rerank_top_n: int,
     rerank_input_k: int,
     enrichment_enabled: bool,
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
 ) -> str:
-    query_entity_types = sorted(
+    query_term_entity_types = sorted(
         {
             str(
-                (entity.get("type") or entity.get("entity_type") or "")
-                if isinstance(entity, dict)
-                else (getattr(entity, "type", None) or getattr(entity, "entity_type", None) or "")
+                term_match.get("entity_type") or ""
+                if isinstance(term_match, dict)
+                else getattr(term_match, "entity_type", None) or ""
             ).strip()
-            for entity in query_entities or []
+            for term_match in query_term_matches or []
         }
         - {""}
     )
     payload = {
-        "version": 2,
+        "version": 3,
         "query": query,
         "provider": RERANK_PROVIDER,
         "model": RERANK_MODEL or "",
@@ -646,7 +644,7 @@ def _rerank_cache_key(
         "bm25_total_docs": _bm25_total_docs(),
         "milvus_index_version": _milvus_index_version(),
         "docs": _rerank_doc_signatures(docs_for_rerank, enrichment_enabled),
-        "query_entity_types": query_entity_types,
+        "query_term_entity_types": query_term_entity_types,
     }
     digest = _sha1_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return f"rerank:{digest}"
@@ -935,7 +933,7 @@ def _rerank_documents(
     query: str,
     docs: List[dict],
     top_k: int,
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
 ) -> Tuple[List[dict], Dict[str, Any]]:
     runtime = RerankRuntime(
         provider=RERANK_PROVIDER,
@@ -960,12 +958,12 @@ def _rerank_documents(
             top_n,
             input_k,
             enrichment,
-            query_entities=query_entities,
+            query_term_matches=query_term_matches,
         ),
         load_cached_result=_load_cached_rerank_result,
         store_result=_store_rerank_result,
         doc_text_getter=_doc_retrieval_text,
-        query_entities=list(query_entities or []),
+        query_term_matches=list(query_term_matches or []),
     )
     return _run_rerank_documents(query, docs, top_k, runtime)
 
@@ -1650,9 +1648,9 @@ def _failed_retrieval_response(
             "step_chain_check_enabled": STEP_CHAIN_CHECK_ENABLED,
             "step_chain_repaired_groups": [],
             "step_chain_completion_count": 0,
-            "entity_metadata_score_applied": False,
-            "entity_type_coverage": 0.0,
-            "entity_match_density": 0.0,
+            "terminology_metadata_score_applied": False,
+            "terminology_type_coverage": 0.0,
+            "chunk_term_match_density": 0.0,
             "candidate_count": 0,
             "confidence_gate_enabled": CONFIDENCE_GATE_ENABLED,
             "fallback_required": CONFIDENCE_GATE_ENABLED,
@@ -1929,7 +1927,7 @@ def retrieve_documents(
     query: str,
     top_k: int = 5,
     context_files: list[str] | None = None,
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
     *,
     query_plan: QueryPlan | PreciseQueryPlan | None = None,
 ) -> Dict[str, Any]:
@@ -1968,5 +1966,5 @@ def retrieve_documents(
         base_filter=prepared.filters.base_filter,
         retrieval_mode=prepared.retrieval_mode,
         hybrid_error=prepared.hybrid_error,
-        query_entities=query_entities,
+        query_term_matches=query_term_matches,
     )

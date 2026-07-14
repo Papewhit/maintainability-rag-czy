@@ -129,8 +129,8 @@ last_verified_date: 2026-07-14
 - Decision: Configure the provider request timeout with retries disabled and submit calls through one bounded shared executor guarded by non-blocking capacity slots. Exhaustion degrades through the same rule fallback path.
 - Residual risk: A running injected/non-cooperative call can continue until it returns, but concurrency is bounded; the production provider also receives the HTTP timeout.
 - Evidence: Stage-one review on 2026-07-14; timeout, provider configuration, no-retry, and capacity-exhaustion tests in `tests/unit/backend/rag/pipeline/test_intent_classifier.py`.
-- Disposition: closed_in_place
-- Disposition target: null
+- Disposition: change
+- Disposition target: openspec/changes/rag-intent-routing/
 - Resolution evidence: `backend/rag/intent.py` uses bounded shared execution plus provider timeout; targeted intent tests pass.
 
 ## RAG-INTENT-F010
@@ -141,7 +141,7 @@ last_verified_date: 2026-07-14
 - Observation: Terminology preflight outputs existed in retrieval meta but the graph state did not propagate them, and the initial trace whitelist retained only term_matches.
 - Inference: Downstream diagnostics could not establish the semantic-query coordinate base or inspect dense/BM25 composition inputs.
 - Decision: Propagate semantic_query, term_matches, normalized_query, sparse_expansion, and protected_tokens through precise retrieval state and initial trace.
-- Residual risk: Comprehensive branch-local equivalents still require M3A.6/M4 branch diagnostics.
+- Residual risk: none
 - Evidence: Stage-one review on 2026-07-14; `tests/unit/backend/rag/pipeline/test_intent_state.py` asserts state and trace propagation.
 - Disposition: closed_in_place
 - Disposition target: null
@@ -160,3 +160,31 @@ last_verified_date: 2026-07-14
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `backend/rag/intent.py` passes the hint to deterministic parsing and `backend/rag/query_plan.py` resolves it within ownership constraints; targeted tests pass.
+
+## RAG-INTENT-F012
+
+- Kind: evaluation_result
+- Primary scope: evaluation.rag.postprocess
+- Evidence status: confirmed
+- Observation: The historical `VAL-RAG-POSTPROCESS-001` current-result fingerprint covers `backend/rag/utils.py`, `backend/rag/context.py`, and `backend/rag/rerank.py`; intent routing changes two of those files, so the recorded fingerprint no longer matches the working implementation.
+- Inference: Keeping the old report presented as current would let maintainers reuse deterministic quality and latency claims against a materially different postprocess contract.
+- Decision: Retain the paired result only as historical evidence bound to revision `8babe339cda636936c6c0af3c95a99e7c77c2f19`; require the new intent-routing validation gate for current claims.
+- Residual risk: Current real-model and real-retrieval quality/cost evidence is still unavailable, so intent routing remains default disabled until task 5B.3 is completed.
+- Evidence: `tests/eval/rag/test_postprocess_revision_evidence.py` detects that the recorded `faf0e2b0…37e6c1` fingerprint differs from the current postprocess source fingerprint; `docs/rag-postprocess-evidence/evaluation.md` records the original revision and source set.
+- Disposition: change
+- Disposition target: openspec/changes/rag-intent-routing/
+- Resolution evidence: `docs/rag-postprocess-evidence/evaluation.md` is marked `historical`, and the governed intent-routing report is `partial` with activation blocked.
+
+## RAG-INTENT-F013
+
+- Kind: behavior_defect
+- Primary scope: evaluation.rag.intent_routing
+- Evidence status: confirmed
+- Observation: The first evaluation implementation invoked query-plan construction without the synthetic filename registry, passed no citation target to an evaluator that only measured qrel coverage, omitted the answer evaluator and key model/retrieval settings from fingerprints, and renamed three historical terminology trace keys despite the delta spec retaining them as wire-compatible names.
+- Inference: A real run would systematically mark labeled filter/boost plans invalid, could never produce citation validity, could reuse a fingerprint across materially different judges or retrieval stores, and would break existing trace consumers.
+- Decision: Add and fingerprint a curated evaluation filename registry; bind it to real intent reports; measure generated citation consistency against retrieved filename/page evidence; expand source/config fingerprints; and retain `entity_metadata_score_applied`, `entity_type_coverage`, and `entity_match_density` as terminology-only historical response keys while keeping query-side inputs terminology-typed.
+- Residual risk: The synthetic filename registry proves parsing and plan validity, not that the release Milvus corpus contains those documents. Citation validity measures precision against retrieved evidence rather than recall against human qrels. Both limitations remain explicit in the partial validation report and 5B.3 stays incomplete.
+- Evidence: Third-stage independent review on 2026-07-14; `tests/eval/rag/test_intent_classifier_eval.py`, `tests/eval/rag/test_comprehensive_intent_routing_eval.py`, `tests/unit/backend/evaluation/test_answer_eval.py`, and trace contract tests cover the corrections.
+- Disposition: change
+- Disposition target: openspec/changes/rag-intent-routing/
+- Resolution evidence: The real runners now carry registry/model/retrieval fingerprints and a constructible citation-validity metric; existing terminology trace names remain serialized; targeted evaluation and contract tests pass.

@@ -165,7 +165,7 @@ class CrossEncoderLocalReranker:
                 query=result.branch.query,
                 docs=pair_docs,
                 top_k=budget.output_candidates,
-                query_entities=term_matches,
+                query_term_matches=term_matches,
             )
             meta = {
                 **result.meta,

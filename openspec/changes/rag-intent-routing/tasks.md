@@ -59,39 +59,41 @@
 
 ## 5. Milestone M5：意图分类评测集
 
-- [ ] 5.1 设计评测样本 schema：`{query, expected_intent, expected_sub_queries?, expected_scope?, expected_granularity?, notes}`
-- [ ] 5.2 标注样本：100-200 条，70% precise + 30% comprehensive，覆盖结构限域、目标粒度和所有 analysis_type
-- [ ] 5.3 评测脚本 `tests/eval/rag/test_intent_classifier_eval.py`：跑当前模型，输出 intent accuracy / plan validity / sub-query 5 分制评分（人工部分用 LLM-as-judge）
-- [ ] 5.4 评测结果落地到 `eval/intent/{date}_{model}.json`（不进 git，gitignore 覆盖）
-- [ ] 5.5 在 `docs/` 下记录评测方法和指标定义；阈值在标注完成后根据初评结果设定
+- [x] 5.1 设计评测样本 schema：`{query, expected_intent, expected_sub_queries?, expected_scope?, expected_granularity?, notes}`
+- [x] 5.2 标注样本：100-200 条，70% precise + 30% comprehensive，覆盖结构限域、目标粒度和所有 analysis_type
+- [x] 5.3 评测脚本 `tests/eval/rag/test_intent_classifier_eval.py`：跑当前模型，输出 intent accuracy / plan validity / sub-query 5 分制评分（人工部分用 LLM-as-judge）
+- [x] 5.4 评测结果落地到 `eval/intent/{date}_{model}.json`（不进 git，gitignore 覆盖）
+- [x] 5.5 在 `docs/` 下记录评测方法和指标定义；阈值在标注完成后根据初评结果设定
 
 **验收**：评测脚本可重复跑；FAST_MODEL 评测结果达标（阈值由初评基线确定）；不达标时模型升级路径在 design.md 中记录。
 
 ## 5A. Milestone M5A：terminology / postprocess 边界收口
 
-- [ ] 5A.1 保留 terminology preflight 的 `term_matches`、`normalized_query`、`sparse_expansion`、`protected_tokens`，不得写入两种 QueryPlan；query-side term_matches 只来自结构处理后的实际检索文本
-- [ ] 5A.2 保留 chunk `entity_types` / `term_match_count` 与现有可选 rerank metadata fusion；query 侧信号只接受 terminology term matches，不接受 intent entities
-- [ ] 5A.3 更新 postprocess 契约、trace 和测试用语，明确 `term_match_count` 是 chunk 全部术语密度而非 query-specific 精确命中数
-- [ ] 5A.4 回归测试证明删除 semantic entity producer/consumer 后，terminology query expansion、score fusion 开关和既有排序行为不变；成功消费的结构 span 不得通过 query-side term_matches 参与 metadata fusion
+- [x] 5A.1 保留 terminology preflight 的 `term_matches`、`normalized_query`、`sparse_expansion`、`protected_tokens`，不得写入两种 QueryPlan；query-side term_matches 只来自结构处理后的实际检索文本
+- [x] 5A.2 保留 chunk `entity_types` / `term_match_count` 与现有可选 rerank metadata fusion；query 侧信号只接受 terminology term matches，不接受 intent entities
+- [x] 5A.3 更新 postprocess 契约、trace 和测试用语，明确 `term_match_count` 是 chunk 全部术语密度而非 query-specific 精确命中数
+- [x] 5A.4 回归测试证明删除 semantic entity producer/consumer 后，terminology query expansion、score fusion 开关和既有排序行为不变；成功消费的结构 span 不得通过 query-side term_matches 参与 metadata fusion
 
 **验收**：intent-routing 不产生或消费 semantic entities；terminology 仍独立完成检索扩展，`RERANK_SCORE_FUSION_ENABLED=true` 时既有术语 metadata 分量可用。
 
 ## 5B. Milestone M5B：综合后处理质量 / 成本联合评测
 
-- [ ] 5B.1 增加 comprehensive postprocess eval harness，按 sub_query_count 与 retrieval_branch_count 分桶，单独统计 baseline 命中/最终入选率，并采集 embedding/hybrid 调用数、rerank pair、branch/merge pool、各阶段与端到端 P50/P95、CPU/GPU 峰值及错误/降级率
-- [ ] 5B.2 注册 eval-only no-CrossEncoder 消融 profile：保持相同 clean-query baseline + 生成分支 fan-out、parallel hybrid retrieval、priority-weighted RRF、selection 和共享后处理，仅关闭 branch CrossEncoder
+- [x] 5B.1 增加 comprehensive postprocess eval harness，按 sub_query_count 与 retrieval_branch_count 分桶，单独统计 baseline 命中/最终入选率，并采集 embedding/hybrid 调用数、rerank pair、branch/merge pool、各阶段与端到端 P50/P95、CPU/GPU 峰值及错误/降级率
+- [x] 5B.2 注册 eval-only no-CrossEncoder 消融 profile：保持相同 clean-query baseline + 生成分支 fan-out、parallel hybrid retrieval、priority-weighted RRF、selection 和共享后处理，仅关闭 branch CrossEncoder
 - [ ] 5B.3 在相同数据集、commit、配置和 source fingerprint 下对比 `quality_first_v1` 与消融 profile 的分支代表率、引用有效性、回答质量、延迟和资源消耗
-- [ ] 5B.4 将报告写入 `docs/validation/` 的 governed validation 文档，记录 source_commit、source_fingerprint、executed_at、运行环境和 passed/partial/failed 结论
-- [ ] 5B.5 基于实测结果确定可接受阈值与生产 profile；没有结论时 intent classifier/comprehensive 默认保持关闭，消融 profile 不自动转为生产默认
+- [x] 5B.4 将报告写入 `docs/validation/` 的 governed validation 文档，记录 source_commit、source_fingerprint、executed_at、运行环境和 passed/partial/failed 结论
+- [x] 5B.5 基于实测结果确定可接受阈值与生产 profile；没有结论时 intent classifier/comprehensive 默认保持关闭，消融 profile 不自动转为生产默认
+
+> 2026-07-14：真实 FAST_MODEL / release Milvus 环境未配置，`docs/validation/rag-intent-routing-evaluation.md` 结论为 `partial`。5B.3 保持未完成，默认开关继续为 false；合成 trace 只验证 harness，不作为成本或质量结论。
 
 **验收**：能够回答“质量优先 profile 相比便宜消融带来多少质量收益、增加多少延迟和资源成本”；报告可复现并成为启用 comprehensive 默认路径的 gate。
 
 ## 6. Milestone M6：上线开关与监控
 
-- [ ] 6.1 默认 `RAG_INTENT_CLASSIFIER_ENABLED=false`，开关由部署方控制
-- [ ] 6.2 监控指标：intent classifier 调用 P50/P95 延迟、LLM 失败率、规则降级率、各 intent 占比，以及 comprehensive profile、sub_query_count、retrieval_branch_count、baseline hit/selected、embedding/hybrid calls、rerank pairs、budget exhaustion、merge/postprocess 和端到端 P50/P95
-- [ ] 6.3 灰度策略文档：先 10% 流量启用，观察延迟和准确率，逐步全量
-- [ ] 6.4 关闭开关时走兼容性 PreciseQueryPlan 路径；回归测试比较 semantic query、filters、route 和检索结果，证明默认行为不变；另以显式回归用例记录并修复 `QUERY_PLAN_ENABLED=true` 时 terminology raw query 覆盖 semantic query 的既有缺陷
+- [x] 6.1 默认 `RAG_INTENT_CLASSIFIER_ENABLED=false`，开关由部署方控制
+- [x] 6.2 监控指标：intent classifier 调用 P50/P95 延迟、LLM 失败率、规则降级率、各 intent 占比，以及 comprehensive profile、sub_query_count、retrieval_branch_count、baseline hit/selected、embedding/hybrid calls、rerank pairs、budget exhaustion、merge/postprocess 和端到端 P50/P95
+- [x] 6.3 灰度策略文档：先 10% 流量启用，观察延迟和准确率，逐步全量
+- [x] 6.4 关闭开关时走兼容性 PreciseQueryPlan 路径；回归测试比较 semantic query、filters、route 和检索结果，证明默认行为不变；另以显式回归用例记录并修复 `QUERY_PLAN_ENABLED=true` 时 terminology raw query 覆盖 semantic query 的既有缺陷
 - [ ] 6.5 完成评测后将默认值改为 true，作为单独的小 change 上线
 
 **验收**：在 `RAG_INTENT_CLASSIFIER_ENABLED=false` 状态下，所有现有测试通过、行为与改造前一致；监控字段在 rag_trace 中齐全。

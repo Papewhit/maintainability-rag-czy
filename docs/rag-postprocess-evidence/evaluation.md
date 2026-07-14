@@ -1,7 +1,7 @@
 ---
 document_type: validation_report
 validation_id: VAL-RAG-POSTPROCESS-001
-status: partial
+status: historical
 scope: evaluation.rag
 source_commit: c64d228b22ff0d647bc1fec717cc2479a1487b89
 source_fingerprint: sha256:41b32e61844e1c0a0b3c6011e38609e3033b321b26d07eba638fdb6a1e1423a7
@@ -10,6 +10,13 @@ source_findings: []
 ---
 
 # RAG 后处理证据链评测报告
+
+> Historical evidence notice (2026-07-14): `rag-intent-routing` changed
+> `backend/rag/utils.py` and `backend/rag/rerank.py`, so the recorded current-source
+> fingerprint no longer matches the working implementation. The paired result remains
+> valid only for revision `8babe339cda636936c6c0af3c95a99e7c77c2f19`; it must not be
+> used as current quality or capacity evidence. Current intent-routing evidence is
+> tracked in `docs/validation/rag-intent-routing-evaluation.md` and is partial.
 
 ## 可复核来源
 

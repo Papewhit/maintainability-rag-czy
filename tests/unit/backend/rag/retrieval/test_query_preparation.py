@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 
 import backend.rag.utils as rag_utils
-from backend.rag.query_plan import PreciseQueryPlan
+from backend.rag.query_plan import PreciseQueryPlan, build_compatible_precise_plan
 
 
 pytestmark = pytest.mark.unit
@@ -131,3 +131,28 @@ def test_prebuilt_boost_plan_applies_when_legacy_query_plan_flag_is_disabled():
 
     assert trace["filename_boost_applied"] is True
     assert adjusted[0]["chunk_id"] == "target"
+
+
+def test_classifier_disabled_compatibility_plan_preserves_legacy_retrieval_contract():
+    query = "《未解析手册》中，泵的报警值是多少"
+    plan = build_compatible_precise_plan(query, query_plan_enabled=False)
+    embeddings = rag_utils.QueryEmbeddings([0.1], {1: 1.0})
+    candidate_result = rag_utils.CandidateRetrievalResult(
+        candidates=[{"chunk_id": "same", "text": "evidence", "rrf_rank": 1}],
+        retrieval_mode="hybrid",
+    )
+
+    with (
+        patch.object(rag_utils, "QUERY_PLAN_ENABLED", False),
+        patch("backend.rag.utils.terminology_preflight", return_value=None),
+        patch("backend.rag.utils.embed_search_query", return_value=embeddings),
+        patch("backend.rag.utils.retrieve_global_candidates", return_value=candidate_result),
+    ):
+        legacy = rag_utils.prepare_candidate_retrieval(query)
+        routed = rag_utils.prepare_candidate_retrieval(query, query_plan=plan)
+
+    assert routed.search_query == legacy.search_query == query
+    assert routed.query_plan.route == legacy.query_plan.route == "global_hybrid"
+    assert routed.filters.base_filter == legacy.filters.base_filter
+    assert routed.filters.effective_filter == legacy.filters.effective_filter
+    assert routed.candidates == legacy.candidates

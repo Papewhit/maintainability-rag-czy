@@ -97,7 +97,6 @@ class RagTrace(BaseModel):
     entity_type_coverage: Optional[float] = None
     entity_match_density: Optional[float] = None
     term_matches: Optional[List[Dict[str, Any]]] = None
-    query_entities: Optional[List[Dict[str, Any]]] = None
     confidence_gate_enabled: Optional[bool] = None
     fallback_required: Optional[bool] = None
     confidence_reasons: Optional[List[str]] = None

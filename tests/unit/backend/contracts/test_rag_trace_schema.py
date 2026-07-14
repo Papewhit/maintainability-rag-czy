@@ -16,7 +16,6 @@ def test_rag_trace_schema_preserves_postprocess_fields():
         candidate_count_after_structure_rerank=18,
         final_top_k_count=5,
         term_matches=[{"entity_type": "component", "canonical": "pump"}],
-        query_entities=[{"type": "component", "value": "pump"}],
         rerank_output_count=18,
         rerank_skipped=False,
         auto_merge_enabled=True,
@@ -54,7 +53,6 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert payload["candidate_count_before_rerank"] == 30
     assert payload["final_top_k_count"] == 5
     assert payload["term_matches"][0]["canonical"] == "pump"
-    assert payload["query_entities"][0]["type"] == "component"
     assert payload["step_chain_repaired_groups"] == ["g1"]
     assert payload["entity_type_coverage"] == 1.0
     assert payload["timings"]["confidence_ms"] == 5.0

@@ -648,7 +648,7 @@ def terminology_preflight(semantic_query: str) -> dict | None:
                 "start": m.start,
                 "end": m.end,
             }
-            for m in result.query_entities
+            for m in result.term_matches
         ],
         "normalized_query": result.normalized_query,
         "sparse_expansion": result.sparse_expansion,

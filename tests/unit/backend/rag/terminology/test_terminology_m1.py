@@ -218,7 +218,7 @@ class TestQueryPreflight:
 
     def test_no_terms(self, loaded_table: TerminologyTable) -> None:
         result = loaded_table.query_preflight("今天天气怎么样")
-        assert len(result.query_entities) == 0
+        assert len(result.term_matches) == 0
         assert result.normalized_query == "今天天气怎么样"
         assert result.sparse_expansion == "今天天气怎么样"
 

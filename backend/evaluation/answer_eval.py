@@ -140,6 +140,25 @@ def citation_coverage(answer: str, expected_files: Any = None, expected_pages: A
     }
 
 
+def citation_evidence_validity(answer: str, docs: list[dict]) -> dict[str, Any]:
+    """Score whether every generated ``[filename p.page]`` citation exists in retrieved evidence."""
+    citations = re.findall(r"\[([^\[\]]+?)\s+p\.([^\]\s]+)\]", answer or "")
+    valid = 0
+    for cited_filename, cited_page in citations:
+        cited_aliases = _filename_aliases(cited_filename.strip())
+        for doc in docs or []:
+            if cited_aliases & _filename_aliases(str(doc.get("filename") or "")):
+                if cited_page.strip() == _doc_page(doc):
+                    valid += 1
+                    break
+    count = len(citations)
+    return {
+        "citation_validity": (valid / count) if count else 0.0,
+        "citation_count": count,
+        "valid_citation_count": valid,
+    }
+
+
 def generate_grounded_answer(question: str, docs: list[dict]) -> dict[str, Any]:
     model = _get_model("answer")
     context = format_context_for_answer(docs)
@@ -257,10 +276,12 @@ def evaluate_answer_end_to_end(
         expected_files=expected.get("expected_files"),
         expected_pages=expected.get("expected_pages"),
     )
+    validity = citation_evidence_validity(answer, docs)
     total_ms = float(answer_result.get("answer_generation_ms") or 0.0) + float(judge_result.get("judge_ms") or 0.0)
     return {
         **answer_result,
         **judge_result,
         **coverage,
+        **validity,
         "answer_eval_ms": round(total_ms, 3),
     }

@@ -33,7 +33,7 @@ class TerminologyEntry:
 
 @dataclass(frozen=True, slots=True)
 class QueryTerminologyResult:
-    query_entities: list[TermMatch]
+    term_matches: list[TermMatch]
     normalized_query: str
     sparse_expansion: str
     protected_tokens: list[str]
@@ -188,7 +188,7 @@ class TerminologyTable:
                     expansion_words.append(token)
 
         return QueryTerminologyResult(
-            query_entities=matches,
+            term_matches=matches,
             normalized_query=normalized,
             sparse_expansion=" ".join(expansion_words),
             protected_tokens=protected_tokens,

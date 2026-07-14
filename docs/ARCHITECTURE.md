@@ -106,6 +106,24 @@ Candidate strategies:
 
 Invalid `RAG_CANDIDATE_STRATEGY` values fall back to standard with a trace warning. `dense_fallback` is an effective failure mode, not a configured strategy.
 
+### Intent Routing and Comprehensive Retrieval
+
+`run_rag_graph()` enters through `intent_parse`. `RAG_INTENT_CLASSIFIER_ENABLED=false` is the production default: no model is called, and the node creates a compatibility `PreciseQueryPlan` that preserves the legacy raw/global behavior unless the independent legacy `QUERY_PLAN_ENABLED` switch is enabled. Model failure, timeout, schema failure, or bounded-capacity exhaustion also degrades to a precise compatibility plan without retrying.
+
+When explicitly enabled, the classifier produces either a precise plan or a comprehensive plan. It does not produce semantic entities, terminology normalization, `semantic_query`, or postprocess strategy choices. Deterministic query preparation owns structural span consumption; terminology preflight then consumes the resulting retrieval text and independently supplies `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens`.
+
+```text
+intent_parse
+  |-- precise --> retrieve_initial --> confidence/fallback path
+  `-- comprehensive
+        --> clean-query baseline + generated sub-query fan-out (parallel)
+        --> branch-local rerank under one shared output/pair budget
+        --> priority-weighted RRF merge + provenance union
+        --> one shared postprocess + branch-aware final selection
+```
+
+`backend/rag/comprehensive_postprocess.py` resolves a frozen, versioned strategy composition. `quality_first_v1` is the production profile and `eval_no_crossencoder_v1` is evaluation-only. Unknown profiles atomically fall back to `quality_first_v1`. The Chat Agent still invokes `search_knowledge_base(query)` once; it never receives or iterates sub-queries, and this capability has no multi-turn mode. Sub-query rewrite remains outside this change as fallback Level 1 work.
+
 ## Shared Evidence Postprocess
 
 `finish_retrieval_pipeline()` in `backend/rag/utils.py` fixes this order:
@@ -121,7 +139,7 @@ rerank
 
 | Stage | Responsibility | Default |
 | --- | --- | --- |
-| rerank | Optional local CrossEncoder; optional entity-aware score fusion/cache. | Disabled until `RERANK_MODEL` is set. |
+| rerank | Optional local CrossEncoder; optional terminology-metadata score fusion/cache. | Disabled until `RERANK_MODEL` is set. |
 | auto merge | Replace same-parent leaves with complete parent context. | Enabled. |
 | step-chain check | Repair incomplete list/step evidence through two-hop lookup. | Disabled. |
 | structure rerank | Root/leaf structure scoring and same-root cap. | Enabled. |
@@ -130,9 +148,9 @@ rerank
 
 Every recoverable stage catches its own failure, passes the preceding output to later safe stages, and records a structured stage error, skip/error state, and timing. A single postprocess failure must not erase usable evidence.
 
-### Entity Fusion and Codec Boundary
+### Terminology Fusion and Codec Boundary
 
-Query terminology matches feed `backend/rag/rerank.py`. It computes entity type coverage and match density; optional score fusion combines normalized rerank, RRF, scope, and metadata signals. When entity signals are absent, established generic metadata behavior remains.
+Query-side `term_matches` from terminology preflight feed `backend/rag/rerank.py`; intent output and legacy `query_entities` are not accepted as rerank inputs. Fusion compares terminology entity types with chunk `entity_types`. `term_match_count` remains the count of all terminology matches in the chunk and therefore contributes a chunk-density signal, not a query-specific exact-match count. Optional score fusion combines normalized rerank, RRF, scope, and this metadata signal. When terminology signals are absent, established generic metadata behavior remains.
 
 Runtime `entity_types` is `list[str]`. `backend/infra/vector_store/metadata_codec.py` encodes compact JSON text for the Milvus wire boundary with a 512-byte maximum. Retrieval accepts JSON strings and legacy array-like values, deduplicates values, and degrades malformed/scalar/nested data to `[]`.
 
@@ -149,7 +167,7 @@ The unset index profile is backward-compatible `legacy`. Profiles logically isol
 
 ## Trace, Evaluation, and Degradation
 
-Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers requested/effective/fallback strategy, counts, stage status/errors/timings, fusion/entity coverage, final top-k, and confidence.
+Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers intent/model fallback, requested/effective strategy, per-branch and aggregate embedding/search/rerank costs, stage status/errors/timings, terminology fusion coverage, final representation, and confidence. `backend/rag/observability.py` defines pure aggregation over supplied traces for rollout metrics including classifier and graph P50/P95, failure/fallback rates, intent share, profile/bucket counts, baseline rates, retrieval calls, rerank pairs, and budget exhaustion. It is not yet connected to a persisted trace reader, exporter, dashboard, or alerting path.
 
 Evaluation lives under `tests/eval/`, `tests/regression/`, and `backend/evaluation/`. Reports must bind a commit and source fingerprint and distinguish deterministic substitutes from real models/infrastructure. Microbenchmarks are not production-capacity evidence.
 
@@ -176,10 +194,12 @@ Degradation rules include hybrid-to-dense fallback, candidate preservation when 
 | Query plan | Implemented, default disabled | `QUERY_PLAN_ENABLED=false` |
 | Unified execution/fallback scaffolding | Implemented, default disabled | both runtime flags false |
 | Citation verification | Implemented, default disabled | citation flag false |
-| Intent routing | Planned, not implemented | `openspec/changes/rag-intent-routing/` |
+| Intent routing | Implemented, default disabled | `RAG_INTENT_CLASSIFIER_ENABLED=false` |
+| Comprehensive parallel retrieval | Implemented, gated by intent routing | `quality_first_v1`; classifier default disabled |
+| No-CrossEncoder comprehensive ablation | Evaluation-only | `eval_no_crossencoder_v1` |
 | Multilevel fallback | Planned, not implemented | `openspec/changes/rag-multilevel-fallback/` |
 
-Planned changes are excluded from active diagrams and do not override current defaults.
+Planned changes are excluded from active diagrams and do not override current defaults. Implemented-but-disabled capabilities remain outside the default execution path until their validation and rollout gates are satisfied.
 
 ## Known Limitations and Navigation
 

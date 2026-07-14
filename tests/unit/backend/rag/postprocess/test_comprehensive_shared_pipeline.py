@@ -42,8 +42,8 @@ def test_branch_rerank_uses_branch_query_terms_and_partial_failure_keeps_local_c
     ]
     calls = []
 
-    def rerank_fn(*, query, docs, top_k, query_entities):
-        calls.append((query, query_entities))
+    def rerank_fn(*, query, docs, top_k, query_term_matches):
+        calls.append((query, query_term_matches))
         if query == "机械风险":
             raise RuntimeError("branch failure")
         return list(docs[:top_k]), {"rerank_applied": True, "rerank_input_count": len(docs)}
