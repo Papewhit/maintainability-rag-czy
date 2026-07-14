@@ -17,10 +17,17 @@ from backend.rag.utils import (
     elapsed_ms,
     finish_retrieval_pipeline,
     generate_hypothetical_document,
+    load_query_filename_registry,
     retrieve_candidate_pool,
     retrieve_context_documents,
     retrieve_documents,
     step_back_expand,
+)
+from backend.rag.intent import IntentClassifier, IntentParseResult, build_intent_parse_result
+from backend.rag.query_plan import (
+    ComprehensiveQueryPlan,
+    IntentQueryPlan,
+    PreciseQueryPlan,
 )
 from backend.rag.retrieval import dedupe_docs
 from backend.rag.formatting import format_rag_documents
@@ -213,6 +220,9 @@ class RewriteStrategy(BaseModel):
 class RAGState(TypedDict):
     question: str
     query: str
+    raw_query: str
+    clean_query: str
+    semantic_query: str
     context: str
     docs: List[dict]
     context_files: List[str]
@@ -225,22 +235,60 @@ class RAGState(TypedDict):
     fallback_started_at: Optional[float]
     fallback_deadline: Optional[float]
     rag_trace: Optional[dict]
-    query_entities: Optional[List[dict]]
-    intent_result: Optional[dict]
+    intent_result: Optional[IntentParseResult]
+    query_plan: Optional[IntentQueryPlan]
+    query_plan_type: Optional[Literal["precise", "comprehensive"]]
+    term_matches: Optional[List[dict]]
+    normalized_query: Optional[str]
+    sparse_expansion: Optional[str]
+    protected_tokens: Optional[List[str]]
 
 
 def _format_docs(docs: List[dict]) -> str:
     return format_rag_documents(docs)
 
 
-def _state_query_entities(state: RAGState) -> list:
-    direct = state.get("query_entities") or []
+def _state_term_matches(state: RAGState) -> list:
+    direct = state.get("term_matches") or []
     if direct:
         return list(direct)
-    intent_result = state.get("intent_result")
-    if isinstance(intent_result, dict):
-        return list(intent_result.get("entities") or [])
-    return list(getattr(intent_result, "entities", None) or [])
+    return list((state.get("rag_trace") or {}).get("term_matches") or [])
+
+
+def intent_parse_node(state: RAGState) -> RAGState:
+    """Classify once and construct the immutable plan consumed by the RAG graph."""
+    config = _runtime_config()
+    raw_query = state.get("question") or state.get("query") or ""
+    context_files = list(state.get("context_files") or [])
+    needs_registry = config.intent_classifier_enabled or config.query_plan_enabled
+    filename_registry = load_query_filename_registry() if needs_registry else None
+    classifier = None
+    if config.intent_classifier_enabled:
+        classifier = IntentClassifier(
+            model_name=config.intent_classifier_model or FAST_MODEL,
+            timeout_seconds=config.intent_classifier_timeout_seconds,
+        )
+    result = build_intent_parse_result(
+        raw_query,
+        classifier=classifier,
+        classifier_enabled=config.intent_classifier_enabled,
+        query_plan_enabled=config.query_plan_enabled,
+        filename_registry=filename_registry,
+        context_files=context_files,
+        postprocess_profile=config.comprehensive_postprocess_profile,
+        llm_model=config.intent_classifier_model or FAST_MODEL,
+    )
+    plan = result.query_plan
+    semantic_query = plan.semantic_query if isinstance(plan, PreciseQueryPlan) else plan.clean_query
+    return {
+        "intent_result": result,
+        "query_plan": plan,
+        "query_plan_type": "comprehensive" if isinstance(plan, ComprehensiveQueryPlan) else "precise",
+        "raw_query": plan.raw_query,
+        "clean_query": plan.clean_query,
+        "semantic_query": semantic_query,
+        "rag_trace": dict(result.trace),
+    }
 
 
 def _fallback_to_initial_retrieval(state: RAGState, rag_trace: dict, expanded_start: float) -> RAGState:
@@ -266,9 +314,9 @@ def retrieve_initial(state: RAGState) -> RAGState:
     context_files = state.get("context_files") or []
     emit_rag_step("🔍", "正在检索知识库...", f"查询: {query[:50]}")
     retrieve_kwargs = {"top_k": 5, "context_files": context_files}
-    query_entities = _state_query_entities(state)
-    if query_entities:
-        retrieve_kwargs["query_entities"] = query_entities
+    query_plan = state.get("query_plan")
+    if isinstance(query_plan, PreciseQueryPlan):
+        retrieve_kwargs["query_plan"] = query_plan
     retrieved = retrieve_documents(query, **retrieve_kwargs)
     results = retrieved.get("docs", [])
     attached_docs = []
@@ -305,7 +353,7 @@ def retrieve_initial(state: RAGState) -> RAGState:
         "timings": retrieve_timings,
         "stage_errors": retrieve_stage_errors,
     }
-    rag_trace = build_initial_rag_trace(
+    initial_trace = build_initial_rag_trace(
         query=query,
         docs=results,
         context=context,
@@ -314,12 +362,27 @@ def retrieve_initial(state: RAGState) -> RAGState:
         attached_docs=attached_docs,
         attached_meta=attached_meta,
     )
+    intent_result = state.get("intent_result")
+    intent_trace = intent_result.trace if isinstance(intent_result, IntentParseResult) else {}
+    prior_trace = {**dict(intent_trace), **dict(state.get("rag_trace") or {})}
+    prior_timings = dict(prior_trace.get("timings") or {})
+    prior_timings.update(dict(initial_trace.get("timings") or {}))
+    prior_errors = list(prior_trace.get("stage_errors") or [])
+    prior_errors.extend(list(initial_trace.get("stage_errors") or []))
+    rag_trace = {**prior_trace, **initial_trace}
+    rag_trace["timings"] = prior_timings
+    rag_trace["stage_errors"] = prior_errors
     rag_trace.setdefault("attached_context_chunks", list(attached_docs or []))
     return {
         "query": query,
         "docs": results,
         "context": context,
         "rag_trace": rag_trace,
+        "semantic_query": retrieve_meta.get("semantic_query") or state.get("semantic_query") or query,
+        "term_matches": list(retrieve_meta.get("term_matches") or []),
+        "normalized_query": retrieve_meta.get("normalized_query"),
+        "sparse_expansion": retrieve_meta.get("sparse_expansion"),
+        "protected_tokens": list(retrieve_meta.get("protected_tokens") or []),
     }
 
 
@@ -651,9 +714,7 @@ def _retrieve_expanded_candidate_only(
         context_files=context_files,
         retrieval_mode="fallback_candidate_only",
         query_entities=(
-            _state_query_entities(state)
-            or list(rag_trace.get("query_entities") or [])
-            or list(rag_trace.get("term_matches") or [])
+            _state_term_matches(state)
         ),
     )
     docs = final_result.get("docs", [])
@@ -729,11 +790,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
     expanded_timings: dict[str, float] = {}
     expanded_stage_errors: list[dict] = []
     precomputed_retrievals: dict[str, dict] = {}
-    expanded_query_entities = (
-        _state_query_entities(state)
-        or list(rag_trace.get("query_entities") or [])
-        or list(rag_trace.get("term_matches") or [])
-    )
+    expanded_query_entities = _state_term_matches(state)
     entity_kwargs = {"query_entities": expanded_query_entities} if expanded_query_entities else {}
 
     if strategy == "complex":

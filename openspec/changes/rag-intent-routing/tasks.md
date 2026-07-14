@@ -1,20 +1,20 @@
 ## 1. Milestone M1：数据结构与降级路径骨架
 
-- [ ] 1.1 定义 `SubQuery`、`ComprehensiveRetrievalBranch`、`PreciseQueryPlan`、`ComprehensiveQueryPlan` 数据类（`backend/rag/query_plan.py`）；两种新 plan 不包含 `EntityMatch` / `entities`，PreciseQueryPlan 必须保留现有 QueryPlan 的检索字段，ComprehensiveQueryPlan 携带确定性 `clean_query` 与运行时解析的 `postprocess_profile`，现有 QueryPlan 在迁移期间继续受支持
-- [ ] 1.2 实现兼容适配器：`QUERY_PLAN_ENABLED=false` 时构造 raw query + global route 的 PreciseQueryPlan，启用时无损映射现有 `parse_query_plan()` 结果；兼容路径永远不输出 ComprehensiveQueryPlan
-- [ ] 1.3 新增 `RAGState` 字段 `intent_result: IntentParseResult | None`、`query_plan_type: Literal["precise", "comprehensive"]`；删除现有不可达的 `intent_result.entities` / semantic `query_entities` 兼容读取，terminology term_matches 继续走独立 preflight 状态
-- [ ] 1.4 单元测试覆盖：两种 `QUERY_PLAN_ENABLED` 状态的字段映射、关闭 classifier 时不启用新规则、兼容路径不产生 ComprehensiveQueryPlan、两种 plan 均拒绝 entities 字段
+- [x] 1.1 定义 `SubQuery`、`ComprehensiveRetrievalBranch`、`PreciseQueryPlan`、`ComprehensiveQueryPlan` 数据类（`backend/rag/query_plan.py`）；两种新 plan 不包含 `EntityMatch` / `entities`，PreciseQueryPlan 必须保留现有 QueryPlan 的检索字段，ComprehensiveQueryPlan 携带确定性 `clean_query` 与运行时解析的 `postprocess_profile`，现有 QueryPlan 在迁移期间继续受支持
+- [x] 1.2 实现兼容适配器：`QUERY_PLAN_ENABLED=false` 时构造 raw query + global route 的 PreciseQueryPlan，启用时无损映射现有 `parse_query_plan()` 结果；兼容路径永远不输出 ComprehensiveQueryPlan
+- [x] 1.3 新增 `RAGState` 字段 `intent_result: IntentParseResult | None`、`query_plan_type: Literal["precise", "comprehensive"]`；删除现有不可达的 `intent_result.entities` / semantic `query_entities` 兼容读取，terminology term_matches 继续走独立 preflight 状态
+- [x] 1.4 单元测试覆盖：两种 `QUERY_PLAN_ENABLED` 状态的字段映射、关闭 classifier 时不启用新规则、兼容路径不产生 ComprehensiveQueryPlan、两种 plan 均拒绝 entities 字段
 
 **验收**：所有数据结构编译通过；兼容路径能产出合法 PreciseQueryPlan；关闭 classifier 不记录失败，classifier 已启用但 LLM 失败时 `intent_fallback_to_rules=true`。
 
 ## 2. Milestone M2：LLM 意图解析器接入
 
-- [ ] 2.1 实现 `IntentClassifier` 类（新文件 `backend/rag/intent.py`）：封装 LLM 调用、structured output schema、超时控制
-- [ ] 2.2 设计 prompt 模板（system + 3-5 个 few-shot 示例覆盖两种意图）
-- [ ] 2.3 接入 langchain `with_structured_output`，定义 Pydantic schema 约束 LLM 输出；精确路径 schema 不允许 LLM 输出 terminology canonical 值或直接生成 semantic_query，综合路径 schema 不允许 LLM 选择 postprocess profile；semantic_query 和 profile 分别由确定性 query preparation / runtime policy resolver 构造
-- [ ] 2.4 添加 `RAG_INTENT_CLASSIFIER_ENABLED`（默认 false）、`RAG_INTENT_CLASSIFIER_MODEL`、`RAG_INTENT_CLASSIFIER_TIMEOUT_SECONDS` 配置（`backend/rag/runtime_config.py`）
-- [ ] 2.5 LLM 调用失败/超时/解析错误时自动降级到 M1 的规则路径，trace 记录 `intent_llm_error` 和 `intent_llm_ms`
-- [ ] 2.6 集成测试：mock LLM 返回各种 schema 的 JSON，验证产出的 QueryPlan 结构正确；LLM 返回额外 entities 字段时不得将其写入 QueryPlan 或 terminology 状态
+- [x] 2.1 实现 `IntentClassifier` 类（新文件 `backend/rag/intent.py`）：封装 LLM 调用、structured output schema、超时控制
+- [x] 2.2 设计 prompt 模板（system + 3-5 个 few-shot 示例覆盖两种意图）
+- [x] 2.3 接入 langchain `with_structured_output`，定义 Pydantic schema 约束 LLM 输出；精确路径 schema 不允许 LLM 输出 terminology canonical 值或直接生成 semantic_query，综合路径 schema 不允许 LLM 选择 postprocess profile；semantic_query 和 profile 分别由确定性 query preparation / runtime policy resolver 构造
+- [x] 2.4 添加 `RAG_INTENT_CLASSIFIER_ENABLED`（默认 false）、`RAG_INTENT_CLASSIFIER_MODEL`、`RAG_INTENT_CLASSIFIER_TIMEOUT_SECONDS` 配置（`backend/rag/runtime_config.py`）
+- [x] 2.5 LLM 调用失败/超时/解析错误时自动降级到 M1 的规则路径，trace 记录 `intent_llm_error` 和 `intent_llm_ms`
+- [x] 2.6 集成测试：mock LLM 返回各种 schema 的 JSON，验证产出的 QueryPlan 结构正确；LLM 返回额外 entities 字段时不得将其写入 QueryPlan 或 terminology 状态
 
 **验收**：`RAG_INTENT_CLASSIFIER_ENABLED=true` 时全链路能产出 PreciseQueryPlan 或 ComprehensiveQueryPlan；LLM 调用失败时降级到规则路径且不阻塞。
 
@@ -31,11 +31,11 @@
 
 ## 3A. Milestone M3A：结构清洗与 hybrid query composition
 
-- [ ] 3A.1 定义 query preparation 输出及 RAGState 字段：不可变 raw_query、clean_query、semantic_query，以及独立 terminology `term_matches` / `normalized_query` / `sparse_expansion` / `protected_tokens`；ComprehensiveQueryPlan.clean_query 由运行时确定性写入，不进入 LLM schema
-- [ ] 3A.2 重构结构解析：记录成功消费的 doc/scope/anchor span；只有成功形成 matched_files + scope 或 anchors 的 span 才从 clean/semantic query 删除，未匹配文档提示必须保留
-- [ ] 3A.3 修改 terminology preflight 接口，使其消费 semantic query（comprehensive 时消费 clean-query baseline 与各 sub-query）而非 raw query；无命中和 terminology 不可用时保持调用输入
-- [ ] 3A.4 修复 `backend/rag/utils.py` 的 query composition：dense 使用 normalized_query，BM25 使用 sparse_expansion；禁止 term_preflight 将 search_query 恢复为 raw query；保持既有 hybrid-to-dense failure degradation
-- [ ] 3A.5 组合单测覆盖：成功文档限域、文档提示未匹配、anchor 消费、正文术语命中、无术语命中、terminology 未加载，以及 dense/BM25 的实际调用参数
+- [x] 3A.1 定义 query preparation 输出及 RAGState 字段：不可变 raw_query、clean_query、semantic_query，以及独立 terminology `term_matches` / `normalized_query` / `sparse_expansion` / `protected_tokens`；ComprehensiveQueryPlan.clean_query 由运行时确定性写入，不进入 LLM schema
+- [x] 3A.2 重构结构解析：记录成功消费的 doc/scope/anchor span；只有成功形成 matched_files + scope 或 anchors 的 span 才从 clean/semantic query 删除，未匹配文档提示必须保留
+- [x] 3A.3 修改 terminology preflight 接口，使其消费 semantic query（comprehensive 时消费 clean-query baseline 与各 sub-query）而非 raw query；无命中和 terminology 不可用时保持调用输入
+- [x] 3A.4 修复 `backend/rag/utils.py` 的 query composition：dense 使用 normalized_query，BM25 使用 sparse_expansion；禁止 term_preflight 将 search_query 恢复为 raw query；保持既有 hybrid-to-dense failure degradation
+- [x] 3A.5 组合单测覆盖：成功文档限域、文档提示未匹配、anchor 消费、正文术语命中、无术语命中、terminology 未加载，以及 dense/BM25 的实际调用参数
 - [ ] 3A.6 comprehensive 集成测试覆盖 baseline 与每个并行 sub-query 独立 terminology preflight、dense+BM25 输入和部分失败保留；断言 baseline 使用 clean_query 而非 raw_query
 
 **验收**：任一检索请求的 dense 与 BM25 输入都从同一个结构处理后的 query 基底派生；成功消费的结构 span 不重复进入术语检索，未消费文本不丢失；加载术语表但无命中时不会恢复 raw query。

@@ -90,3 +90,73 @@ last_verified_date: 2026-07-14
 - Disposition: change
 - Disposition target: openspec/changes/rag-intent-routing/
 - Resolution evidence: ComprehensiveQueryPlan schema, clean-query baseline requirement/scenarios, branch provenance, budget/selection rules, trace/evaluation fields, M1/M3A/M4/M5B tasks, and fallback exclusion define the durable contract.
+
+## RAG-INTENT-F007
+
+- Kind: behavior_defect
+- Primary scope: rag.retrieval.query_preparation
+- Evidence status: confirmed
+- Observation: The first M3A implementation consumed chapter-like text nested inside an unresolved document hint and removed every model number whenever any document scope existed, even when that model number did not establish the scope.
+- Inference: Retrieval text could lose unresolved filename content or model identifiers without a corresponding scope/anchor owner, violating the consumed-span contract.
+- Decision: Exclude nested chapter/LLM-anchor matches from anchor ownership, and consume a model-number span only when that model independently matches a filename in the final effective scope.
+- Residual risk: none
+- Evidence: Stage-one review on 2026-07-14; `tests/unit/backend/rag/query_plan/test_intent_query_plan.py` reproduces unresolved nested anchors and unrelated scoped model numbers.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/query_plan.py` now retains unowned spans and records owned model spans; the targeted query-plan tests and stage-one regression pass.
+
+## RAG-INTENT-F008
+
+- Kind: behavior_defect
+- Primary scope: rag.retrieval.query_plan_activation
+- Evidence status: confirmed
+- Observation: A prebuilt PreciseQueryPlan made retrieval planning active, but filename boost and heading scoring still checked only the import-time legacy `QUERY_PLAN_ENABLED` value.
+- Inference: Classifier-produced boost plans were silently ignored whenever the legacy query-plan switch remained off.
+- Decision: Pass request-level plan activation into candidate adjustment and use the legacy global only when no explicit activation state is supplied.
+- Residual risk: none
+- Evidence: Stage-one review on 2026-07-14; `tests/unit/backend/rag/retrieval/test_query_preparation.py` covers a prebuilt boost plan with the legacy flag disabled.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/utils.py` now propagates `query_plan_active` into candidate adjustment; targeted retrieval preparation tests pass.
+
+## RAG-INTENT-F009
+
+- Kind: delivery_risk
+- Primary scope: rag.intent.classifier_runtime
+- Evidence status: confirmed
+- Observation: Per-request ThreadPoolExecutor timeout stopped waiting but could not cancel an already running provider call, allowing timed-out requests to accumulate threads and billable model work.
+- Inference: Repeated provider hangs could cause unbounded local resource growth and duplicate latency/cost exposure despite graph fallback.
+- Decision: Configure the provider request timeout with retries disabled and submit calls through one bounded shared executor guarded by non-blocking capacity slots. Exhaustion degrades through the same rule fallback path.
+- Residual risk: A running injected/non-cooperative call can continue until it returns, but concurrency is bounded; the production provider also receives the HTTP timeout.
+- Evidence: Stage-one review on 2026-07-14; timeout, provider configuration, no-retry, and capacity-exhaustion tests in `tests/unit/backend/rag/pipeline/test_intent_classifier.py`.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/intent.py` uses bounded shared execution plus provider timeout; targeted intent tests pass.
+
+## RAG-INTENT-F010
+
+- Kind: evidence_gap
+- Primary scope: rag.retrieval.trace
+- Evidence status: confirmed
+- Observation: Terminology preflight outputs existed in retrieval meta but the graph state did not propagate them, and the initial trace whitelist retained only term_matches.
+- Inference: Downstream diagnostics could not establish the semantic-query coordinate base or inspect dense/BM25 composition inputs.
+- Decision: Propagate semantic_query, term_matches, normalized_query, sparse_expansion, and protected_tokens through precise retrieval state and initial trace.
+- Residual risk: Comprehensive branch-local equivalents still require M3A.6/M4 branch diagnostics.
+- Evidence: Stage-one review on 2026-07-14; `tests/unit/backend/rag/pipeline/test_intent_state.py` asserts state and trace propagation.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/pipeline.py` and `backend/rag/trace.py` preserve the terminology/query preparation evidence; targeted state tests pass.
+
+## RAG-INTENT-F011
+
+- Kind: behavior_defect
+- Primary scope: rag.intent.precise_plan
+- Evidence status: confirmed
+- Observation: The strict intent schema exposed scope_hint but the precise plan builder ignored it, so filter, boost, and none produced identical scope behavior.
+- Inference: A documented plan hint had no consumer and could create false expectations in classifier evaluation.
+- Decision: Apply scope_hint only after deterministic filename resolution; unresolved hints cannot create scope, explicit context files remain hard filters, and `none` retains the document text because no scope owns it.
+- Residual risk: none
+- Evidence: Stage-one review on 2026-07-14; `tests/unit/backend/rag/pipeline/test_intent_classifier.py` covers resolved boost and none behavior.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/intent.py` passes the hint to deterministic parsing and `backend/rag/query_plan.py` resolves it within ownership constraints; targeted tests pass.

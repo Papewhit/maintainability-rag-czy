@@ -291,7 +291,7 @@ def test_retrieve_initial_emits_real_auto_merge_status():
     assert result["rag_trace"]["auto_merge_applied"] is True
 
 
-def test_retrieve_initial_passes_intent_entities_to_retrieval():
+def test_retrieve_initial_does_not_treat_intent_entities_as_terminology_signal():
     entities = [{"type": "component", "value": "pump"}]
     retrieve_result = {"docs": [], "meta": {"timings": {}, "stage_errors": []}}
 
@@ -305,7 +305,7 @@ def test_retrieve_initial_passes_intent_entities_to_retrieval():
             "intent_result": {"entities": entities},
         })
 
-    assert retrieve.call_args.kwargs["query_entities"] == entities
+    assert "query_entities" not in retrieve.call_args.kwargs
 
 
 def test_step_chain_check_repairs_incomplete_middle_chunk():
