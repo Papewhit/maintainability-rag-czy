@@ -11,7 +11,7 @@
 
 设计文档（融合方案 4.10 + 4.12）要求 fallback 支持"识别证据不足、返回'未在当前知识库中找到足够依据'"，但没有给出多级 fallback 的具体形态。讨论中确定的设计：
 
-- **Level 0**：始终做的预处理（意图分类 + 实体提取 + 术语增强）
+- **Level 0**：始终做的预处理（意图分类 + 术语增强）
 - **Level 1**：Query Rewrite（信号指向"问题描述不准"）
 - **Level 2**：Scope Relax（信号指向"搜索约束太紧"）
 - **Level 3**：明确告知证据不足
@@ -20,22 +20,21 @@
 
 把 fallback 从"单层 LLM-grader 驱动"重构为"信号驱动的分级策略"：
 
-1. **Pre-flight 阶段独立**：术语增强、entity 提取、normalized_query / sparse_expansion 从 fallback 路径中剥离，移到 Level 0 预处理（每次必做）。依赖 `rag-terminology-module` 和 `rag-intent-routing` 提供的能力。
+1. **Pre-flight 阶段独立**：意图分类、确定性结构清洗与 terminology 的 normalized_query / sparse_expansion 从 fallback 路径中剥离，移到 Level 0 预处理（每次必做）。Level 0 按“意图/结构解析 → 结构 span 消费确认 → terminology preflight → dense+BM25 query composition”顺序执行；fallback 不提取 semantic entities。
 
-2. **信号到 Level 的映射**：confidence gate 产出的多维信号（top_margin、dominant_root_share、anchor_match、entity_coverage、sub_query_coverage）通过一个 Fallback Router 映射到目标 level。Router 是纯规则（无 LLM 调用）。
+2. **信号到 Level 的映射**：confidence gate 产出的多维信号（top_margin、dominant_root_share、anchor_match、sub_query_coverage）通过一个 Fallback Router 映射到目标 level。Router 是纯规则（无 LLM 调用）。terminology 的 `entity_type_coverage` 是粗粒度 rerank trace，不作为实例级 coverage 路由信号。
 
 3. **Level 1 - Query Rewrite**：当信号指向"问题描述不准"时触发。
    - 精确管线：step_back / HyDE / complex 三种策略（保留现有 router 逻辑）
-   - 综合管线：以失败的 sub_query + 完整 plan 上下文为输入，让 LLM 选择 generalize / specialize / replace / decompose 策略并生成新 sub_query
+   - 综合管线：以失败的 LLM sub_query + 完整 plan 上下文为输入，让 LLM 选择 generalize / specialize / replace / decompose 策略并生成新 sub_query；intent-routing 固定的 clean-query baseline 不是 rewrite 目标，重试时按 plan.clean_query 原样重建
 
 4. **Level 2 - Scope Relax**：当信号指向"搜索约束太紧"时触发。
    - scope_mode 降级（filter → boost → none）
-   - 放宽 entity_filters（移除低置信度 entity）
    - 增大 candidate_k
    - 答案生成时强制注入"非精确匹配"声明
 
 5. **Level 3 - Insufficient Evidence**：所有上一级都无效或预算耗尽时触发。
-   - 精确管线：明确告知"未找到 [entity] 的足够依据"，附带尝试过的 level
+   - 精确管线：明确告知"未找到与当前查询及结构范围匹配的足够依据"，附带尝试过的 level
    - 综合管线：给出已覆盖部分的回答，未覆盖的明确标注
 
 6. **预算控制**：
@@ -81,8 +80,8 @@
 
 **依赖：**
 - 依赖 `rag-intent-routing`：fallback router 需要 query_plan_type 输入
-- 依赖 `rag-terminology-module`：Level 0 预处理使用 terminology preflight
-- 依赖 `rag-postprocess-evidence`：confidence gate 输出的多维信号、entity_coverage 计算
+- 依赖 `rag-terminology-module`：Level 0 在结构解析之后使用 terminology preflight，并以同一结构处理后的 query 基底生成 dense normalization 与 BM25 expansion
+- 依赖 `rag-postprocess-evidence`：confidence gate 输出的 top score、margin、root share、anchor 和 sub-query coverage 信号
 
 **风险：**
 - 重构现有 fallback 逻辑可能引入回归（虽然现有默认关闭，但仍要保证关闭时行为不变）

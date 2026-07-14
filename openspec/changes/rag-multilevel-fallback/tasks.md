@@ -20,13 +20,14 @@
 - [ ] 2.3 每个 level node 完成后回到 fallback_router_node 再决定下一步（直到 Level 3 或预算耗尽）
 - [ ] 2.4 RAGState 新增字段：`fallback_decisions: list[FallbackDecision]`、`attempted_levels: list[int]`
 - [ ] 2.5 端到端测试：构造各种信号组合，验证 graph 走对路径
+- [ ] 2.6 集成测试确认进入 fallback 前已完成结构清洗、terminology preflight 与 dense+BM25 query composition；Level 1/2 重检不得把检索输入恢复为 raw query
 
 **验收**：graph 可视化输出清晰；多 level 路径在测试中正确执行；现有 RAG 测试不破坏。
 
 ## 3. Milestone M3：Level 1 - 精确管线 rewrite
 
 - [ ] 3.1 沿用现有 `rewrite_question_node` 的 step_back / hyde / complex 逻辑
-- [ ] 3.2 prompt 改写：把 PreciseQueryPlan 的 entities、anchors 注入到 rewrite prompt
+- [ ] 3.2 prompt 改写：把原始 query、PreciseQueryPlan 的 anchors、doc_hints 和 scope 状态注入 rewrite prompt
 - [ ] 3.3 入口检查 budget：超预算直接降 Level 3
 - [ ] 3.4 trace 字段：`level1_strategy`、`level1_ms`、`level1_rewritten_query`
 - [ ] 3.5 测试：mock confidence 信号触发 Level 1，验证 strategy 选择和 rewritten_query 生成
@@ -36,11 +37,11 @@
 ## 4. Milestone M4：Level 1 - 综合管线 rewrite
 
 - [ ] 4.1 新增 `backend/rag/comprehensive_rewriter.py`：合并的 router + rewriter LLM 调用
-- [ ] 4.2 prompt 设计：以完整 plan、失败 sub_query、failure_signal、succeeded_sub_queries 为输入
+- [ ] 4.2 prompt 设计：以完整 plan、失败 LLM sub_query、failure_signal、succeeded_sub_queries 为输入；拒绝 branch_kind=baseline
 - [ ] 4.3 输出 schema：strategy + new_sub_queries + reason
 - [ ] 4.4 接入 `level1_query_rewrite_node` 的 comprehensive 分支
-- [ ] 4.5 sub_query 级 fallback：只对失败的 sub_query rewrite，其他保留
-- [ ] 4.6 单元测试：mock LLM 输出各种 strategy，验证 plan 更新正确
+- [ ] 4.5 sub_query 级 fallback：只对失败的 LLM sub_query rewrite，其他保留；clean-query baseline 永不写入或替换 sub_queries，重试时从 plan.clean_query 原样重建
+- [ ] 4.6 单元测试：mock LLM 输出各种 strategy，验证 plan 更新正确；baseline 失败只记录 diagnostics 且不会调用 rewriter
 - [ ] 4.7 trace 字段：`level1_comprehensive_strategy`、`level1_new_sub_queries`、`level1_sub_query_replaced`
 
 **验收**：综合管线在 Level 1 能针对失败 sub_query 做策略化重写；不重复其他成功 sub_query 的工作。
@@ -52,18 +53,20 @@
 - [ ] 5.3 同 root cap 临时放宽（structure_rerank 参数）
 - [ ] 5.4 接入 `level2_scope_relax_node`
 - [ ] 5.5 trace 字段：`level2_relaxations`（list[str]）、`level2_new_scope_mode`、`level2_ms`
-- [ ] 5.6 综合管线版本：每个 sub_query 独立放宽 + merge_strategy 降级
+- [ ] 5.6 综合管线版本：每个 LLM sub_query 独立放宽 structure scope；baseline 使用放宽后的共享结构约束重建但保持 plan.clean_query 文本；保持 intent-routing 已解析的 comprehensive postprocess profile 完整不变，不在 fallback 节点内替换 profile 组件
 - [ ] 5.7 测试：scope_mode 从 filter → boost → none 的降级正确
+- [ ] 5.8 测试：Level 2 不读取或修改 semantic entities，terminology 的 `entity_type_coverage` 不参与 scope-relax 路由
 
 **验收**：Level 2 后召回数量明显增加；scope_mode 降级链路完整；trace 反映放宽细节。
 
 ## 6. Milestone M6：Level 3 - Insufficient Evidence
 
 - [ ] 6.1 实现 `generate_level3_answer(query_plan, attempted_levels)` 模板化输出（无 LLM）
-- [ ] 6.2 精确管线模板：明确告知 entities 未找到
-- [ ] 6.3 综合管线模板：部分覆盖回答 + 未覆盖维度标注
+- [ ] 6.2 精确管线模板：明确告知当前 query 与结构范围没有足够匹配证据
+- [ ] 6.3 综合管线模板：部分覆盖回答 + 未覆盖维度标注；baseline 不计完成维度，baseline-only 时显示 0/Y 并只可标为一般背景证据
 - [ ] 6.4 prompt 注入：当 fallback_level=3 时跳过常规 RAG context，使用 Level 3 输出作为最终回答
-- [ ] 6.5 trace 字段：`level3_reason`、`level3_attempted_levels`、`level3_uncovered_sub_queries`（comprehensive）
+- [ ] 6.5 trace 字段：`level3_reason`、`level3_attempted_levels`、`level3_uncovered_sub_queries`、`level3_baseline_evidence_used`（comprehensive）
+- [ ] 6.6 测试区分：生成分支部分成功、baseline-only、baseline 与全部生成分支均为空；baseline-only 不增加 coverage count
 
 **验收**：Level 3 输出明确、不误导；用户能从回答中看出哪些维度有/无证据。
 

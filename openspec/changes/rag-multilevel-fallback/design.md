@@ -18,7 +18,7 @@ confidence gate（`backend/rag/confidence.py`）已经输出了多维信号：
 但这些信号目前只汇总成单一 boolean `fallback_required`，下游没有差异化使用。
 
 讨论确定的分级框架：
-- Level 0：每次必做的预处理（意图分类、术语扩展、entity 提取）
+- Level 0：每次必做的顺序预处理（意图/结构解析、结构清洗、术语扩展、dense+BM25 query composition）
 - Level 1：Query Rewrite（"问题描述不准"）
 - Level 2：Scope Relax（"搜索约束太紧"）
 - Level 3：明确告知证据不足
@@ -36,7 +36,7 @@ confidence gate（`backend/rag/confidence.py`）已经输出了多维信号：
 **Non-Goals：**
 - 不引入新的 LLM 调用类型（Level 1 已经会调 LLM，预算在内）
 - 不做并行 fallback（顺序执行已确定）
-- 不为 Level 0 重新设计（Level 0 = pre-flight，由 intent-routing 和 terminology 提供）
+- 不在本 change 重新设计 Level 0 的字段与算法（Level 0 = pre-flight，其顺序与 query composition 由 intent-routing 和 terminology 提供）
 - 不在本 change 修改 confidence gate 算法（只消费它的信号）
 
 ## Decisions
@@ -45,13 +45,15 @@ confidence gate（`backend/rag/confidence.py`）已经输出了多维信号：
 
 ```
 Level 0 (Pre-flight): 每次必做
-  ├─ Intent + Entity 解析 (rag-intent-routing)
-  └─ Terminology 扩展 (rag-terminology-module)
+  ├─ Intent / 结构解析 (rag-intent-routing)
+  ├─ 确认 scope/anchor 消费并构造 semantic query
+  ├─ Terminology preflight (rag-terminology-module)
+  `─ normalized query -> dense; sparse expansion -> BM25
 
 Level 1 (Query Rewrite): 由 LLM 改写 query
   触发信号:
     - anchor_mismatch
-    - low_score_and_margin (在 entity_coverage 充分时)
+    - low_score_and_margin
     - sub_query_coverage < threshold (comprehensive)
   策略:
     精确: step_back / hyde / complex (LLM router 选择)
@@ -60,11 +62,9 @@ Level 1 (Query Rewrite): 由 LLM 改写 query
 Level 2 (Scope Relax): 放宽搜索约束
   触发信号:
     - weak_margin_and_root
-    - entity_coverage < threshold (在 anchor_match 充分时)
     - scope_mode == filter 但 matched_files 召回不相关
   策略:
     - scope_mode 降级: filter → boost → none
-    - 移除最低置信度的 entity_filter
     - candidate_k 增大 1.5x
     - same_root_cap 放宽 (允许更多同源)
     - 回答时强制注入"非精确匹配"声明
@@ -74,9 +74,8 @@ Level 3 (Insufficient): 明确告知
     - Level 1+2 都试过仍不达标
     - 或预算超时
     - 或 no_docs (空召回直接到 Level 3, 不重试)
-    - 或 query entity 在知识库中完全无匹配 (fail-fast)
   输出:
-    精确: "未在当前知识库中找到关于 [entity] 的足够依据,已尝试 [尝试过的 level]"
+    精确: "未在当前知识库中找到与当前查询及结构范围匹配的足够依据,已尝试 [尝试过的 level]"
     综合: 部分覆盖回答 + 未覆盖维度的明确标注
 ```
 
@@ -123,11 +122,7 @@ def route_fallback(
     if "weak_margin_and_root" in reasons:
         return FallbackDecision(target_level=2, primary_signal="weak_margin_and_root", ...)
     if "low_score_and_margin" in reasons:
-        # 看 entity_coverage 决定 Level 1 or 2
-        entity_coverage = confidence.get("entity_coverage", 1.0)
-        if entity_coverage < ENTITY_COVERAGE_THRESHOLD:
-            return FallbackDecision(target_level=2, ...)
-        return FallbackDecision(target_level=1, ...)
+        return FallbackDecision(target_level=1, primary_signal="low_score_and_margin", ...)
 
     return FallbackDecision(target_level=1, ...)   # 默认 Level 1
 ```
@@ -139,12 +134,12 @@ def route_fallback(
 复用现有 `rewrite_question_node` 的 step_back / hyde / complex 逻辑，但：
 - 入口检查预算：超预算直接降 Level 3
 - 移除 LLM grader（grader 决策已被 fallback router 替代）
-- prompt 改写：把 PreciseQueryPlan 的 entities 和 anchors 注入到 rewrite prompt，让 LLM 更聚焦
+- prompt 改写：把原始 query、PreciseQueryPlan 的 anchors、doc_hints 和 scope 状态注入 rewrite prompt，让 LLM 更聚焦
 - trace 记录 `level1_strategy` 和 `level1_ms`
 
 ### 决策 4：Level 1 - 综合管线 rewrite
 
-新实现，使用合并的 LLM 调用同时做策略选择和重写：
+新实现，使用合并的 LLM 调用同时做策略选择和重写。输入中的失败 branch 必须是 LLM sub-query；intent-routing 固定构造的 clean-query baseline 只提供 diagnostics，不得成为 rewrite/replace/decompose 目标。发生综合重试时 baseline 始终从 `ComprehensiveQueryPlan.clean_query` 原样重建：
 
 ```
 System:
@@ -185,14 +180,11 @@ User input:
 
 ```python
 def relax_scope(query_plan: PreciseQueryPlan) -> PreciseQueryPlan:
-    """降级 scope_mode 和 entity_filters"""
+    """降级结构化 scope；不处理 semantic entity filter。"""
     new_scope_mode = SCOPE_DOWNGRADE[query_plan.scope_mode]  # filter→boost→none
-    # 移除最低置信度的 entity
-    relaxed_entities = sorted(query_plan.entities, key=lambda e: -e.confidence)[:-1]
     return dataclasses.replace(
         query_plan,
         scope_mode=new_scope_mode,
-        entities=relaxed_entities,
     )
 
 # 然后重新走一次 retrieve_candidate_pool, candidate_k 放大 1.5x
@@ -202,9 +194,11 @@ trace 记录 `level2_relaxations`（list，描述哪些约束被放宽）。
 
 ### 决策 6：Level 2 - 综合管线 scope relax
 
-每个 sub_query 独立放宽：
-- sub_query 中识别的 entity 同样按 confidence 排序移除最低
-- merge_strategy 从 hierarchical 降到 weighted 再到 union（容忍度递增）
+每个 retrieval branch 独立放宽：
+- 对 LLM sub-query 放宽该分支的结构 scope；clean-query baseline 使用同一轮已放宽的共享结构约束重新构造，但不改写其文本
+- 继续使用 intent-routing 已解析的完整 comprehensive postprocess profile
+
+Level 2 不在 graph 节点内替换 profile 组件。未来若要改变 merge/selection/budget 组合，必须注册并评测新的完整 profile，而不是临时修改单个策略。
 
 trace 记录每个 sub_query 的放宽情况。
 
@@ -215,10 +209,9 @@ trace 记录每个 sub_query 的放宽情况。
 ```python
 def generate_level3_answer(query_plan, attempted_levels) -> str:
     if isinstance(query_plan, PreciseQueryPlan):
-        entities_str = ", ".join(e.normalized for e in query_plan.entities)
         attempts_str = " → ".join(f"Level {l}" for l in attempted_levels)
         return (
-            f"未在当前知识库中找到关于 {entities_str} 的足够依据。"
+            f"未在当前知识库中找到与“{query_plan.raw_query}”及当前结构范围匹配的足够依据。"
             f"已尝试: {attempts_str}。"
             f"建议: 检查相关文档是否已上传 / 调整问法 / 提供更多上下文文件。"
         )
@@ -241,7 +234,7 @@ if turn_context.fallback_level == 2:
         "检索系统在精确范围内未找到充分证据,已放宽搜索范围。"
         "当前提供的证据来源于扩大后的范围。"
         "生成回答时必须:"
-        "1. 开头明确说明: 未找到 [原始 query 中的精确实体] 的精确匹配,以下是相关参考"
+        "1. 开头明确说明: 未找到与原始 query 及结构范围完全匹配的证据,以下是相关参考"
         "2. 引用每个来源时,标注它是否完全匹配原始约束"
         "3. 不要把放宽后的内容当作直接答案,要把它定位为参考方案"
         "4. 如有可能,建议用户补充信息或上传相关文档以获得精确答案"
@@ -329,7 +322,7 @@ scope_mode 降级到 none 后召回大量无关 chunk，反而稀释证据质量
 ## 依赖与衔接
 
 - **依赖 `rag-intent-routing`**：query_plan 字段、PreciseQueryPlan/ComprehensiveQueryPlan 类型
-- **依赖 `rag-terminology-module`**：Level 0 预处理已经做了术语扩展，本 change 不重复做
-- **依赖 `rag-postprocess-evidence`**：confidence gate 输出的多维信号（含 entity_coverage、sub_query_coverage）
+- **依赖 `rag-terminology-module`**：Level 0 已在结构解析后对实际检索文本做术语扩展并构造 dense/BM25 输入，本 change 不重复做，也不得在 Level 1/2 把 query 恢复为 raw query
+- **依赖 `rag-postprocess-evidence`**：confidence gate 输出的 top score、margin、root share、anchor 和 sub-query coverage 信号。terminology 的 `entity_type_coverage` / `term_match_count` 可继续参与 rerank 与 trace，但不解释为实例级 entity coverage，也不用于本 change 的 scope-relax 路由。
 
 本 change 必须在以上三个 change 至少部分上线后才能完整工作。可以早期上线"骨架版"：Level 1 沿用现有 rewrite 逻辑（不区分 plan_type），Level 2 仅做 scope_mode 降级，Level 3 模板输出。完整能力随依赖 change 推进而启用。
