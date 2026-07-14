@@ -100,10 +100,10 @@
 
 ## Evidence Disposition Gate
 
-- [ ] New findings classified, or `No new findings` recorded
-- [ ] Code, test, review, runtime, or invalidation evidence linked
-- [ ] Every confirmed Finding has a durable disposition or evidenced in-place closure
-- [ ] Residual risks have durable typed destinations
-- [ ] Planned work has an OpenSpec change or issue owner where required
-- [ ] ARCHITECTURE impact assessed
-- [ ] No undispositioned design ambiguity remains
+- [x] New findings classified, or `No new findings` recorded
+- [x] Code, test, review, runtime, or invalidation evidence linked
+- [x] Every confirmed Finding has a durable disposition or evidenced in-place closure
+- [x] Residual risks have durable typed destinations
+- [x] Planned work has an OpenSpec change or issue owner where required
+- [x] ARCHITECTURE impact assessed
+- [x] No undispositioned design ambiguity remains
