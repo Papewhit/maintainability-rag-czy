@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from typing import Callable, Literal, TypedDict, List, Optional
+from typing import Any, Callable, Literal, TypedDict, List, Optional
 import time
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END
@@ -14,6 +14,12 @@ from backend.config import (
 )
 from backend.rag.candidate_strategy import RerankExecutionMode
 from backend.rag.utils import (
+    _apply_structure_rerank,
+    _auto_merge_documents,
+    _evaluate_retrieval_confidence,
+    _rerank_device_tier,
+    _rerank_documents,
+    _step_chain_check,
     elapsed_ms,
     finish_retrieval_pipeline,
     generate_hypothetical_document,
@@ -22,6 +28,14 @@ from backend.rag.utils import (
     retrieve_context_documents,
     retrieve_documents,
     step_back_expand,
+)
+from backend.rag.comprehensive_postprocess import (
+    BranchRetrievalResult,
+    ComprehensivePolicyResolution,
+    build_retrieval_branches,
+    resolve_comprehensive_postprocess_policy,
+    run_branch_rerank,
+    run_shared_postprocess,
 )
 from backend.rag.intent import IntentClassifier, IntentParseResult, build_intent_parse_result
 from backend.rag.query_plan import (
@@ -242,6 +256,11 @@ class RAGState(TypedDict):
     normalized_query: Optional[str]
     sparse_expansion: Optional[str]
     protected_tokens: Optional[List[str]]
+    comprehensive_policy_resolution: Optional[ComprehensivePolicyResolution]
+    branch_retrieval_results: Optional[List[BranchRetrievalResult]]
+    branch_rerank_results: Optional[List[BranchRetrievalResult]]
+    merged_candidates: Optional[List[dict]]
+    merge_meta: Optional[dict]
 
 
 def _format_docs(docs: List[dict]) -> str:
@@ -383,6 +402,247 @@ def retrieve_initial(state: RAGState) -> RAGState:
         "normalized_query": retrieve_meta.get("normalized_query"),
         "sparse_expansion": retrieve_meta.get("sparse_expansion"),
         "protected_tokens": list(retrieve_meta.get("protected_tokens") or []),
+    }
+
+
+def _merge_comprehensive_trace(state: RAGState, patch: dict[str, Any]) -> dict[str, Any]:
+    trace = dict(state.get("rag_trace") or {})
+    existing_errors = list(trace.get("stage_errors") or [])
+    patch_errors = list(patch.get("stage_errors") or [])
+    existing_timings = dict(trace.get("timings") or {})
+    patch_timings = dict(patch.get("timings") or {})
+    trace.update(patch)
+    trace["stage_errors"] = existing_errors + patch_errors
+    trace["timings"] = {**existing_timings, **patch_timings}
+    return trace
+
+
+def decompose_and_fanout(state: RAGState) -> RAGState:
+    plan = state.get("query_plan")
+    if not isinstance(plan, ComprehensiveQueryPlan):
+        raise TypeError("decompose_and_fanout requires ComprehensiveQueryPlan")
+    started = time.perf_counter()
+    context_files = list(state.get("context_files") or [])
+    branches = build_retrieval_branches(plan)
+    resolution = resolve_comprehensive_postprocess_policy(plan.postprocess_profile)
+
+    def retrieve_branch(branch) -> BranchRetrievalResult:
+        branch_start = time.perf_counter()
+        try:
+            payload = retrieve_candidate_pool(
+                branch.query,
+                top_k=5,
+                context_files=context_files,
+            )
+            meta = dict(payload.get("meta") or {})
+            meta["branch_retrieve_ms"] = elapsed_ms(branch_start)
+            return BranchRetrievalResult(
+                branch=branch,
+                candidates=tuple(payload.get("candidates") or []),
+                meta=meta,
+            )
+        except Exception as exc:
+            return BranchRetrievalResult(
+                branch=branch,
+                candidates=(),
+                meta={"branch_retrieve_ms": elapsed_ms(branch_start)},
+                error=str(exc),
+            )
+
+    with ThreadPoolExecutor(
+        max_workers=max(1, min(len(branches), 8)),
+        thread_name_prefix="rag-comprehensive",
+    ) as executor:
+        futures = {branch.branch_id: executor.submit(retrieve_branch, branch) for branch in branches}
+        results = [futures[branch.branch_id].result() for branch in branches]
+
+    branch_errors: list[dict[str, Any]] = []
+    for result in results:
+        if result.error:
+            branch_errors.append({
+                "stage": "branch_retrieval",
+                "branch_id": result.branch.branch_id,
+                "branch_kind": result.branch.branch_kind,
+                "error": result.error,
+                "fallback_to": "remaining_branches",
+            })
+        for error in result.meta.get("stage_errors") or []:
+            branch_errors.append({
+                **dict(error),
+                "stage": f"branch_{error.get('stage', 'unknown')}",
+                "branch_id": result.branch.branch_id,
+                "branch_kind": result.branch.branch_kind,
+            })
+    baseline = next(result for result in results if result.branch.branch_kind == "baseline")
+    dense_embedding_call_count = sum(
+        int(result.meta.get("dense_embedding_call_count") or 0) for result in results
+    )
+    sparse_embedding_call_count = sum(
+        int(result.meta.get("sparse_embedding_call_count") or 0) for result in results
+    )
+    hybrid_search_call_count = sum(
+        int(result.meta.get("hybrid_search_call_count") or 0) for result in results
+    )
+    split_search_call_count = sum(
+        int(result.meta.get("split_search_call_count") or 0) for result in results
+    )
+    patch = {
+        "requested_comprehensive_postprocess_profile": resolution.requested_profile,
+        "effective_comprehensive_postprocess_profile": resolution.effective_profile,
+        "comprehensive_postprocess_profile_warning": resolution.warning,
+        "budget_strategy_id": resolution.policy.budget_strategy_id,
+        "branch_rerank_strategy_id": resolution.policy.branch_rerank_strategy_id,
+        "merge_strategy_id": resolution.policy.merge_strategy_id,
+        "final_selection_strategy_id": resolution.policy.final_selection_strategy_id,
+        "sub_query_count": len(plan.sub_queries),
+        "retrieval_branch_count": len(branches),
+        "dense_embedding_call_count": dense_embedding_call_count,
+        "sparse_embedding_call_count": sparse_embedding_call_count,
+        "embedding_call_count": dense_embedding_call_count + sparse_embedding_call_count,
+        "hybrid_search_call_count": hybrid_search_call_count,
+        "split_search_call_count": split_search_call_count,
+        "baseline_candidate_count": len(baseline.candidates),
+        "baseline_hit": bool(baseline.candidates),
+        "branch_retrieval_diagnostics": [
+            {
+                "branch_id": result.branch.branch_id,
+                "branch_kind": result.branch.branch_kind,
+                "priority": result.branch.priority,
+                "candidate_count": len(result.candidates),
+                "top_local_rank": 1 if result.candidates else None,
+                "top_score": (
+                    result.candidates[0].get("rrf_score")
+                    if result.candidates
+                    else None
+                ),
+                "semantic_query": result.meta.get("semantic_query"),
+                "normalized_query": result.meta.get("normalized_query"),
+                "sparse_expansion": result.meta.get("sparse_expansion"),
+                "term_matches": list(result.meta.get("term_matches") or []),
+                "retrieval_mode": result.meta.get("retrieval_mode"),
+                "dense_embedding_call_count": int(
+                    result.meta.get("dense_embedding_call_count") or 0
+                ),
+                "sparse_embedding_call_count": int(
+                    result.meta.get("sparse_embedding_call_count") or 0
+                ),
+                "hybrid_search_call_count": int(
+                    result.meta.get("hybrid_search_call_count") or 0
+                ),
+                "split_search_call_count": int(
+                    result.meta.get("split_search_call_count") or 0
+                ),
+                "timings": dict(result.meta.get("timings") or {}),
+                "stage_errors": list(result.meta.get("stage_errors") or []),
+                "branch_retrieve_ms": result.meta.get("branch_retrieve_ms", 0.0),
+                "error": result.error,
+            }
+            for result in results
+        ],
+        "timings": {"comprehensive_fanout_ms": elapsed_ms(started)},
+        "stage_errors": branch_errors,
+    }
+    return {
+        "comprehensive_policy_resolution": resolution,
+        "branch_retrieval_results": results,
+        "rag_trace": _merge_comprehensive_trace(state, patch),
+    }
+
+
+def branch_rerank_node(state: RAGState) -> RAGState:
+    started = time.perf_counter()
+    resolution = state.get("comprehensive_policy_resolution")
+    branch_results = list(state.get("branch_retrieval_results") or [])
+    if not isinstance(resolution, ComprehensivePolicyResolution):
+        raise TypeError("branch_rerank requires a resolved comprehensive policy")
+    config = _runtime_config()
+    output_budget = max(0, int(config.rerank_candidate_pool_size))
+    device_tier = _rerank_device_tier()
+    configured_pair_cap = (
+        config.rerank_input_k_gpu if device_tier == "gpu" else config.rerank_input_k_cpu
+    )
+    pair_budget = configured_pair_cap if configured_pair_cap > 0 else output_budget
+    results, patch = run_branch_rerank(
+        resolution.policy,
+        branch_results,
+        output_candidate_budget=output_budget,
+        pair_budget=pair_budget,
+        rerank_fn=_rerank_documents,
+    )
+    patch.update({
+        "rerank_output_candidate_budget": output_budget,
+        "rerank_pair_budget_cap": pair_budget,
+        "rerank_pair_device_tier": device_tier,
+        "timings": {"comprehensive_branch_rerank_ms": elapsed_ms(started)},
+    })
+    return {
+        "branch_rerank_results": results,
+        "rag_trace": _merge_comprehensive_trace(state, patch),
+    }
+
+
+def merge_sub_query_results(state: RAGState) -> RAGState:
+    resolution = state.get("comprehensive_policy_resolution")
+    branch_results = list(state.get("branch_rerank_results") or [])
+    if not isinstance(resolution, ComprehensivePolicyResolution):
+        raise TypeError("merge_sub_query_results requires a resolved comprehensive policy")
+    started = time.perf_counter()
+    try:
+        merged, meta = resolution.policy.merger.merge(
+            branch_results,
+            rrf_k=max(1, int(_runtime_config().milvus_rrf_k)),
+        )
+        errors: list[dict] = []
+    except Exception as exc:
+        merged = [dict(doc) for result in branch_results for doc in result.candidates]
+        meta = {"merge_error": str(exc)}
+        errors = [{"stage": "multi_query_merge", "error": str(exc), "fallback_to": "branch_union"}]
+    patch = {
+        **meta,
+        "timings": {"multi_query_merge_ms": elapsed_ms(started)},
+        "stage_errors": errors,
+    }
+    return {
+        "merged_candidates": merged,
+        "merge_meta": meta,
+        "rag_trace": _merge_comprehensive_trace(state, patch),
+    }
+
+
+def shared_postprocess_node(state: RAGState) -> RAGState:
+    plan = state.get("query_plan")
+    resolution = state.get("comprehensive_policy_resolution")
+    branch_results = list(state.get("branch_rerank_results") or [])
+    if not isinstance(plan, ComprehensiveQueryPlan) or not isinstance(resolution, ComprehensivePolicyResolution):
+        raise TypeError("shared_postprocess requires comprehensive plan and policy")
+    started = time.perf_counter()
+    docs, patch = run_shared_postprocess(
+        resolution.policy,
+        plan,
+        branch_results,
+        top_k=5,
+        auto_merge_fn=_auto_merge_documents,
+        step_chain_fn=_step_chain_check,
+        structure_rerank_fn=_apply_structure_rerank,
+        confidence_fn=_evaluate_retrieval_confidence,
+        premerged=(list(state.get("merged_candidates") or []), dict(state.get("merge_meta") or {})),
+    )
+    context = _format_docs(docs)
+    shared_timings = dict(patch.get("timings") or {})
+    shared_timings["comprehensive_shared_postprocess_ms"] = elapsed_ms(started)
+    patch.update({
+        "retrieved_chunks": docs,
+        "retrieval_stage": "comprehensive",
+        "retrieval_mode": "comprehensive_parallel_hybrid",
+        "context_chars": len(context),
+        "retrieved_chunk_count": len(docs),
+        "final_context_chunk_count": len(docs),
+        "timings": shared_timings,
+    })
+    return {
+        "docs": docs,
+        "context": context,
+        "rag_trace": _merge_comprehensive_trace(state, patch),
     }
 
 
@@ -972,13 +1232,30 @@ def retrieve_expanded(state: RAGState) -> RAGState:
 
 def build_rag_graph():
     graph = StateGraph(RAGState)
+    graph.add_node("intent_parse", intent_parse_node)
     graph.add_node("retrieve_initial", retrieve_initial)
+    graph.add_node("decompose_and_fanout", decompose_and_fanout)
+    graph.add_node("branch_rerank", branch_rerank_node)
+    graph.add_node("merge_sub_query_results", merge_sub_query_results)
+    graph.add_node("shared_postprocess", shared_postprocess_node)
     graph.add_node("grade_documents", grade_documents_node)
     graph.add_node("rewrite_question", rewrite_question_node)
     graph.add_node("retrieve_expanded", retrieve_expanded)
 
-    graph.set_entry_point("retrieve_initial")
+    graph.set_entry_point("intent_parse")
+    graph.add_conditional_edges(
+        "intent_parse",
+        lambda state: state.get("query_plan_type"),
+        {
+            "precise": "retrieve_initial",
+            "comprehensive": "decompose_and_fanout",
+        },
+    )
     graph.add_edge("retrieve_initial", "grade_documents")
+    graph.add_edge("decompose_and_fanout", "branch_rerank")
+    graph.add_edge("branch_rerank", "merge_sub_query_results")
+    graph.add_edge("merge_sub_query_results", "shared_postprocess")
+    graph.add_edge("shared_postprocess", END)
     graph.add_conditional_edges(
         "grade_documents",
         lambda state: state.get("route"),

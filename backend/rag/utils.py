@@ -1280,6 +1280,7 @@ def retrieve_global_candidates(
         effective=CandidateStrategyId.STANDARD,
         detail=candidate_strategy_detail,
     )
+    strategy_trace.setdefault("hybrid_search_call_count", 0)
     if embeddings.dense is None:
         return CandidateRetrievalResult(
             candidates=[],
@@ -1300,6 +1301,10 @@ def retrieve_global_candidates(
         )
 
     stage_start = time.perf_counter()
+    attempt_trace = dict(strategy_trace)
+    attempt_trace["hybrid_search_call_count"] = (
+        int(attempt_trace.get("hybrid_search_call_count") or 0) + 1
+    )
     try:
         candidates = _milvus_manager.hybrid_retrieve(
             dense_embedding=embeddings.dense,
@@ -1311,7 +1316,7 @@ def retrieve_global_candidates(
             filter_expr=filter_expr,
         )
         timings["milvus_hybrid_ms"] = elapsed_ms(stage_start)
-        return CandidateRetrievalResult(candidates=candidates, retrieval_mode="hybrid", trace_patch=strategy_trace)
+        return CandidateRetrievalResult(candidates=candidates, retrieval_mode="hybrid", trace_patch=attempt_trace)
     except Exception as exc:
         hybrid_error = str(exc)
         timings["milvus_hybrid_ms"] = elapsed_ms(stage_start)
@@ -1321,7 +1326,7 @@ def retrieve_global_candidates(
                 candidate_k=candidate_k,
                 filter_expr=filter_expr,
                 timings=timings,
-                trace_patch=trace_patch,
+                trace_patch=attempt_trace,
                 hybrid_error=hybrid_error,
                 candidate_strategy_requested=candidate_strategy_requested,
                 candidate_strategy_fallback_from=CandidateStrategyId.STANDARD,
@@ -1332,7 +1337,7 @@ def retrieve_global_candidates(
             return CandidateRetrievalResult(
                 candidates=[],
                 retrieval_mode="failed",
-                trace_patch=strategy_trace,
+                trace_patch=attempt_trace,
                 stage_errors=[
                     _stage_error("hybrid_retrieve", hybrid_error, "dense_retrieve"),
                     _stage_error("dense_retrieve", str(dense_exc)),
@@ -1354,6 +1359,7 @@ def retrieve_scoped_candidates(
         effective=CandidateStrategyId.STANDARD,
         detail=CandidateStrategyDetail.SCOPED_HYBRID,
     )
+    strategy_trace.setdefault("hybrid_search_call_count", 0)
     if embeddings.dense is None:
         return CandidateRetrievalResult(
             candidates=[],
@@ -1373,6 +1379,10 @@ def retrieve_scoped_candidates(
         )
 
     stage_start = time.perf_counter()
+    attempt_trace = dict(strategy_trace)
+    attempt_trace["hybrid_search_call_count"] = (
+        int(attempt_trace.get("hybrid_search_call_count") or 0) + 2
+    )
 
     def _scoped_retrieve():
         return _milvus_manager.hybrid_retrieve(
@@ -1420,14 +1430,14 @@ def retrieve_scoped_candidates(
                 filter_expr=filters.scoped_filter or filters.effective_filter,
                 timings=timings,
                 retrieval_mode="dense_fallback_scoped",
-                trace_patch=trace_patch,
+                trace_patch=attempt_trace,
                 candidate_strategy_fallback_from=CandidateStrategyId.STANDARD,
             )
             dense.stage_errors.extend(stage_errors)
             return dense
         except Exception as exc:
             stage_errors.append(_stage_error("dense_retrieve", str(exc)))
-            return CandidateRetrievalResult([], "failed", trace_patch, stage_errors)
+            return CandidateRetrievalResult([], "failed", attempt_trace, stage_errors)
 
     scoped = _retrieval_annotate_scope_scores(scoped, filters.matched_files)
     global_ = _retrieval_annotate_scope_scores(global_, filters.matched_files)
@@ -1435,8 +1445,7 @@ def retrieve_scoped_candidates(
         [(scoped, 1.0 - DOC_SCOPE_GLOBAL_RESERVE_WEIGHT), (global_, DOC_SCOPE_GLOBAL_RESERVE_WEIGHT)],
         rrf_k=MILVUS_RRF_K,
     )
-    patch = dict(trace_patch)
-    patch.update(strategy_trace)
+    patch = dict(attempt_trace)
     patch["scoped_candidate_count"] = len(scoped)
     patch["global_candidate_count"] = len(global_)
     return CandidateRetrievalResult(merged, "hybrid_scoped", patch, stage_errors)
@@ -1459,6 +1468,8 @@ def retrieve_layered_candidate_pool(
         effective=CandidateStrategyId.LAYERED,
         detail=CandidateStrategyDetail.LAYERED_SPLIT,
     )
+    layered_trace.setdefault("hybrid_search_call_count", 0)
+    layered_trace.setdefault("split_search_call_count", 0)
     if embeddings.dense is None:
         return CandidateRetrievalResult(
             candidates=[],
@@ -1479,8 +1490,10 @@ def retrieve_layered_candidate_pool(
         )
 
     stage_errors: list[StageErrorDict] = []
+    retrieval_trace = dict(layered_trace)
     stage_start = time.perf_counter()
     try:
+        retrieval_trace["split_search_call_count"] += 1
         candidates = _milvus_manager.split_retrieve(
             embeddings.dense,
             embeddings.sparse,
@@ -1491,6 +1504,7 @@ def retrieve_layered_candidate_pool(
             filter_expr=filter_expr,
         )
         if _LAYERED_CANDIDATE_PRESET.l0_hybrid_guarantee_k > 0:
+            retrieval_trace["hybrid_search_call_count"] += 1
             hybrid = _milvus_manager.hybrid_retrieve(
                 embeddings.dense,
                 embeddings.sparse,
@@ -1502,6 +1516,7 @@ def retrieve_layered_candidate_pool(
             )
             _append_hybrid_guarantee(candidates, hybrid)
         if len(candidates) < _LAYERED_CANDIDATE_PRESET.l0_fallback_pool_min:
+            retrieval_trace["hybrid_search_call_count"] += 1
             hybrid = _milvus_manager.hybrid_retrieve(
                 embeddings.dense,
                 embeddings.sparse,
@@ -1525,7 +1540,7 @@ def retrieve_layered_candidate_pool(
             candidate_k=candidate_k,
             filter_expr=filter_expr,
             timings=timings,
-            trace_patch=trace_patch,
+            trace_patch=retrieval_trace,
             candidate_strategy_requested=CandidateStrategyId.LAYERED,
             candidate_strategy_detail=fallback_detail,
         )
@@ -1548,7 +1563,7 @@ def retrieve_layered_candidate_pool(
         config=_LAYERED_CANDIDATE_PRESET,
     )
     timings["l1_prefilter_ms"] = elapsed_ms(l1_start)
-    patch = dict(layered_trace)
+    patch = dict(retrieval_trace)
     patch.update({
         "v3_layers": ["query_plan", "layered_split", "l1_prefilter", "rerank", "structure_rerank"],
         "layered_l0_candidate_count": l0_candidate_count,
@@ -1760,6 +1775,10 @@ def prepare_candidate_retrieval(
         result.trace_patch,
         plan_enabled=query_plan_active,
     )
+    trace_patch["dense_embedding_call_count"] = 1
+    trace_patch["sparse_embedding_call_count"] = 1
+    trace_patch["embedding_call_count"] = 2
+    trace_patch.setdefault("hybrid_search_call_count", 0)
 
     if term_preflight:
         trace_patch["term_matches"] = term_preflight["term_matches"]

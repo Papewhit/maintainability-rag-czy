@@ -20,12 +20,12 @@
 
 ## 3. Milestone M3：RAG graph 入口集成
 
-- [ ] 3.1 在 `backend/rag/pipeline.py` 增加 `intent_parse_node`，作为 graph 的新入口节点
-- [ ] 3.2 添加条件边：`intent_parse → retrieve_initial`（precise 路径）或 `intent_parse → decompose_and_fanout`（comprehensive 路径）
-- [ ] 3.3 修改 `retrieve_initial` 接受 PreciseQueryPlan 作为输入而非 raw query
-- [ ] 3.4 实现 `decompose_and_fanout` 节点：comprehensive 路径下并发或顺序执行每个 sub_query 的检索
-- [ ] 3.5 实现 `merge_sub_query_results` 节点：只依赖 resolved ComprehensivePostprocessPolicy 接口合并多 sub-query 结果
-- [ ] 3.6 `plan_rag_turn` 不变，但 trace 增加 `query_plan_type` 字段反映 intent 解析结果
+- [x] 3.1 在 `backend/rag/pipeline.py` 增加 `intent_parse_node`，作为 graph 的新入口节点
+- [x] 3.2 添加条件边：`intent_parse → retrieve_initial`（precise 路径）或 `intent_parse → decompose_and_fanout`（comprehensive 路径）
+- [x] 3.3 修改 `retrieve_initial` 接受 PreciseQueryPlan 作为输入而非 raw query
+- [x] 3.4 实现 `decompose_and_fanout` 节点：comprehensive 路径下并发或顺序执行每个 sub_query 的检索
+- [x] 3.5 实现 `merge_sub_query_results` 节点：只依赖 resolved ComprehensivePostprocessPolicy 接口合并多 sub-query 结果
+- [x] 3.6 `plan_rag_turn` 不变，但 trace 增加 `query_plan_type` 字段反映 intent 解析结果
 
 **验收**：完整 RAG 流程在 precise 和 comprehensive 两条路径下都能产出回答；现有测试 `tests/test_rag_pipeline.py` 全绿。
 
@@ -36,24 +36,24 @@
 - [x] 3A.3 修改 terminology preflight 接口，使其消费 semantic query（comprehensive 时消费 clean-query baseline 与各 sub-query）而非 raw query；无命中和 terminology 不可用时保持调用输入
 - [x] 3A.4 修复 `backend/rag/utils.py` 的 query composition：dense 使用 normalized_query，BM25 使用 sparse_expansion；禁止 term_preflight 将 search_query 恢复为 raw query；保持既有 hybrid-to-dense failure degradation
 - [x] 3A.5 组合单测覆盖：成功文档限域、文档提示未匹配、anchor 消费、正文术语命中、无术语命中、terminology 未加载，以及 dense/BM25 的实际调用参数
-- [ ] 3A.6 comprehensive 集成测试覆盖 baseline 与每个并行 sub-query 独立 terminology preflight、dense+BM25 输入和部分失败保留；断言 baseline 使用 clean_query 而非 raw_query
+- [x] 3A.6 comprehensive 集成测试覆盖 baseline 与每个并行 sub-query 独立 terminology preflight、dense+BM25 输入和部分失败保留；断言 baseline 使用 clean_query 而非 raw_query
 
 **验收**：任一检索请求的 dense 与 BM25 输入都从同一个结构处理后的 query 基底派生；成功消费的结构 span 不重复进入术语检索，未消费文本不丢失；加载术语表但无命中时不会恢复 raw query。
 
 ## 4. Milestone M4：综合分析 graph 内并行检索
 
-- [ ] 4.1 在 RAG graph 内从 plan.clean_query 固定构造 stable id/kind 为 `baseline` 的 retrieval branch，并与 ComprehensiveQueryPlan 的全部 sub_query 并行执行；baseline 不写入 sub_queries/coverage_domains，不通过 Chat Agent 循环调用工具
-- [ ] 4.2 新增 `backend/rag/comprehensive_postprocess.py`：定义 branch rerank / cross-query merge / final selection / budget allocation protocols、frozen `ComprehensivePostprocessPolicy` 和 profile registry
-- [ ] 4.3 注册生产 profile `quality_first_v1`；新增 `RAG_COMPREHENSIVE_POSTPROCESS_PROFILE`，未知值原子降级到默认 profile 并记录 requested/effective/warning
-- [ ] 4.4 实现全局 rerank budget allocator：RERANK_CANDIDATE_POOL_SIZE 作为 baseline + 生成分支共享 output budget，device-tier RERANK_INPUT_K_CPU/GPU 作为共享 pair cap（未配置时回退 output budget）；先分支最小配额、再按 effective priority 分配（baseline 固定为 2）；不得按分支复制预算或执行 candidate × all-branch 笛卡尔积
-- [ ] 4.5 实现 branch-local rerank：使用各 retrieval branch query 和其 term_matches；无配额或局部失败时保留 Milvus local rank/candidates 并记录包含 branch_kind 的 diagnostics；baseline 失败不成为 Level 1 rewrite 目标
-- [ ] 4.6 实现 priority-weighted RRF merge、chunk_id 去重和 provenance union；跨 query 不直接比较 dense/BM25/CrossEncoder 原始 score；provenance 使用 matched_branch_ids/per_branch ranks/baseline_matched，coverage_count 只统计生成分支
-- [ ] 4.7 复用一次共享 auto_merge / step-chain / structure rerank；parent 替换 leaf 时合并 matched_branch_ids、baseline_matched 与 local-rank provenance
-- [ ] 4.8 实现 branch-aware final selection：容量允许时每个成功生成分支保留一条，否则按 priority + stable branch id + global rank 选择；baseline 不占 reservation，只按 global rank 竞争剩余位置；不隐式扩大 top_k
-- [ ] 4.9 实现一次 comprehensive confidence gate，消费 branch diagnostics 与 final representation；不在分支内执行独立 final confidence
-- [ ] 4.10 保持 `search_knowledge_base(query)` 单次调用接口及现有每轮一次调用限制，不增加 multi-turn 参数或模式开关
-- [ ] 4.11 trace 增加 profile、各策略 id、sub_query_count、retrieval_branch_count、baseline diagnostics/matched/selected、各 branch results、allocated/used rerank budget、rerank pairs、merge counts、生成分支 representation 和 branch-scoped errors
-- [ ] 4.12 单元/集成测试覆盖 baseline 固定加入且不进入 coverage/reservation、空 clean_query 降级而非 raw/empty 回填、profile registry、非法组合拒绝、预算分配、local rerank、weighted RRF、去重/provenance、共享后处理只执行一次、top-k reservation、部分失败保留，以及 graph 不包含 profile-specific if/else
+- [x] 4.1 在 RAG graph 内从 plan.clean_query 固定构造 stable id/kind 为 `baseline` 的 retrieval branch，并与 ComprehensiveQueryPlan 的全部 sub_query 并行执行；baseline 不写入 sub_queries/coverage_domains，不通过 Chat Agent 循环调用工具
+- [x] 4.2 新增 `backend/rag/comprehensive_postprocess.py`：定义 branch rerank / cross-query merge / final selection / budget allocation protocols、frozen `ComprehensivePostprocessPolicy` 和 profile registry
+- [x] 4.3 注册生产 profile `quality_first_v1`；新增 `RAG_COMPREHENSIVE_POSTPROCESS_PROFILE`，未知值原子降级到默认 profile 并记录 requested/effective/warning
+- [x] 4.4 实现全局 rerank budget allocator：RERANK_CANDIDATE_POOL_SIZE 作为 baseline + 生成分支共享 output budget，device-tier RERANK_INPUT_K_CPU/GPU 作为共享 pair cap（未配置时回退 output budget）；先分支最小配额、再按 effective priority 分配（baseline 固定为 2）；不得按分支复制预算或执行 candidate × all-branch 笛卡尔积
+- [x] 4.5 实现 branch-local rerank：使用各 retrieval branch query 和其 term_matches；无配额或局部失败时保留 Milvus local rank/candidates 并记录包含 branch_kind 的 diagnostics；baseline 失败不成为 Level 1 rewrite 目标
+- [x] 4.6 实现 priority-weighted RRF merge、chunk_id 去重和 provenance union；跨 query 不直接比较 dense/BM25/CrossEncoder 原始 score；provenance 使用 matched_branch_ids/per_branch ranks/baseline_matched，coverage_count 只统计生成分支
+- [x] 4.7 复用一次共享 auto_merge / step-chain / structure rerank；parent 替换 leaf 时合并 matched_branch_ids、baseline_matched 与 local-rank provenance
+- [x] 4.8 实现 branch-aware final selection：容量允许时每个成功生成分支保留一条，否则按 priority + stable branch id + global rank 选择；baseline 不占 reservation，只按 global rank 竞争剩余位置；不隐式扩大 top_k
+- [x] 4.9 实现一次 comprehensive confidence gate，消费 branch diagnostics 与 final representation；不在分支内执行独立 final confidence
+- [x] 4.10 保持 `search_knowledge_base(query)` 单次调用接口及现有每轮一次调用限制，不增加 multi-turn 参数或模式开关
+- [x] 4.11 trace 增加 profile、各策略 id、sub_query_count、retrieval_branch_count、baseline diagnostics/matched/selected、各 branch results、allocated/used rerank budget、rerank pairs、merge counts、生成分支 representation 和 branch-scoped errors
+- [x] 4.12 单元/集成测试覆盖 baseline 固定加入且不进入 coverage/reservation、空 clean_query 降级而非 raw/empty 回填、profile registry、非法组合拒绝、预算分配、local rerank、weighted RRF、去重/provenance、共享后处理只执行一次、top-k reservation、部分失败保留，以及 graph 不包含 profile-specific if/else
 
 **验收**：comprehensive 查询在一次 graph 调用内完成 branch-local relevance、跨 query merge 和一次共享后处理；策略通过 profile 组合且 graph 不感知具体算法；成本预算不会随 sub-query 数复制；部分失败不清空可用结果；无 Chat Agent multi-turn 调用路径。
 

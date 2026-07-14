@@ -90,7 +90,7 @@ class RagTraceTests(unittest.TestCase):
         self.assertEqual(trace["candidate_count_before_rerank"], 30)
         self.assertEqual(trace["final_top_k_count"], 5)
         self.assertEqual(trace["term_matches"][0]["canonical"], "pump")
-        self.assertEqual(trace["query_entities"][0]["type"], "component")
+        self.assertNotIn("query_entities", trace)
         self.assertEqual(trace["step_chain_repaired_groups"], ["g1"])
         self.assertTrue(trace["auto_merge_skipped"])
         self.assertEqual(trace["auto_merge_error"], "recovered")
