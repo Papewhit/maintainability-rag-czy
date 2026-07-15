@@ -6,7 +6,7 @@ scope: evaluation.rag.intent_routing
 source_commit: c915b535c6270dd7824e2ff2cfad1716ec628d59
 source_fingerprint: sha256:dc1f27166e4057358ce635a0f35dc0b118331c0ed6041d2249a484dc44f2f99f
 executed_at: 2026-07-15T09:32:28Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032, RAG-INTENT-F033, RAG-INTENT-F034, RAG-INTENT-F035]
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032, RAG-INTENT-F033, RAG-INTENT-F034, RAG-INTENT-F035, RAG-INTENT-F036]
 supersedes: []
 ---
 
@@ -72,6 +72,12 @@ The rerank query contract accepts only `query_term_matches`, populated from term
 
 Comprehensive structural resolution is also contract-tested: a resolved ordinary document hint becomes a shared boost scope, while explicit closed wording and context_files become a shared filter. Baseline and every generated branch receive the same typed scope; no branch dynamically relaxes a filter. Precise initial and Level 1 HyDE/step-back retrievals propagate `scope_mode="filter"` as a strict filter, preserve the initial typed scope while replacing only the branch `semantic_query`, and run terminology preflight independently. Boost plans retain the global reserve. Default-off compatibility traces retain `query_plan_enabled=false` even though the graph carries an inert compatibility plan object.
 
+### Compiled graph E2E
+
+`tests/e2e/rag/test_intent_routing_graph_e2e.py` invokes the compiled graph entry through `run_rag_graph()` and keeps graph routing, the `IntentClassifier` structured-output wrapper, deterministic QueryPlan construction, baseline/generated-branch fan-out, query-local terminology preparation, merge, one shared postprocess pass, and public `ChatResponse.rag_trace` serialization in scope. The test asserts three independent dense and BM25 inputs, a shared context-file hard filter, branch provenance, merge output, one shared postprocess execution, and public fan-out/search/rerank telemetry.
+
+The LLM response, embedding vectors, and Milvus candidate responses are deterministic substitutes. This E2E therefore closes the graph-wiring evidence gap but is not real-model, real-index, retrieval-quality, latency, resource-cost, or release-readiness evidence. The existing `test_postprocess_evidence_e2e.py` remains a narrower shared-postprocess evidence test; task 5B.3 remains the real FAST_MODEL and release-Milvus paired A/B gate.
+
 ## Inputs
 
 - Source commit anchor: `c915b535c6270dd7824e2ff2cfad1716ec628d59`
@@ -84,10 +90,11 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 | Evidence | Result | Interpretation |
 | --- | --- | --- |
+| Intent-routing compiled graph E2E | 1 passed | Compiled graph wiring and public trace contracts work with deterministic external-boundary substitutes; no real-model or real-index claim |
 | RAG evaluation suite | 66 passed, 1 real-model test skipped, 10 parameterized subtests passed | Harness, schema, pairing, aggregation, report path, resource/config binding, and historical-evidence checks work; no real-model quality claim |
 | Terminology boundary and related postprocess tests | 77 passed | Terminology signals remain consumed; semantic entity compatibility input is removed |
 | RAG + API + evaluation unit suites | 421 passed | Default-disabled compatibility, validation-only switch-bundle, and terminology-compatible trace contracts have no unit regression |
-| Repository non-slow/non-e2e matrix | 715 passed, 2 skipped, 6 deselected, 10 parameterized subtests passed | Full default test matrix has no regression at the bound implementation commit |
+| Repository non-slow/non-e2e matrix | 715 passed, 2 skipped, 7 deselected, 10 parameterized subtests passed | Full default test matrix has no regression at the bound implementation commit |
 | Real FAST_MODEL intent baseline | Not executed | Credentials were unavailable |
 | Paired real retrieval profile comparison | Not executed | Model credentials and release retrieval infrastructure were unavailable |
 
@@ -119,6 +126,7 @@ Multi-turn retrieval is not part of this rollout. Any future multi-turn enhancem
 ## Limitations
 
 - No model or retrieval production-capacity evidence was available in this environment.
+- The compiled-graph E2E substitutes the LLM, embedding, and Milvus boundaries and cannot establish intent accuracy, corpus recall, answer quality, latency, or resource cost.
 - CPU RSS sampling is process-level; concurrent unrelated work must be controlled during release runs.
 - CUDA peak memory is reported only when CUDA is available.
 - Citation validity measures consistency with retrieved evidence, not recall against human citation qrels; answer quality remains unavailable if the configured answer or judge model does not run.
@@ -127,4 +135,4 @@ Multi-turn retrieval is not part of this rollout. Any future multi-turn enhancem
 
 ## Findings
 
-`RAG-INTENT-F012` records that the prior postprocess report is now historical because its source fingerprint no longer matches this implementation. The unresolved current evaluation evidence is an explicit activation gate owned by this OpenSpec change and is preserved here as a typed partial validation result.
+`RAG-INTENT-F012` records that the prior postprocess report is now historical because its source fingerprint no longer matches this implementation. `RAG-INTENT-F036` records and closes the compiled graph wiring evidence gap with deterministic external-boundary substitutes. The unresolved real-model and release-index evidence remains an explicit activation gate owned by this OpenSpec change and is preserved here as a typed partial validation result.

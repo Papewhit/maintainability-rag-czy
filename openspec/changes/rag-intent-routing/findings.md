@@ -496,3 +496,17 @@ last_verified_date: 2026-07-15
 - Disposition: known_issue
 - Disposition target: docs/known-issues/anchor-capability-configuration.md
 - Resolution evidence: The known issue records current/future boundaries and requires structured-anchor preservation plus comprehensive fallback validation before production rollout.
+
+## RAG-INTENT-F036
+
+- Kind: evidence_gap
+- Primary scope: evaluation.rag.intent_routing_e2e
+- Evidence status: confirmed
+- Observation: The existing RAG E2E exercised the private shared-postprocess completion function with mocked graph inputs. It did not execute the compiled intent-routing graph from classifier output through plan construction, comprehensive fan-out, retrieval boundaries, merge, shared postprocess, and public trace serialization.
+- Inference: Unit and integration coverage could verify individual contracts while still missing a graph wiring regression across those boundaries.
+- Decision: Add a deterministic compiled-graph E2E that keeps the graph, classifier wrapper, QueryPlan construction, branch orchestration, merge, shared postprocess, and public schema real while replacing only external LLM, embedding, and Milvus boundaries with controlled substitutes.
+- Residual risk: none
+- Evidence: `tests/e2e/rag/test_intent_routing_graph_e2e.py`; `tests/e2e/rag/test_postprocess_evidence_e2e.py`.
+- Disposition: validation
+- Disposition target: docs/validation/rag-intent-routing-evaluation.md
+- Resolution evidence: The validation report separates deterministic compiled-graph evidence from the pending real-model and release-Milvus paired evaluation.

@@ -153,6 +153,10 @@ Comprehensive 路径 MUST 对 clean-query baseline 与每个 sub-query 执行 qu
 - **WHEN** final top-k 形成
 - **THEN** 只执行一次全局 confidence gate；branch diagnostics 和 final branch representation 作为 comprehensive confidence/fallback 输入，空召回或失败分支可供 fallback Level 1 定位，但初始 intent-routing 不动态调整 sub-query
 
+#### Scenario: compiled graph 端到端契约验证
+- **WHEN** 维护者运行 intent-routing 的确定性 E2E
+- **THEN** 测试必须通过已编译 RAG graph 覆盖真实 intent classifier 包装、ComprehensiveQueryPlan 构造、clean-query baseline 与生成 sub-query 的独立 terminology preflight、dense+BM25 输入和共享 filter、跨 query merge、一次共享后处理及公共 trace；仅 LLM、embedding 与 Milvus 外部边界允许使用确定性替身；该证据不得宣称真实模型准确率、release index 召回质量或生产成本达标
+
 ### Requirement: 版本化 comprehensive postprocess profile
 系统 MUST 通过 typed `ComprehensivePostprocessPolicy` 和 registry 解析一个完整的版本化策略组合。Graph 节点 MUST 只依赖策略接口，MUST NOT 按 profile id 散落条件分支，也 MUST NOT 通过多个独立环境开关任意组合未经验证的 branch rerank、merge、selection 和 budget 策略。
 
