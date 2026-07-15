@@ -36,8 +36,17 @@ _REGISTRY_CACHE_MAX_KEYS = int(os.getenv("DOC_SCOPE_FILENAME_REGISTRY_CACHE_KEYS
 # --- Regex patterns ---
 _BOOK_TITLE_RE = re.compile(r"《([^》]+)》")
 _MODEL_NUMBER_RE = re.compile(r"[A-Z]{2,}\d{3,}[A-Z0-9]*")
-_CHAPTER_RE = re.compile(r"第\s*\d+\s*章|附录\s*[A-Z\d]")
+_CHAPTER_RE = re.compile(r"第\s*[一二三四五六七八九十百千万零两\d]+\s*章|附录\s*[A-Z\d一二三四五六七八九十]")
 _BOOK_TITLE_PREFIX_RE = re.compile(r"《[^》]+》\s*中[，,]?\s*")
+
+
+@dataclass(frozen=True)
+class ConsumedSpan:
+    kind: Literal["document", "anchor", "model"]
+    text: str
+    start: int
+    end: int
+    owner: Literal["scope", "anchor"]
 
 
 @dataclass
@@ -53,6 +62,7 @@ class QueryPlan:
     model_numbers: list[str] = field(default_factory=list)
     intent_type: str | None = None
     route: Literal["scoped_hybrid", "global_hybrid"] = "global_hybrid"
+    consumed_spans: list[ConsumedSpan] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -67,7 +77,201 @@ class QueryPlan:
             "model_numbers": self.model_numbers,
             "intent_type": self.intent_type,
             "route": self.route,
+            "consumed_spans": [
+                {
+                    "kind": span.kind,
+                    "text": span.text,
+                    "start": span.start,
+                    "end": span.end,
+                    "owner": span.owner,
+                }
+                for span in self.consumed_spans
+            ],
         }
+
+
+@dataclass(frozen=True)
+class SubQuery:
+    query: str
+    domain: str
+    priority: int
+
+    def __post_init__(self) -> None:
+        if not self.query.strip():
+            raise ValueError("sub-query text must not be empty")
+        if not self.domain.strip():
+            raise ValueError("sub-query domain must not be empty")
+        if self.priority not in {1, 2, 3}:
+            raise ValueError("sub-query priority must be 1, 2, or 3")
+
+
+@dataclass(frozen=True)
+class RetrievalScope:
+    """Shared deterministic retrieval scope for every comprehensive branch."""
+
+    scope_mode: Literal["filter", "boost", "none"] = "none"
+    matched_files: tuple[tuple[str, float], ...] = ()
+    doc_hints: tuple[str, ...] = ()
+    anchors: tuple[str, ...] = ()
+    heading_hint: str | None = None
+    source: Literal[
+        "none",
+        "document_hints",
+        "explicit_closed_scope",
+        "context_files",
+    ] = "none"
+
+    def __post_init__(self) -> None:
+        if self.scope_mode in {"filter", "boost"} and not self.matched_files:
+            raise ValueError("active retrieval scope requires matched files")
+        if self.scope_mode == "none" and self.matched_files:
+            raise ValueError("matched files require an active retrieval scope")
+
+
+@dataclass(frozen=True)
+class PreciseQueryPlan:
+    raw_query: str
+    semantic_query: str
+    clean_query: str
+    doc_hints: tuple[str, ...] = ()
+    scope_mode: Literal["filter", "boost", "none"] = "none"
+    matched_files: tuple[tuple[str, float], ...] = ()
+    heading_hint: str | None = None
+    anchors: tuple[str, ...] = ()
+    model_numbers: tuple[str, ...] = ()
+    intent_type: str | None = None
+    target_granularity: Literal["paragraph", "table", "step_list", "figure"] = "paragraph"
+    route: Literal["scoped_hybrid", "global_hybrid"] = "global_hybrid"
+    consumed_spans: tuple[ConsumedSpan, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "raw_query": self.raw_query,
+            "semantic_query": self.semantic_query,
+            "clean_query": self.clean_query,
+            "doc_hints": list(self.doc_hints),
+            "matched_files": [(name, round(score, 3)) for name, score in self.matched_files],
+            "scope_mode": self.scope_mode,
+            "heading_hint": self.heading_hint,
+            "anchors": list(self.anchors),
+            "model_numbers": list(self.model_numbers),
+            "intent_type": self.intent_type,
+            "target_granularity": self.target_granularity,
+            "route": self.route,
+            "consumed_spans": [
+                {
+                    "kind": span.kind,
+                    "text": span.text,
+                    "start": span.start,
+                    "end": span.end,
+                    "owner": span.owner,
+                }
+                for span in self.consumed_spans
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class ComprehensiveQueryPlan:
+    raw_query: str
+    clean_query: str
+    analysis_type: Literal["design_reuse", "comparison", "procedure_synthesis", "general"]
+    sub_queries: tuple[SubQuery, ...]
+    coverage_domains: tuple[str, ...]
+    postprocess_profile: str = "quality_first_v1"
+    retrieval_scope: RetrievalScope = field(default_factory=RetrievalScope)
+
+    def __post_init__(self) -> None:
+        if not self.clean_query.strip():
+            raise ValueError("comprehensive clean_query must not be empty")
+        if not self.sub_queries:
+            raise ValueError("comprehensive plan requires at least one sub-query")
+
+
+@dataclass(frozen=True)
+class ComprehensiveRetrievalBranch:
+    branch_id: str
+    branch_kind: Literal["baseline", "sub_query"]
+    query: str
+    domain: str | None
+    priority: int
+
+    def __post_init__(self) -> None:
+        if not self.branch_id.strip() or not self.query.strip():
+            raise ValueError("retrieval branch id and query must not be empty")
+        if self.priority not in {1, 2, 3}:
+            raise ValueError("retrieval branch priority must be 1, 2, or 3")
+        if self.branch_kind == "baseline" and self.branch_id != "baseline":
+            raise ValueError("baseline branch must use stable id 'baseline'")
+
+    @classmethod
+    def baseline(cls, clean_query: str) -> "ComprehensiveRetrievalBranch":
+        return cls(
+            branch_id="baseline",
+            branch_kind="baseline",
+            query=clean_query,
+            domain=None,
+            priority=2,
+        )
+
+    @classmethod
+    def from_sub_query(cls, sub_query: SubQuery, *, index: int) -> "ComprehensiveRetrievalBranch":
+        return cls(
+            branch_id=f"sub_query_{index}",
+            branch_kind="sub_query",
+            query=sub_query.query,
+            domain=sub_query.domain,
+            priority=sub_query.priority,
+        )
+
+
+IntentQueryPlan = PreciseQueryPlan | ComprehensiveQueryPlan
+
+
+def precise_plan_from_legacy(
+    plan: QueryPlan,
+    *,
+    target_granularity: Literal["paragraph", "table", "step_list", "figure"] = "paragraph",
+) -> PreciseQueryPlan:
+    return PreciseQueryPlan(
+        raw_query=plan.raw_query,
+        semantic_query=plan.semantic_query,
+        clean_query=plan.clean_query,
+        doc_hints=tuple(plan.doc_hints),
+        matched_files=tuple(plan.matched_files),
+        scope_mode=plan.scope_mode,
+        heading_hint=plan.heading_hint,
+        anchors=tuple(plan.anchors),
+        model_numbers=tuple(plan.model_numbers),
+        intent_type=plan.intent_type,
+        target_granularity=target_granularity,
+        route=plan.route,
+        consumed_spans=tuple(plan.consumed_spans),
+    )
+
+
+def build_compatible_precise_plan(
+    raw_query: str,
+    *,
+    query_plan_enabled: bool,
+    filename_registry: list[dict[str, str]] | None = None,
+    context_files: list[str] | None = None,
+) -> PreciseQueryPlan:
+    if not query_plan_enabled:
+        return PreciseQueryPlan(
+            raw_query=raw_query,
+            semantic_query=raw_query,
+            clean_query=raw_query,
+            scope_mode="none",
+            route="global_hybrid",
+        )
+    return precise_plan_from_legacy(
+        parse_query_plan(
+            raw_query,
+            filename_registry=filename_registry,
+            context_files=context_files,
+        )
+    )
 
 
 def _normalize_filename(name: str) -> str:
@@ -251,6 +455,10 @@ def parse_query_plan(
     raw_query: str,
     filename_registry: list[dict[str, str]] | None = None,
     context_files: list[str] | None = None,
+    additional_anchors: list[str] | None = None,
+    *,
+    fallback_empty_queries: bool = True,
+    preferred_scope_mode: Literal["filter", "boost", "none"] | None = None,
 ) -> QueryPlan:
     """Parse raw query into a QueryPlan with semantic_query, doc_hints, and route.
 
@@ -259,39 +467,65 @@ def parse_query_plan(
         filename_registry: List of {"raw": ..., "normalized": ...} dicts.
         context_files: User-explicit context files (highest priority).
     """
-    # 1. Extract 《》 book titles
-    book_titles = _BOOK_TITLE_RE.findall(raw_query)
+    # 1. Extract 《》 book titles, retaining spans until scope ownership is known.
+    book_title_matches = list(_BOOK_TITLE_RE.finditer(raw_query))
+    book_titles = [match.group(1) for match in book_title_matches]
     doc_hints = list(book_titles)
 
     # 2. Extract model numbers
     model_numbers = _MODEL_NUMBER_RE.findall(raw_query)
 
     # 3. Extract chapter/appendix anchors
-    anchors = _CHAPTER_RE.findall(raw_query)
+    document_ranges = [(match.start(), match.end()) for match in book_title_matches]
 
-    # 4. Extract heading hint (text after book title prefix)
-    heading_hint = None
-    clean_query = _BOOK_TITLE_PREFIX_RE.sub("", raw_query).strip()
-    if not clean_query:
-        clean_query = raw_query
+    def inside_document_hint(start: int, end: int) -> bool:
+        return any(doc_start <= start and end <= doc_end for doc_start, doc_end in document_ranges)
 
-    # Try to extract heading from the cleaned query
-    heading_match = re.match(r"^(?:如何|怎么|怎样)?\s*(.+?)[？?]?\s*$", clean_query)
-    if heading_match:
-        heading_hint = heading_match.group(1).strip()
+    anchor_spans: list[tuple[str, int, int]] = [
+        (match.group(0), match.start(), match.end())
+        for match in _CHAPTER_RE.finditer(raw_query)
+        if not inside_document_hint(match.start(), match.end())
+    ]
+    occupied_anchor_ranges = {(start, end) for _, start, end in anchor_spans}
+    for anchor in additional_anchors or []:
+        if not anchor:
+            continue
+        for match in re.finditer(re.escape(anchor), raw_query):
+            if inside_document_hint(match.start(), match.end()):
+                continue
+            marker = (match.start(), match.end())
+            if marker not in occupied_anchor_ranges:
+                anchor_spans.append((anchor, match.start(), match.end()))
+                occupied_anchor_ranges.add(marker)
+    anchor_spans.sort(key=lambda item: (item[1], item[2]))
+    anchors = list(dict.fromkeys(text for text, _, _ in anchor_spans))
 
     # 5. Match doc_hints against filename registry
     matched_files: list[tuple[str, float]] = []
+    model_scope_matches: dict[str, set[str]] = {}
     scope_mode: Literal["filter", "boost", "none"] = "none"
 
-    if filename_registry and doc_hints:
-        matched_files = _match_doc_hints(doc_hints, filename_registry)
+    if context_files:
+        effective_registry = [
+            {"raw": context_file, "normalized": _normalize_filename(context_file)}
+            for context_file in context_files
+        ]
+    else:
+        effective_registry = list(filename_registry or [])
+
+    if effective_registry and doc_hints:
+        matched_files = _match_doc_hints(doc_hints, effective_registry)
 
         # Also try matching model numbers against filenames
         if model_numbers:
             model_hints = matched_files[:]
             for mn in model_numbers:
-                mn_matches = _match_doc_hints([mn], filename_registry)
+                mn_matches = _match_doc_hints([mn], effective_registry)
+                model_scope_matches[mn] = {
+                    filename
+                    for filename, score in mn_matches
+                    if score >= DOC_SCOPE_MATCH_BOOST
+                }
                 for f, s in mn_matches:
                     # Only add if not already present with higher score
                     existing = [i for i, (ef, _) in enumerate(model_hints) if ef == f]
@@ -306,29 +540,72 @@ def parse_query_plan(
     routable_matches = [(f, score) for f, score in matched_files if score >= DOC_SCOPE_MATCH_BOOST]
     if routable_matches:
         best_score = routable_matches[0][1]
-        if best_score >= DOC_SCOPE_MATCH_FILTER:
+        if preferred_scope_mode is not None:
+            scope_mode = preferred_scope_mode
+        elif best_score >= DOC_SCOPE_MATCH_FILTER:
             scope_mode = "filter"
         elif best_score >= DOC_SCOPE_MATCH_BOOST:
             scope_mode = "boost"
 
-    # 6. Build semantic_query
-    semantic_query = _BOOK_TITLE_PREFIX_RE.sub("", raw_query).strip()
-
-    # Conditionally remove model numbers from semantic_query
-    # Only when scope_mode in {filter, boost} (high-confidence file match)
-    if scope_mode in {"filter", "boost"} and model_numbers:
-        for mn in model_numbers:
-            semantic_query = semantic_query.replace(mn, "").strip()
-        semantic_query = re.sub(r"\s+", " ", semantic_query).strip()
-
-    if not semantic_query:
-        semantic_query = raw_query
-
-    # 7. User context_files override: highest priority
+    # Explicit attached files are always the final hard scope, independent of LLM hints.
     if context_files:
-        # User explicitly selected files -> force scoped mode
         scope_mode = "filter"
         matched_files = [(f, 1.0) for f in context_files]
+
+    # 6. Build clean/semantic queries only from spans with an established owner.
+    consumed_spans: list[ConsumedSpan] = [
+        ConsumedSpan(kind="anchor", text=text, start=start, end=end, owner="anchor")
+        for text, start, end in anchor_spans
+    ]
+    if scope_mode in {"filter", "boost"}:
+        for match in book_title_matches:
+            hint_matches = _match_doc_hints([match.group(1)], effective_registry)
+            if not any(score >= DOC_SCOPE_MATCH_BOOST for _, score in hint_matches):
+                continue
+            end = match.end()
+            suffix = re.match(r"\s*中[，,]?\s*", raw_query[end:])
+            if suffix:
+                end += suffix.end()
+            consumed_spans.append(
+                ConsumedSpan(
+                    kind="document",
+                    text=raw_query[match.start():end],
+                    start=match.start(),
+                    end=end,
+                    owner="scope",
+                )
+            )
+
+        scoped_filenames = {filename for filename, _ in matched_files}
+        for model_number in model_numbers:
+            if not (model_scope_matches.get(model_number, set()) & scoped_filenames):
+                continue
+            for match in re.finditer(re.escape(model_number), raw_query):
+                consumed_spans.append(
+                    ConsumedSpan(
+                        kind="model",
+                        text=match.group(0),
+                        start=match.start(),
+                        end=match.end(),
+                        owner="scope",
+                    )
+                )
+
+    clean_query = _remove_consumed_spans(raw_query, consumed_spans)
+    clean_query = _clean_retrieval_text(clean_query)
+    semantic_query = clean_query
+
+    if fallback_empty_queries and not semantic_query:
+        semantic_query = raw_query
+
+    if fallback_empty_queries and not clean_query:
+        clean_query = raw_query
+
+    # Extract a heading hint after confirmed structural spans have been removed.
+    heading_hint = None
+    heading_match = re.match(r"^(?:如何|怎么|怎样)?\s*(.+?)[？?]?\s*$", clean_query)
+    if heading_match:
+        heading_hint = heading_match.group(1).strip()
 
     # 8. Route determination (tightened rules)
     route: Literal["scoped_hybrid", "global_hybrid"]
@@ -349,13 +626,30 @@ def parse_query_plan(
         model_numbers=model_numbers,
         intent_type=None,
         route=route,
+        consumed_spans=consumed_spans,
     )
+
+
+def _remove_consumed_spans(text: str, spans: list[ConsumedSpan]) -> str:
+    if not spans:
+        return text
+    chars = list(text)
+    for span in spans:
+        for index in range(max(0, span.start), min(len(chars), span.end)):
+            chars[index] = " "
+    return "".join(chars)
+
+
+def _clean_retrieval_text(text: str) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"^[，,、；;：:\s]+", "", text)
+    return text.strip()
 
 
 # --- Terminology preflight ---------------------------------------------------
 
 
-def terminology_preflight(raw_query: str) -> dict | None:
+def terminology_preflight(semantic_query: str) -> dict | None:
     """Run terminology preflight on a user query.
 
     Returns a dict with term_matches, normalized_query, sparse_expansion,
@@ -368,7 +662,7 @@ def terminology_preflight(raw_query: str) -> dict | None:
         return None
     if not table.is_loaded:
         return None
-    result = table.query_preflight(raw_query)
+    result = table.query_preflight(semantic_query)
     return {
         "term_matches": [
             {
@@ -378,7 +672,7 @@ def terminology_preflight(raw_query: str) -> dict | None:
                 "start": m.start,
                 "end": m.end,
             }
-            for m in result.query_entities
+            for m in result.term_matches
         ],
         "normalized_query": result.normalized_query,
         "sparse_expansion": result.sparse_expansion,

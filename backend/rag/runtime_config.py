@@ -10,6 +10,7 @@ from backend.rag.profiles import normalize_index_profile
 
 
 EnvMapping = Mapping[str, str | None]
+COMPREHENSIVE_MAX_SUB_QUERIES_HARD_LIMIT = 8
 
 
 def _value(env: EnvMapping, name: str, default: str | None = None) -> str | None:
@@ -74,6 +75,11 @@ class RagRuntimeConfig:
     low_conf_top_score: float = 0.20
     enable_anchor_gate: bool = True
     query_plan_enabled: bool = False
+    intent_classifier_enabled: bool = False
+    intent_classifier_model: str | None = None
+    intent_classifier_timeout_seconds: float = 2.0
+    comprehensive_postprocess_profile: str = "quality_first_v1"
+    comprehensive_max_sub_queries: int = 4
     rag_candidate_k: int = 0
     rerank_top_n: int = 0
     rerank_candidate_pool_size: int = 20
@@ -145,6 +151,22 @@ def load_runtime_config(env: EnvMapping | None = None) -> RagRuntimeConfig:
         low_conf_top_score=_float(env, "LOW_CONF_TOP_SCORE", 0.20),
         enable_anchor_gate=_str(env, "ENABLE_ANCHOR_GATE", "true").lower() != "false",
         query_plan_enabled=_bool(env, "QUERY_PLAN_ENABLED", False),
+        intent_classifier_enabled=_bool(env, "RAG_INTENT_CLASSIFIER_ENABLED", False),
+        intent_classifier_model=(
+            _str(env, "RAG_INTENT_CLASSIFIER_MODEL").strip() or None
+        ),
+        intent_classifier_timeout_seconds=max(
+            0.001,
+            _float(env, "RAG_INTENT_CLASSIFIER_TIMEOUT_SECONDS", 2.0),
+        ),
+        comprehensive_postprocess_profile=(
+            _str(env, "RAG_COMPREHENSIVE_POSTPROCESS_PROFILE", "quality_first_v1").strip()
+            or "quality_first_v1"
+        ),
+        comprehensive_max_sub_queries=min(
+            COMPREHENSIVE_MAX_SUB_QUERIES_HARD_LIMIT,
+            max(1, _int(env, "RAG_COMPREHENSIVE_MAX_SUB_QUERIES", 4)),
+        ),
         rag_candidate_k=_int(env, "RAG_CANDIDATE_K", 0),
         rerank_top_n=_int(env, "RERANK_TOP_N", 0),
         rerank_candidate_pool_size=_int(env, "RERANK_CANDIDATE_POOL_SIZE", 20),

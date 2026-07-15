@@ -1,8 +1,8 @@
 ---
 document_type: current_architecture
 status: current
-verified_commit: 8babe339cda636936c6c0af3c95a99e7c77c2f19
-last_verified_date: 2026-07-12
+verified_commit: bd92b03fe6037317d72dbf3e3f5953f131ad99a9
+last_verified_date: 2026-07-15
 authority: current-system-overview
 ---
 
@@ -12,7 +12,7 @@ authority: current-system-overview
 
 This is the single current-system overview for Ragtenance. Stable contracts live in `openspec/specs/`; rationale, known issues, enhancements, and reproducible evidence live in the governed locations defined by [Evidence Governance](evidence-governance.md).
 
-Current facts were verified against commit `8babe339cda636936c6c0af3c95a99e7c77c2f19` on 2026-07-12 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
+Current facts were verified against commit `bd92b03fe6037317d72dbf3e3f5953f131ad99a9` on 2026-07-15 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
 
 ## System Context and Components
 
@@ -106,6 +106,34 @@ Candidate strategies:
 
 Invalid `RAG_CANDIDATE_STRATEGY` values fall back to standard with a trace warning. `dense_fallback` is an effective failure mode, not a configured strategy.
 
+### Intent Routing and Comprehensive Retrieval
+
+`run_rag_graph()` enters through `intent_parse`. `RAG_INTENT_CLASSIFIER_ENABLED=false` is the production default: no model is called, and the node creates a compatibility `PreciseQueryPlan` that preserves the legacy raw/global behavior unless the independent legacy `QUERY_PLAN_ENABLED` switch is enabled. Model failure, timeout, schema failure, or bounded-capacity exhaustion also degrades to a precise compatibility plan without retrying.
+
+Before graph entry, `plan_rag_turn()` retains the existing session-level RAG trigger based on attached context files and generic document-retrieval markers. That deterministic gate may choose forced preload versus optional tool use, but it does not classify precise/comprehensive intent, construct a QueryPlan, generate sub-queries, or select postprocess behavior.
+
+When explicitly enabled, the classifier produces either a precise plan or a comprehensive plan. It does not produce semantic entities, terminology normalization, `semantic_query`, or postprocess strategy choices. Deterministic query preparation owns structural span consumption; terminology preflight then consumes the resulting retrieval text and independently supplies `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens`.
+
+Successfully parsed anchors follow the same structural ownership rule as other consumed spans: they are removed from semantic retrieval text and carried in the typed plan. Anchor consumption is currently distributed across independently configured capabilities. Heading lexical scoring reranks existing candidates, the confidence anchor gate checks agreement, and precise fallback may react to `anchor_mismatch`; no single switch establishes the complete workflow. `.env.rag-intent-routing-workflow.example` group-enables these capabilities only for controlled workflow validation and is explicitly not a production recommendation. Runtime defaults remain unchanged.
+
+```text
+intent_parse
+  |-- precise --> retrieve_initial --> confidence/fallback path
+  `-- comprehensive
+        --> clean-query baseline + generated sub-query fan-out (parallel)
+        --> branch-local rerank under one shared output/pair budget
+        --> priority-weighted RRF merge + provenance union
+        --> one shared postprocess + branch-aware final selection
+```
+
+`backend/rag/comprehensive_postprocess.py` resolves a frozen, versioned strategy composition. `quality_first_v1` is the production profile and `eval_no_crossencoder_v1` is evaluation-only. Unknown profiles atomically fall back to `quality_first_v1`. Before embedding/search, graph fanout keeps at most four generated sub-queries by priority (stable original order for ties); `RAG_COMPREHENSIVE_MAX_SUB_QUERIES` is bounded to 1-8, baseline is additional, and public trace records requested/executed/truncated items (`RAG-INTENT-F032`). Output-candidate and CrossEncoder-pair budgets are allocated independently across all executed branches; when a branch pair quota is smaller, reranked pairs lead and the unpaired Milvus-ranked tail fills the remaining output quota (`RAG-INTENT-F021`). Retrieval `failed` results and CrossEncoder failures returned through metadata are branch degradations just like raised failures: usable candidates remain where available, branch diagnostics record the error, and an empty failed generated branch feeds comprehensive confidence/fallback (`RAG-INTENT-F024`, `RAG-INTENT-F026`). The Chat Agent still invokes `search_knowledge_base(query)` once; it never receives or iterates sub-queries, and this capability has no multi-turn mode. Sub-query rewrite remains outside this change as fallback Level 1 work.
+
+`ComprehensiveQueryPlan.retrieval_scope` carries one deterministic document-scope meaning across the baseline and every generated branch. Ordinary resolved `《document》` hints are shared boosts, so branches may still search the global corpus. Explicitly closed wording and `context_files` produce a shared hard filter. Branches never relax that filter inside intent routing; scope relaxation belongs to fallback Level 2.
+
+On the precise path, HyDE and step-back fallback retrievals replace only the plan's semantic retrieval text. They retain the original raw query and deterministic file/scope/anchor constraints, so Level 1 query expansion cannot silently become scope relaxation; expanded text performs its own terminology preflight. Expanded retrieval also inherits the initial retrieval's authoritative `query_plan_enabled` state, so replacing `semantic_query` cannot activate a default-off compatibility plan (`RAG-INTENT-F033`). A precise `scope_mode="filter"` is passed as a strict filter for initial, full expanded, and candidate-only expanded retrieval, while `boost` alone permits an unfiltered global reserve (`RAG-INTENT-F027`).
+
+This is not yet a unified anchor/fallback contract. Query preparation, confidence, and chunk normalization use different anchor grammars and surface normalization; precise confidence re-extracts from raw query; rewrite can reinsert anchor text into semantic retrieval; and the planned Level 2 scope relaxation has no verified anchor-consumer invariant. Comprehensive confidence can set `fallback_required`, but the comprehensive graph currently terminates after shared postprocess instead of entering the precise grade/rewrite path. These configuration, extraction, and fallback gaps are governed by [KI-RAG-0006](known-issues/anchor-capability-configuration.md) (`RAG-INTENT-F034`, `RAG-INTENT-F035`).
+
 ## Shared Evidence Postprocess
 
 `finish_retrieval_pipeline()` in `backend/rag/utils.py` fixes this order:
@@ -121,7 +149,7 @@ rerank
 
 | Stage | Responsibility | Default |
 | --- | --- | --- |
-| rerank | Optional local CrossEncoder; optional entity-aware score fusion/cache. | Disabled until `RERANK_MODEL` is set. |
+| rerank | Optional local CrossEncoder; optional terminology-metadata score fusion/cache. | Disabled until `RERANK_MODEL` is set. |
 | auto merge | Replace same-parent leaves with complete parent context. | Enabled. |
 | step-chain check | Repair incomplete list/step evidence through two-hop lookup. | Disabled. |
 | structure rerank | Root/leaf structure scoring and same-root cap. | Enabled. |
@@ -130,9 +158,9 @@ rerank
 
 Every recoverable stage catches its own failure, passes the preceding output to later safe stages, and records a structured stage error, skip/error state, and timing. A single postprocess failure must not erase usable evidence.
 
-### Entity Fusion and Codec Boundary
+### Terminology Fusion and Codec Boundary
 
-Query terminology matches feed `backend/rag/rerank.py`. It computes entity type coverage and match density; optional score fusion combines normalized rerank, RRF, scope, and metadata signals. When entity signals are absent, established generic metadata behavior remains.
+Query-side `term_matches` from terminology preflight feed `backend/rag/rerank.py`; intent output and legacy `query_entities` are not accepted as rerank inputs. Fusion compares terminology entity types with chunk `entity_types`. `term_match_count` remains the count of all terminology matches in the chunk and therefore contributes a chunk-density signal, not a query-specific exact-match count. Optional score fusion combines normalized rerank, RRF, scope, and this metadata signal. When terminology signals are absent, established generic metadata behavior remains.
 
 Runtime `entity_types` is `list[str]`. `backend/infra/vector_store/metadata_codec.py` encodes compact JSON text for the Milvus wire boundary with a 512-byte maximum. Retrieval accepts JSON strings and legacy array-like values, deduplicates values, and degrades malformed/scalar/nested data to `[]`.
 
@@ -149,9 +177,9 @@ The unset index profile is backward-compatible `legacy`. Profiles logically isol
 
 ## Trace, Evaluation, and Degradation
 
-Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers requested/effective/fallback strategy, counts, stage status/errors/timings, fusion/entity coverage, final top-k, and confidence.
+Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers intent/model fallback, requested/effective strategy, per-branch and aggregate embedding/search/rerank costs, stage status/errors/timings, terminology fusion coverage, final representation, and confidence. Comprehensive trace and every branch retrieval diagnostic retain the resolved shared retrieval scope mode/source/matched files so boost scope remains distinguishable from no scope across API/history boundaries (`RAG-INTENT-F029`). Public trace retains the complete terminology preflight context: `semantic_query`, `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens` (`RAG-INTENT-F019`, `RAG-INTENT-F023`). Public retrieved-chunk schemas also retain branch ids, per-branch ranks/scores, baseline match state, best local rank, coverage count, and multi-query RRF score (`RAG-INTENT-F025`); auto-merged parents inherit the maximum contributing multi-query RRF score alongside unioned branch provenance (`RAG-INTENT-F031`). A failed multi-query merge preserves the undeduplicated branch union, aggregates all known branch provenance by candidate identity onto every retained duplicate, and reports the skipped/error state plus all knowable candidate counts before branch-aware shared postprocess continues (`RAG-INTENT-F020`, `RAG-INTENT-F022`). `backend/rag/observability.py` defines pure aggregation over supplied traces for rollout metrics including classifier and graph P50/P95, failure/fallback rates, intent share, profile/bucket counts, baseline rates, retrieval calls, rerank pairs, and budget exhaustion. Comprehensive evaluation error/degradation rates count top-level stage errors as well as branch errors and diagnostic errors (`RAG-INTENT-F030`). The observability module is not yet connected to a persisted trace reader, exporter, dashboard, or alerting path.
 
-Evaluation lives under `tests/eval/`, `tests/regression/`, and `backend/evaluation/`. Reports must bind a commit and source fingerprint and distinguish deterministic substitutes from real models/infrastructure. Microbenchmarks are not production-capacity evidence.
+Evaluation lives under `tests/eval/`, `tests/regression/`, and `backend/evaluation/`. Reports must bind a commit and source fingerprint and distinguish deterministic substitutes from real models/infrastructure. Intent-routing source fingerprint version 2 binds a sorted manifest containing all RAG, infrastructure, and shared Python runtime files plus the API schema, evaluation code/runner, OpenSpec design/spec, and annotated datasets, so transitive retrieval/preflight/merge changes invalidate paired evidence (`RAG-INTENT-F028`). Microbenchmarks are not production-capacity evidence.
 
 Degradation rules include hybrid-to-dense fallback, candidate preservation when rerank is absent/fails, preceding-output preservation across postprocess failures, malformed entity data to `[]`, no-op terminology when unavailable, and fatal registered-adapter parse failure.
 
@@ -176,10 +204,13 @@ Degradation rules include hybrid-to-dense fallback, candidate preservation when 
 | Query plan | Implemented, default disabled | `QUERY_PLAN_ENABLED=false` |
 | Unified execution/fallback scaffolding | Implemented, default disabled | both runtime flags false |
 | Citation verification | Implemented, default disabled | citation flag false |
-| Intent routing | Planned, not implemented | `openspec/changes/rag-intent-routing/` |
+| Intent routing | Implemented, default disabled | `RAG_INTENT_CLASSIFIER_ENABLED=false` |
+| Anchor workflow validation bundle | Validation-only | `.env.rag-intent-routing-workflow.example`; not production guidance |
+| Comprehensive parallel retrieval | Implemented, gated by intent routing | `quality_first_v1`; classifier default disabled |
+| No-CrossEncoder comprehensive ablation | Evaluation-only | `eval_no_crossencoder_v1` |
 | Multilevel fallback | Planned, not implemented | `openspec/changes/rag-multilevel-fallback/` |
 
-Planned changes are excluded from active diagrams and do not override current defaults.
+Planned changes are excluded from active diagrams and do not override current defaults. Implemented-but-disabled capabilities remain outside the default execution path until their validation and rollout gates are satisfied.
 
 ## Known Limitations and Navigation
 
@@ -191,6 +222,7 @@ Planned changes are excluded from active diagrams and do not override current de
 - Terminology rescan currently violates the parent-only store contract and has unreliable parent rollback.
 - `.doc` is registered but lacks a legacy-DOC conversion/parser path.
 - Index profiles do not automatically isolate BM25 state.
+- Anchor routing lacks an atomic capability configuration, shared extraction/normalization contract, and complete comprehensive fallback path; the grouped env example is validation-only.
 
 See [Evidence Governance](evidence-governance.md), [ADRs](architecture/decisions/), [known issues](known-issues/), [enhancements](enhancements/), [validation](validation/), [postprocess pipeline](rag-postprocess-evidence/pipeline.md), [OpenSpec changes](../openspec/changes/), and [stable specs](../openspec/specs/).
 

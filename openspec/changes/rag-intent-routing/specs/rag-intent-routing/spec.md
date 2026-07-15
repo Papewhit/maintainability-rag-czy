@@ -21,7 +21,7 @@ RAG 管线 SHALL 在执行检索之前先做意图分类，将查询归入 `prec
 
 #### Scenario: 默认关闭行为兼容
 - **WHEN** intent classifier 和现有 QueryPlan 均保持默认关闭
-- **THEN** semantic query、检索 filters、query route 和最终检索结果必须与引入 intent-routing 前一致；兼容性测试必须比较这些行为输出，而不只验证请求成功
+- **THEN** semantic query、检索 filters、query route 和最终检索结果必须与引入 intent-routing 前一致；HyDE/step-back 扩展检索必须继承首次检索的 `query_plan_enabled=false` 状态，不能因替换 semantic_query 而启用兼容性 plan；兼容性测试必须比较这些行为输出，而不只验证请求成功
 
 ### Requirement: 双 QueryPlan 数据结构
 `PreciseQueryPlan` 和 `ComprehensiveQueryPlan` MUST 是两个独立的 frozen dataclass。RAGState 中 SHALL 通过 union type 表达，下游节点 MUST 用 isinstance 或 match 语句分支。两种结构 MUST NOT 包含 `EntityMatch` 或 `entities` 字段。
@@ -32,7 +32,7 @@ RAG 管线 SHALL 在执行检索之前先做意图分类，将查询归入 `prec
 
 #### Scenario: ComprehensiveQueryPlan 字段完整性
 - **WHEN** 意图分类产出 ComprehensiveQueryPlan
-- **THEN** 该实例必须包含 raw_query、clean_query、analysis_type、sub_queries (至少 1 个)、coverage_domains、postprocess_profile 共 6 个字段；clean_query 由确定性 query preparation 写入，sub_queries 为空时视为非法状态（应降级到 PreciseQueryPlan）；postprocess_profile 由运行时 policy resolver 写入；clean_query 与 postprocess_profile 均不接受 LLM 自由生成
+- **THEN** 该实例必须包含 raw_query、clean_query、analysis_type、sub_queries (至少 1 个)、coverage_domains、postprocess_profile、retrieval_scope 共 7 个字段；clean_query 与 retrieval_scope 由确定性 query preparation 写入，sub_queries 为空时视为非法状态（应降级到 PreciseQueryPlan）；postprocess_profile 由运行时 policy resolver 写入；clean_query、retrieval_scope 与 postprocess_profile 均不接受 LLM 自由生成
 
 #### Scenario: terminology 与 QueryPlan 隔离
 - **WHEN** terminology preflight 命中术语并输出 term_matches、normalized_query、sparse_expansion 或 protected_tokens
@@ -61,12 +61,58 @@ RAG graph MUST 在检索前以确定性顺序执行结构解析、query cleaning
 - **WHEN** ComprehensiveQueryPlan 生成多个 sub-query 并进入并行 fan-out
 - **THEN** runtime 先从 clean_query 构造 baseline branch；baseline 与每个实际 sub-query 在检索前独立执行 terminology preflight，并分别产出 dense normalized query 与 BM25 sparse expansion；LLM 生成值不得被当作 terminology canonicalization 结果
 
+#### Scenario: precise fallback 保留结构约束
+- **WHEN** 带有 filter/boost、matched_files 或 anchors 的 PreciseQueryPlan 进入 HyDE/step-back 扩展检索
+- **THEN** 每个扩展检索只以该扩展文本替换 semantic_query，并独立执行 terminology preflight；原 raw_query 与结构约束必须继承；`scope_mode="filter"` 在初始与全部扩展检索中都必须传为 hard filter，`boost` 才允许 global reserve；MUST NOT 因扩展文本不含原文档提示而重建为无约束 global plan；scope relax 只由 fallback Level 2 执行
+
+#### Scenario: precise filter 不混入 global reserve
+- **WHEN** PreciseQueryPlan 由 context_files 或明确封闭语义形成 `scope_mode="filter"`
+- **THEN** candidate preparation 只执行 scoped filtered retrieval，不合并 unfiltered global reserve；只有 fallback Level 2 可以显式放宽该 filter
+
+### Requirement: anchor 工作流验证配置边界
+系统 SHALL 提供一份独立于默认配置的 workflow-validation 示例配置，成组开启 intent classifier、QueryPlan、heading lexical、confidence gate、confidence anchor gate 与现有 fallback。该配置 MUST 明确标注为工作流验证用途而非生产推荐；它 MUST NOT 改变各运行时开关的默认值，也 MUST NOT 取代真实模型、release index 下的 A/B 和 fallback 行为验证。成功解析并写入 structured anchors 的 span 仍 MUST 从 semantic query 移除，不得因任一消费者默认关闭而保留文本作为召回补偿。
+
+#### Scenario: validation-only 配置成组开启消费者
+- **WHEN** 维护者加载 `.env.rag-intent-routing-workflow.example`
+- **THEN** `RAG_INTENT_CLASSIFIER_ENABLED`、`QUERY_PLAN_ENABLED`、`HEADING_LEXICAL_ENABLED`、`CONFIDENCE_GATE_ENABLED`、`ENABLE_ANCHOR_GATE` 与 `RAG_FALLBACK_ENABLED` 均为 true；文件同时声明 `WORKFLOW VALIDATION ONLY` 与 `NOT A PRODUCTION RECOMMENDATION`
+
+#### Scenario: 默认配置与结构清洗规则保持不变
+- **WHEN** 没有显式加载 workflow-validation 示例配置
+- **THEN** intent classifier、QueryPlan、heading lexical、confidence gate 与 fallback 继续使用各自当前默认值；已成功识别的 anchor 仍由 structured QueryPlan 消费并从 semantic query 删除，不以重复检索文本弥补开关组合缺口
+
+#### Scenario: 多开关根因不在本 change 重构
+- **WHEN** heading lexical、confidence anchor gate 或 fallback 只有部分启用，或各阶段对 anchor 类型/规范化结果产生分歧
+- **THEN** 系统将其视为已知 capability-configuration / anchor-contract 限制并通过 trace、测试和已知问题跟踪；intent-routing 不在本 change 内引入新的统一开关、隐式启用规则或 semantic-query 保留策略
+
+### Requirement: comprehensive 共享 retrieval scope
+ComprehensiveQueryPlan MUST 携带运行时确定性生成的 typed `retrieval_scope`。成功消费的文档提示对应的 `matched_files`、scope mode 与结构提示 MUST 保存在该 scope 中，并由 baseline 与全部生成 sub-query 共享；不得在删除文档名后把 branch 降为无约束全局检索。共享 scope MUST 区分 boost 与 filter，MUST NOT 把普通文档提示无条件升级为硬过滤。
+
+#### Scenario: 普通文档提示默认 boost
+- **WHEN** comprehensive query 普通提及一个或多个可解析的 `《文档名》`，且没有明确封闭范围措辞，也没有 context_files
+- **THEN** 文档 span 成功消费并写入 `retrieval_scope`，scope_mode 为 `boost`；baseline 与全部 sub-query 继续检索全局语料，并对匹配文档候选应用同一 boost
+
+#### Scenario: 明确封闭范围使用 filter
+- **WHEN** comprehensive query 使用“仅在”“仅限”“检索范围限定为”等明确封闭措辞指向可解析文档
+- **THEN** `retrieval_scope.scope_mode=filter`；baseline 与全部 sub-query 使用同一文件 filter，不得由某个 branch 自行放宽
+
+#### Scenario: context_files 始终硬过滤
+- **WHEN** comprehensive 请求携带 context_files
+- **THEN** `retrieval_scope` 来源为 context_files、scope_mode 为 filter、matched_files 精确等于 context_files；所有 branch 共享该硬约束
+
+#### Scenario: scope 放宽不属于 intent-routing
+- **WHEN** shared filter 下某个 branch 召回不足
+- **THEN** intent-routing 只保留结果与诊断，不动态改成 boost/global；scope relax 由独立 fallback Level 2 处理
+
 ### Requirement: comprehensive clean-query baseline branch
 每个合法 ComprehensiveQueryPlan MUST 固定执行一个由运行时构造的 clean-query baseline branch。该 branch MUST 使用稳定 id `baseline` 与 kind `baseline`，MUST NOT 写入 LLM `sub_queries` 或 `coverage_domains`，并 MUST 与生成 sub-query 在同一 fan-out、共享预算和 merge 管线中执行。
 
 #### Scenario: baseline 固定加入 fan-out
-- **WHEN** ComprehensiveQueryPlan 包含 N 个 LLM sub-query
-- **THEN** graph 执行 N+1 个 retrieval branch；`sub_query_count=N`，`retrieval_branch_count=N+1`；baseline 的源文本为 plan.clean_query，且仍经过 branch query preparation 与 terminology preflight
+- **WHEN** ComprehensiveQueryPlan 包含 N 个 LLM sub-query 且 N 不超过 effective fanout limit
+- **THEN** graph 执行 N+1 个 retrieval branch；`requested_sub_query_count=N`、`sub_query_count=N`、`retrieval_branch_count=N+1`；baseline 的源文本为 plan.clean_query，且仍经过 branch query preparation 与 terminology preflight
+
+#### Scenario: 超量 sub-query 在检索前按优先级截断
+- **WHEN** LLM 返回的 sub-query 数量超过 `RAG_COMPREHENSIVE_MAX_SUB_QUERIES`（默认 4，配置有效范围 1-8）
+- **THEN** graph MUST 在 embedding 和 Milvus retrieval 前按 priority 数字升序保留至上限，同 priority 保持原始顺序；baseline 不计入该上限；effective QueryPlan MUST 只包含被保留项；trace MUST 记录 requested/executed/truncated 数量、effective limit、截断状态和被丢弃项，且 `retrieval_branch_count=sub_query_count+1`
 
 #### Scenario: 空 clean_query 不创建空检索
 - **WHEN** 确定性 query preparation 产生空白 clean_query
@@ -93,7 +139,7 @@ Comprehensive 路径 MUST 对 clean-query baseline 与每个 sub-query 执行 qu
 
 #### Scenario: 共享结构后处理
 - **WHEN** 跨 query merge 产生统一候选池
-- **THEN** 按顺序执行 `auto_merge → step_chain_check → structure_rerank → branch-aware top_k → comprehensive confidence_gate`；parent 替换 leaf 时保留并合并 matched_branch_ids、baseline_matched 与 local-rank provenance
+- **THEN** 按顺序执行 `auto_merge → step_chain_check → structure_rerank → branch-aware top_k → comprehensive confidence_gate`；parent 替换 leaf 时保留并合并 matched_branch_ids、baseline_matched 与 local-rank provenance，并继承 contributing leaves 中最高的 `multi_query_rrf_score`，不得在 parent 输出中丢失跨 query 排名信号
 
 #### Scenario: branch-aware top-k
 - **WHEN** successful_generated_branch_count 小于等于 top_k
@@ -106,6 +152,10 @@ Comprehensive 路径 MUST 对 clean-query baseline 与每个 sub-query 执行 qu
 #### Scenario: comprehensive confidence
 - **WHEN** final top-k 形成
 - **THEN** 只执行一次全局 confidence gate；branch diagnostics 和 final branch representation 作为 comprehensive confidence/fallback 输入，空召回或失败分支可供 fallback Level 1 定位，但初始 intent-routing 不动态调整 sub-query
+
+#### Scenario: compiled graph 端到端契约验证
+- **WHEN** 维护者运行 intent-routing 的确定性 E2E
+- **THEN** 测试必须通过已编译 RAG graph 覆盖真实 intent classifier 包装、ComprehensiveQueryPlan 构造、clean-query baseline 与生成 sub-query 的独立 terminology preflight、dense+BM25 输入和共享 filter、跨 query merge、一次共享后处理及公共 trace；仅 LLM、embedding、reranker 与 Milvus 外部边界允许使用确定性替身；该证据不得宣称真实模型准确率、release index 召回质量或生产成本达标
 
 ### Requirement: 版本化 comprehensive postprocess profile
 系统 MUST 通过 typed `ComprehensivePostprocessPolicy` 和 registry 解析一个完整的版本化策略组合。Graph 节点 MUST 只依赖策略接口，MUST NOT 按 profile id 散落条件分支，也 MUST NOT 通过多个独立环境开关任意组合未经验证的 branch rerank、merge、selection 和 budget 策略。
@@ -125,9 +175,15 @@ Comprehensive 路径 MUST 对 clean-query baseline 与每个 sub-query 执行 qu
 ### Requirement: comprehensive 共享预算与成本评测 gate
 Comprehensive 路径的 `RERANK_CANDIDATE_POOL_SIZE` MUST 是 baseline 与全部生成分支共享的全局 rerank 输出候选预算，MUST NOT 为每个 branch 复制。CrossEncoder pair budget MUST 独立使用当前 device tier 的 `RERANK_INPUT_K_CPU/GPU` 上限；上限未配置时 SHALL 回退到全局输出候选预算。默认启用 comprehensive 路径前 MUST 完成质量与成本联合评测；没有评测结论时 `RAG_INTENT_CLASSIFIER_ENABLED` 默认值 MUST 保持 false。
 
+Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERANK_CANDIDATE_POOL_SIZE<=0` 时回退到 `top_k*4`，正值小于 final `top_k` 时提升到 `top_k`，随后再受实际候选总数上限约束；不得把未配置值解释为清空全部 comprehensive 候选。
+
 #### Scenario: 全局 rerank 预算分配
 - **WHEN** 多个分支竞争有限 rerank budget
-- **THEN** budget policy 分别计算 output candidate budget 与 CrossEncoder pair budget，先分配每个可执行分支（含 baseline）的最小配额，再按 effective priority 分配剩余配额；baseline effective priority 固定为 2；未获 CrossEncoder 配额的分支保留 Milvus local rank 和候选，trace 标记 budget exhaustion，不清空该分支
+- **THEN** budget policy 分别计算 output candidate budget 与 CrossEncoder pair budget，先分配每个可执行分支（含 baseline）的最小配额，再按 effective priority 分配剩余配额；baseline effective priority 固定为 2；未获 CrossEncoder 配额但拥有 output 配额的分支按 Milvus local rank 保留不超过该 output 配额的候选并标记 budget exhaustion；output 配额为 0 的分支不得向 merge 传入候选；任意成功、降级或异常路径传入 merge 的候选总数不得超过全局 output budget
+
+#### Scenario: rerank device 不可用时保留候选
+- **WHEN** quality-first profile 需要 CrossEncoder pairs，但配置的 rerank device 无法解析或不可用
+- **THEN** device probe 必须作为可恢复的 branch-rerank stage failure 记录，pair budget 降为 0，output candidate budget 与已召回候选继续按 Milvus local rank 进入 merge；不得让异常逃出 graph；no-CrossEncoder profile 不得执行该 device probe，也不记录伪降级
 
 #### Scenario: 禁止候选与查询笛卡尔积
 - **WHEN** 一个 candidate 只由部分 sub-query 召回
@@ -172,11 +228,11 @@ Comprehensive 路径的 `RERANK_CANDIDATE_POOL_SIZE` MUST 是 baseline 与全部
 
 #### Scenario: 解析成功 trace
 - **WHEN** 意图分类正常完成
-- **THEN** rag_trace 包含 `intent`（精确或综合）、`intent_confidence`（0-1）、`query_plan_type`（precise/comprehensive）、`intent_llm_model`、`intent_llm_ms`、`intent_fallback_to_rules=false`、（comprehensive 时）`sub_query_count`、`retrieval_branch_count=sub_query_count+1`、`analysis_type`
+- **THEN** rag_trace 包含 `intent`（精确或综合）、`intent_confidence`（0-1）、`query_plan_type`（precise/comprehensive）、`intent_llm_model`、`intent_llm_ms`、`intent_fallback_to_rules=false`、（comprehensive 时）requested/executed/truncated sub-query telemetry、`retrieval_branch_count=sub_query_count+1`、`analysis_type`
 
 #### Scenario: comprehensive 后处理与成本 trace
 - **WHEN** comprehensive 路径完成或局部降级后返回
-- **THEN** rag_trace 包含 requested/effective postprocess profile、各策略组件 id、baseline branch diagnostics、每个分支及总量的 allocated/used output budget 与 CrossEncoder pair budget、实际 rerank pair count、branch/merged/final candidate counts、各阶段耗时、分支错误与 budget exhaustion、baseline_matched/selected 及生成分支代表情况；这些字段即使局部阶段失败也保留已知值
+- **THEN** rag_trace 包含 requested/effective postprocess profile、各策略组件 id、解析后的共享 retrieval_scope（scope_mode、source、matched_files）、baseline branch diagnostics、每个分支及总量的 allocated/used output budget 与 CrossEncoder pair budget、实际 rerank pair count、branch/merged/final candidate counts、各阶段耗时、分支错误与 budget exhaustion、baseline_matched/selected 及生成分支代表情况；每个 branch retrieval diagnostic 也保留共享 retrieval_scope，这些字段即使局部阶段失败也保留已知值
 
 #### Scenario: 规则降级 trace
 - **WHEN** LLM 调用失败触发规则降级
@@ -185,6 +241,10 @@ Comprehensive 路径的 `RERANK_CANDIDATE_POOL_SIZE` MUST 是 baseline 与全部
 #### Scenario: classifier 关闭 trace
 - **WHEN** `RAG_INTENT_CLASSIFIER_ENABLED=false`
 - **THEN** rag_trace 标明 classifier 未启用和 compatibility source，不包含 `intent_llm_error`，且 `intent_fallback_to_rules=false`
+
+#### Scenario: API 响应保留 intent-routing trace
+- **WHEN** graph 的 rag_trace 经 `ChatResponse` 或历史消息响应 schema 序列化
+- **THEN** intent、query-plan、comprehensive profile、branch diagnostics、budget/cost、scope telemetry，以及 terminology preflight 的 `semantic_query`、`term_matches`、`normalized_query`、`sparse_expansion`、`protected_tokens` 必须保留，不得因响应模型未声明字段而被静默过滤；term match offset 以同一响应中的 semantic_query 为坐标空间；`retrieved_chunks` 中的 branch ids、per-branch ranks/scores、baseline 标记和 coverage provenance 同样必须通过 API/history schema 保留
 
 ### Requirement: 评测集与阈值
 `tests/eval/data/intent_routing/` 下 MUST 存在意图分类评测集，包含至少 100 条标注样本（70% precise + 30% comprehensive），覆盖结构限域、目标粒度和所有 analysis_type。评测脚本 MUST 可重复运行，输出指标 MUST 达到既定阈值才允许将 `RAG_INTENT_CLASSIFIER_ENABLED` 默认值改为 true。
@@ -197,12 +257,24 @@ Comprehensive 路径的 `RERANK_CANDIDATE_POOL_SIZE` MUST 是 baseline 与全部
 - **WHEN** 评测完成后查看输出 JSON
 - **THEN** 各项指标达到预设基线时视为达标；不达标时配置项 `RAG_INTENT_CLASSIFIER_ENABLED` 默认保持 false。具体阈值在标注完成后根据初评结果设定，不在此处硬编码
 
+#### Scenario: paired A/B 绑定完整运行时源码
+- **WHEN** comprehensive quality/cost runner 生成 quality-first 与消融 profile 的 paired report
+- **THEN** source fingerprint 必须绑定版本化、排序后的 source file list，至少覆盖全部 `backend/rag/**/*.py`、检索相关 `backend/infra/**/*.py`、共享 normalization/utilities、公共 trace schema、评测实现、runner、spec 和数据集；任一被覆盖运行时依赖变化都必须改变 fingerprint，禁止仅绑定直接入口文件
+
+#### Scenario: branch-local 降级计入评测错误率
+- **WHEN** branch CrossEncoder/rerank 失败但保留 local-rank candidates，错误仅记录在 `branch_errors` 或 branch diagnostic 的 `error`
+- **THEN** comprehensive summary 的 error_rate 与 degradation_rate 必须把该 case 计为失败/降级，不得因顶层 stage_errors 为空而报告为零
+
 ### Requirement: 与 plan_rag_turn 的职责边界
-`plan_rag_turn()` MUST NOT 做 query 内容分析，SHALL 只做 session 级路由（FORCED_PRELOAD vs OPTIONAL_TOOL vs NO_RAG）。query 的意图分类和计划字段生成 MUST 全部由 RAG graph 内部的 `intent_parse` 节点承担。
+`plan_rag_turn()` SHALL 保留既有 session 级 RAG 触发行为：context_files 和通用文档检索关键词 MAY 用于选择 FORCED_PRELOAD、OPTIONAL_TOOL 或 NO_RAG。该触发判断 MUST NOT 分类 `precise_lookup` / `comprehensive_analysis`，MUST NOT 构造 QueryPlan、生成 sub-query 或选择后处理策略；这些 intent-routing 动作 MUST 全部由 RAG graph 内部的 `intent_parse` 节点承担。
+
+#### Scenario: 通用文档检索词只触发 session 路由
+- **WHEN** unified execution 已启用且无 context_files 的 query 命中既有通用文档检索关键词
+- **THEN** `plan_rag_turn` MAY 维持既有 FORCED_PRELOAD 行为，但不得产出 intent、QueryPlan 或 sub-query；进入 `run_rag_graph` 后仍由 `intent_parse` 独立完成 precise/comprehensive 分类
 
 #### Scenario: FORCED_PRELOAD 仍然走意图解析
 - **WHEN** 请求带 context_files，`plan_rag_turn` 判定为 FORCED_PRELOAD
-- **THEN** 进入 run_rag_graph 后仍先执行 intent_parse 节点；context_files 作为 PreciseQueryPlan 的硬约束（scope_mode=filter, matched_files 来自 context_files）
+- **THEN** 进入 run_rag_graph 后仍先执行 intent_parse 节点；precise intent 将 context_files 写入 PreciseQueryPlan，comprehensive intent 将其写入 ComprehensiveQueryPlan.retrieval_scope；两条路径均使用 `scope_mode=filter` 且 matched_files 来自 context_files
 
 #### Scenario: OPTIONAL_TOOL 经工具调用进入
 - **WHEN** Agent 调用 search_knowledge_base 工具

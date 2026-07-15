@@ -58,7 +58,6 @@ class RagTraceTests(unittest.TestCase):
                 "candidate_count_after_structure_rerank": 18,
                 "final_top_k_count": 5,
                 "term_matches": [{"entity_type": "component", "canonical": "pump"}],
-                "query_entities": [{"type": "component", "value": "pump"}],
                 "auto_merge_skipped": True,
                 "auto_merge_error": "recovered",
                 "step_chain_check_enabled": True,
@@ -69,6 +68,9 @@ class RagTraceTests(unittest.TestCase):
                 "entity_match_density": 0.6,
                 "postprocess_contract": "shared_retrieval_postprocess",
                 "postprocess_contract_version": "shared-postprocess-v1",
+                "query_plan_enabled": False,
+                "scope_filter_applied": False,
+                "strict_scope_filter": False,
             }
         )
 
@@ -90,12 +92,15 @@ class RagTraceTests(unittest.TestCase):
         self.assertEqual(trace["candidate_count_before_rerank"], 30)
         self.assertEqual(trace["final_top_k_count"], 5)
         self.assertEqual(trace["term_matches"][0]["canonical"], "pump")
-        self.assertEqual(trace["query_entities"][0]["type"], "component")
+        self.assertNotIn("query_entities", trace)
         self.assertEqual(trace["step_chain_repaired_groups"], ["g1"])
         self.assertTrue(trace["auto_merge_skipped"])
         self.assertEqual(trace["auto_merge_error"], "recovered")
         self.assertTrue(trace["entity_metadata_score_applied"])
         self.assertEqual(trace["entity_type_coverage"], 1.0)
+        self.assertFalse(trace["query_plan_enabled"])
+        self.assertFalse(trace["scope_filter_applied"])
+        self.assertFalse(trace["strict_scope_filter"])
         append_stage_error(trace, "rerank", "boom", "ranked_candidates")
         merge_expanded_rag_trace(
             trace,

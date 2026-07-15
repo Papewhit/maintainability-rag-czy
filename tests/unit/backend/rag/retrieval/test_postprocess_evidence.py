@@ -291,7 +291,7 @@ def test_retrieve_initial_emits_real_auto_merge_status():
     assert result["rag_trace"]["auto_merge_applied"] is True
 
 
-def test_retrieve_initial_passes_intent_entities_to_retrieval():
+def test_retrieve_initial_does_not_treat_intent_entities_as_terminology_signal():
     entities = [{"type": "component", "value": "pump"}]
     retrieve_result = {"docs": [], "meta": {"timings": {}, "stage_errors": []}}
 
@@ -305,7 +305,7 @@ def test_retrieve_initial_passes_intent_entities_to_retrieval():
             "intent_result": {"entities": entities},
         })
 
-    assert retrieve.call_args.kwargs["query_entities"] == entities
+    assert "query_entities" not in retrieve.call_args.kwargs
 
 
 def test_step_chain_check_repairs_incomplete_middle_chunk():
@@ -522,9 +522,9 @@ def test_finish_pipeline_keeps_auto_merge_output_when_step_chain_fails():
     assert result["meta"]["stage_errors"][-1]["fallback_to"] == "auto_merge_output"
 
 
-def test_metadata_score_uses_entity_type_coverage_and_match_density():
-    query_entities = [
-        {"type": "product_model", "value": "A"},
+def test_metadata_score_uses_terminology_type_coverage_and_chunk_density():
+    query_term_matches = [
+        {"entity_type": "product_model", "canonical": "A"},
         {"entity_type": "component", "canonical": "pump"},
     ]
     doc = {
@@ -532,22 +532,22 @@ def test_metadata_score_uses_entity_type_coverage_and_match_density():
         "term_match_count": 2,
     }
 
-    assert rag_utils._metadata_score(doc, query_entities) == pytest.approx(0.82)
+    assert rag_utils._metadata_score(doc, query_term_matches) == pytest.approx(0.82)
     assert rag_utils._metadata_score(doc, []) == 0.0
-    assert rag_utils._metadata_score({}, query_entities) == 0.0
+    assert rag_utils._metadata_score({}, query_term_matches) == 0.0
 
 
 def test_metadata_score_treats_json_and_list_entity_types_equally():
-    query_entities = [{"type": "component"}]
+    query_term_matches = [{"entity_type": "component"}]
     list_doc = {"entity_types": ["component"], "term_match_count": 2}
     json_doc = {"entity_types": '["component"]', "term_match_count": 2}
 
-    assert rag_utils._metadata_score(json_doc, query_entities) == rag_utils._metadata_score(
-        list_doc, query_entities
+    assert rag_utils._metadata_score(json_doc, query_term_matches) == rag_utils._metadata_score(
+        list_doc, query_term_matches
     )
 
 
-def test_entity_metadata_score_can_change_fusion_order():
+def test_terminology_metadata_score_can_change_fusion_order():
     docs = [
         {"chunk_id": "plain", "entity_types": [], "term_match_count": 0},
         {"chunk_id": "matched", "entity_types": ["component"], "term_match_count": 3},
@@ -563,13 +563,13 @@ def test_entity_metadata_score_can_change_fusion_order():
         fused = rag_utils._apply_rerank_score_fusion(
             [(0, 0.9), (1, 0.1)],
             docs,
-            query_entities=[{"type": "component"}],
+            query_term_matches=[{"entity_type": "component"}],
         )
 
     assert fused[0][0] == 1
 
 
-def test_entity_fusion_preserves_generic_metadata_for_legacy_chunks():
+def test_terminology_fusion_preserves_generic_metadata_for_legacy_chunks():
     docs = [
         {"chunk_id": "legacy", "anchor_id": "第一章", "entity_types": []},
         {"chunk_id": "plain", "entity_types": []},
@@ -585,14 +585,14 @@ def test_entity_fusion_preserves_generic_metadata_for_legacy_chunks():
         fused = rag_utils._apply_rerank_score_fusion(
             [(0, 0.5), (1, 0.5)],
             docs,
-            query_entities=[{"type": "component"}],
+            query_term_matches=[{"entity_type": "component"}],
         )
     scores = dict(fused)
 
     assert scores[0] > scores[1]
 
 
-def test_rerank_trace_reports_entity_metadata_components():
+def test_rerank_trace_reports_terminology_metadata_components():
     class FakeReranker:
         def predict(self, pairs):
             return [0.5 for _ in pairs]
@@ -620,7 +620,7 @@ def test_rerank_trace_reports_entity_metadata_components():
             "pump",
             docs,
             top_k=1,
-            query_entities=[{"entity_type": "component"}],
+            query_term_matches=[{"entity_type": "component"}],
         )
 
     assert meta["entity_metadata_score_applied"] is True
@@ -628,7 +628,7 @@ def test_rerank_trace_reports_entity_metadata_components():
     assert meta["entity_match_density"] == pytest.approx(0.6)
 
 
-def test_entity_metadata_trace_is_not_applied_when_fusion_is_disabled():
+def test_terminology_metadata_trace_is_not_applied_when_fusion_is_disabled():
     docs = [{
         "chunk_id": "matched",
         "text": "pump procedure",
@@ -644,14 +644,14 @@ def test_entity_metadata_trace_is_not_applied_when_fusion_is_disabled():
             "pump",
             docs,
             top_k=1,
-            query_entities=[{"entity_type": "component"}],
+            query_term_matches=[{"entity_type": "component"}],
         )
 
     assert meta["entity_metadata_score_applied"] is False
     assert meta["entity_type_coverage"] == 1.0
 
 
-def test_entity_metadata_trace_is_not_applied_without_reranker_execution():
+def test_terminology_metadata_trace_is_not_applied_without_reranker_execution():
     docs = [{
         "chunk_id": "matched",
         "text": "pump procedure",
@@ -668,7 +668,7 @@ def test_entity_metadata_trace_is_not_applied_without_reranker_execution():
             "pump",
             docs,
             top_k=1,
-            query_entities=[{"entity_type": "component"}],
+            query_term_matches=[{"entity_type": "component"}],
         )
 
     assert meta["entity_metadata_score_applied"] is False
@@ -705,14 +705,45 @@ def test_real_reranker_failure_marks_skipped_and_preserves_candidates():
     assert [doc["chunk_id"] for doc in result["docs"]] == ["c1"]
     assert result["meta"]["rerank_skipped"] is True
     assert result["meta"]["rerank_error"] == "inference failed"
+    assert result["meta"]["entity_metadata_score_applied"] is False
+    assert result["meta"]["entity_type_coverage"] == 0.0
+    assert result["meta"]["entity_match_density"] == 0.0
+    assert "terminology_metadata_score_applied" not in result["meta"]
     assert result["meta"]["stage_errors"][0]["stage"] == "rerank"
+
+
+def test_finish_pipeline_rerank_exception_preserves_historical_metadata_keys():
+    docs = [{"chunk_id": "c1", "text": "evidence", "score": 0.8}]
+
+    with (
+        patch.object(rag_utils, "_rerank_documents", side_effect=RuntimeError("rerank crashed")),
+        patch.object(rag_utils, "_auto_merge_documents", side_effect=lambda docs, top_k: (docs, {})),
+        patch.object(rag_utils, "_step_chain_check", side_effect=lambda docs, top_k: (docs, {})),
+        patch.object(rag_utils, "_apply_structure_rerank", side_effect=lambda docs, top_k: (docs, {})),
+        patch.object(rag_utils, "_evaluate_retrieval_confidence", return_value={}),
+    ):
+        result = rag_utils._finish_retrieval_pipeline(
+            query="evidence",
+            search_query="evidence",
+            retrieved=docs,
+            top_k=1,
+            candidate_k=1,
+            timings={},
+            stage_errors=[],
+            total_start=time.perf_counter(),
+        )
+
+    assert result["meta"]["entity_metadata_score_applied"] is False
+    assert result["meta"]["entity_type_coverage"] == 0.0
+    assert result["meta"]["entity_match_density"] == 0.0
+    assert "terminology_metadata_score_applied" not in result["meta"]
 
 
 def test_finish_pipeline_passes_terminology_entities_to_rerank():
     retrieved = _docs(1)
 
-    def rerank(*, query, docs, top_k, query_entities):
-        assert query_entities == [{"entity_type": "component", "canonical": "pump"}]
+    def rerank(*, query, docs, top_k, query_term_matches):
+        assert query_term_matches == [{"entity_type": "component", "canonical": "pump"}]
         return docs, {
             "rerank_enabled": True,
             "rerank_applied": True,
@@ -744,7 +775,7 @@ def test_finish_pipeline_passes_terminology_entities_to_rerank():
     assert result["docs"] == retrieved
 
 
-def test_rerank_cache_key_includes_query_entity_types():
+def test_rerank_cache_key_includes_query_terminology_types():
     docs = [{"chunk_id": "c1", "text": "pump"}]
 
     plain = rag_utils._rerank_cache_key("pump", docs, 1, 1, False)
@@ -754,7 +785,7 @@ def test_rerank_cache_key_includes_query_entity_types():
         1,
         1,
         False,
-        query_entities=[{"entity_type": "component"}],
+        query_term_matches=[{"entity_type": "component"}],
     )
 
     assert plain != entity
@@ -765,7 +796,7 @@ def test_rerank_cache_key_includes_query_entity_types():
         1,
         1,
         False,
-        query_entities=[{"entity_type": "component"}],
+        query_term_matches=[{"entity_type": "component"}],
     )
     assert changed_metadata != entity
 
@@ -776,7 +807,7 @@ def test_rerank_cache_key_normalizes_entity_types_wire_representation():
         "rerank_top_n": 1,
         "rerank_input_k": 1,
         "enrichment_enabled": False,
-        "query_entities": [{"entity_type": "component"}],
+        "query_term_matches": [{"entity_type": "component"}],
     }
     list_key = rag_utils._rerank_cache_key(
         docs_for_rerank=[{

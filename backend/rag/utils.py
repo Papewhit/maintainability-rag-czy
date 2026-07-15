@@ -14,6 +14,7 @@ from backend.infra.vector_store.metadata_codec import decode_entity_types
 from backend.infra.embedding import embedding_service as _embedding_service
 from backend.rag.query_plan import (
     QueryPlan,
+    PreciseQueryPlan,
     DOC_SCOPE_MATCH_BOOST,
     parse_query_plan,
     get_filename_registry,
@@ -132,6 +133,11 @@ _ANCHOR_PATTERN = re.compile(
 )
 
 
+def load_query_filename_registry() -> list[dict[str, str]]:
+    """Load the indexed filename registry used while constructing a query plan."""
+    return get_filename_registry(_milvus_manager, cache)
+
+
 @dataclass(frozen=True)
 class RetrievalRequest:
     query: str
@@ -186,7 +192,7 @@ class PreparedRetrieval:
     top_k: int
     candidate_k: int
     context_files: list[str]
-    query_plan: QueryPlan
+    query_plan: QueryPlan | PreciseQueryPlan
     filters: RetrievalFilters
     candidates: list[dict]
     retrieval_mode: str
@@ -246,14 +252,14 @@ def _rerank_rrf_score(doc: dict) -> float:
     return _rerank_rrf_score_impl(doc, milvus_rrf_k=MILVUS_RRF_K)
 
 
-def _metadata_score(doc: dict, query_entities: list[Any] | None) -> float:
-    return _rerank_metadata_score(doc, query_entities)
+def _metadata_score(doc: dict, query_term_matches: list[Any] | None) -> float:
+    return _rerank_metadata_score(doc, query_term_matches)
 
 
 def _apply_rerank_score_fusion(
     indexed_scores: list[tuple[int, float]],
     docs_for_rerank: list[dict],
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
 ) -> list[tuple[int, float]]:
     weights = {
         "rerank": max(0.0, RERANK_FUSION_RERANK_WEIGHT),
@@ -267,7 +273,7 @@ def _apply_rerank_score_fusion(
         enabled=RERANK_SCORE_FUSION_ENABLED,
         weights=weights,
         milvus_rrf_k=MILVUS_RRF_K,
-        query_entities=query_entities,
+        query_term_matches=query_term_matches,
     )
 
 
@@ -296,15 +302,15 @@ def _finish_retrieval_pipeline(
     base_filter: str | None = None,
     retrieval_mode: str = "hybrid",
     hybrid_error: str | None = None,
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
 ) -> Dict[str, Any]:
     """Complete the retrieval evidence post-processing pipeline."""
     candidate_pool_size = _effective_rerank_output_size(top_k, len(retrieved))
-    effective_query_entities = list(
-        query_entities
-        or (extra_trace or {}).get("query_entities")
-        or (extra_trace or {}).get("term_matches")
-        or []
+    safe_extra_trace = {
+        key: value for key, value in (extra_trace or {}).items() if key != "query_entities"
+    }
+    effective_term_matches = list(
+        query_term_matches or safe_extra_trace.get("term_matches") or []
     )
 
     stage_start = time.perf_counter()
@@ -314,8 +320,8 @@ def _finish_retrieval_pipeline(
             "docs": retrieved,
             "top_k": candidate_pool_size,
         }
-        if effective_query_entities:
-            rerank_kwargs["query_entities"] = effective_query_entities
+        if effective_term_matches:
+            rerank_kwargs["query_term_matches"] = effective_term_matches
         reranked, rerank_meta = _rerank_documents(**rerank_kwargs)
     except Exception as exc:
         reranked = list(retrieved[:candidate_pool_size])
@@ -448,12 +454,10 @@ def _finish_retrieval_pipeline(
     rerank_meta["candidates_before_rerank"] = _candidate_trace(retrieved)
     rerank_meta["candidates_after_rerank"] = _candidate_trace(reranked)
     rerank_meta["candidates_after_structure_rerank"] = _candidate_trace(reranked_pool)
-    if effective_query_entities:
-        rerank_meta["query_entities"] = effective_query_entities
     for timing_key in ("rerank_ms", "auto_merge_ms", "step_chain_ms", "structure_rerank_ms", "confidence_ms"):
         rerank_meta[timing_key] = timings[timing_key]
-    if extra_trace:
-        rerank_meta.update(extra_trace)
+    if safe_extra_trace:
+        rerank_meta.update(safe_extra_trace)
 
     return {"docs": reranked_docs, "meta": build_retrieval_meta(rerank_meta)}
 
@@ -505,14 +509,26 @@ def _effective_candidate_k(top_k: int) -> int:
     return max(top_k * 10, 50)
 
 
-def _effective_rerank_output_size(top_k: int, candidate_count: int) -> int:
+def _effective_rerank_output_size(
+    top_k: int,
+    candidate_count: int,
+    *,
+    rerank_top_n: int | None = None,
+    rerank_candidate_pool_size: int | None = None,
+) -> int:
     if candidate_count <= 0:
         return 0
-    if RERANK_TOP_N > 0:
+    configured_top_n = RERANK_TOP_N if rerank_top_n is None else rerank_top_n
+    configured_pool = (
+        RERANK_CANDIDATE_POOL_SIZE
+        if rerank_candidate_pool_size is None
+        else rerank_candidate_pool_size
+    )
+    if configured_top_n > 0:
         logger.warning("RERANK_TOP_N is deprecated; use RERANK_CANDIDATE_POOL_SIZE instead")
-        requested = RERANK_TOP_N
+        requested = configured_top_n
     else:
-        requested = RERANK_CANDIDATE_POOL_SIZE if RERANK_CANDIDATE_POOL_SIZE > 0 else top_k * 4
+        requested = configured_pool if configured_pool > 0 else top_k * 4
     requested = max(top_k, requested)
     return min(candidate_count, requested)
 
@@ -609,21 +625,21 @@ def _rerank_cache_key(
     rerank_top_n: int,
     rerank_input_k: int,
     enrichment_enabled: bool,
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
 ) -> str:
-    query_entity_types = sorted(
+    query_term_entity_types = sorted(
         {
             str(
-                (entity.get("type") or entity.get("entity_type") or "")
-                if isinstance(entity, dict)
-                else (getattr(entity, "type", None) or getattr(entity, "entity_type", None) or "")
+                term_match.get("entity_type") or ""
+                if isinstance(term_match, dict)
+                else getattr(term_match, "entity_type", None) or ""
             ).strip()
-            for entity in query_entities or []
+            for term_match in query_term_matches or []
         }
         - {""}
     )
     payload = {
-        "version": 2,
+        "version": 3,
         "query": query,
         "provider": RERANK_PROVIDER,
         "model": RERANK_MODEL or "",
@@ -640,7 +656,7 @@ def _rerank_cache_key(
         "bm25_total_docs": _bm25_total_docs(),
         "milvus_index_version": _milvus_index_version(),
         "docs": _rerank_doc_signatures(docs_for_rerank, enrichment_enabled),
-        "query_entity_types": query_entity_types,
+        "query_term_entity_types": query_term_entity_types,
     }
     digest = _sha1_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return f"rerank:{digest}"
@@ -929,7 +945,7 @@ def _rerank_documents(
     query: str,
     docs: List[dict],
     top_k: int,
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
 ) -> Tuple[List[dict], Dict[str, Any]]:
     runtime = RerankRuntime(
         provider=RERANK_PROVIDER,
@@ -954,12 +970,12 @@ def _rerank_documents(
             top_n,
             input_k,
             enrichment,
-            query_entities=query_entities,
+            query_term_matches=query_term_matches,
         ),
         load_cached_result=_load_cached_rerank_result,
         store_result=_store_rerank_result,
         doc_text_getter=_doc_retrieval_text,
-        query_entities=list(query_entities or []),
+        query_term_matches=list(query_term_matches or []),
     )
     return _run_rerank_documents(query, docs, top_k, runtime)
 
@@ -1082,7 +1098,10 @@ def build_query_plan(
     )
 
 
-def build_retrieval_filters(query_plan: QueryPlan, context_files: list[str] | None = None) -> RetrievalFilters:
+def build_retrieval_filters(
+    query_plan: QueryPlan,
+    context_files: list[str] | None = None,
+) -> RetrievalFilters:
     base_filter = f"chunk_level == {LEAF_RETRIEVE_LEVEL}"
     filename_filter = _build_filename_filter(context_files)
     effective_filter = f"{base_filter} and {filename_filter}" if filename_filter else base_filter
@@ -1142,15 +1161,16 @@ def embed_search_query(
 
 
 def _query_plan_trace(
-    query_plan: QueryPlan,
+    query_plan: QueryPlan | PreciseQueryPlan,
     *,
     semantic_query: str,
     v3_layers: list[str],
     scope_filter_applied: bool = False,
+    plan_enabled: bool | None = None,
 ) -> dict[str, Any]:
     return {
         "query_plan": query_plan.to_dict(),
-        "query_plan_enabled": QUERY_PLAN_ENABLED,
+        "query_plan_enabled": QUERY_PLAN_ENABLED if plan_enabled is None else plan_enabled,
         "semantic_query": semantic_query,
         "index_profile": RAG_INDEX_PROFILE,
         "v3_layers": v3_layers,
@@ -1273,6 +1293,7 @@ def retrieve_global_candidates(
         effective=CandidateStrategyId.STANDARD,
         detail=candidate_strategy_detail,
     )
+    strategy_trace.setdefault("hybrid_search_call_count", 0)
     if embeddings.dense is None:
         return CandidateRetrievalResult(
             candidates=[],
@@ -1293,6 +1314,10 @@ def retrieve_global_candidates(
         )
 
     stage_start = time.perf_counter()
+    attempt_trace = dict(strategy_trace)
+    attempt_trace["hybrid_search_call_count"] = (
+        int(attempt_trace.get("hybrid_search_call_count") or 0) + 1
+    )
     try:
         candidates = _milvus_manager.hybrid_retrieve(
             dense_embedding=embeddings.dense,
@@ -1304,7 +1329,7 @@ def retrieve_global_candidates(
             filter_expr=filter_expr,
         )
         timings["milvus_hybrid_ms"] = elapsed_ms(stage_start)
-        return CandidateRetrievalResult(candidates=candidates, retrieval_mode="hybrid", trace_patch=strategy_trace)
+        return CandidateRetrievalResult(candidates=candidates, retrieval_mode="hybrid", trace_patch=attempt_trace)
     except Exception as exc:
         hybrid_error = str(exc)
         timings["milvus_hybrid_ms"] = elapsed_ms(stage_start)
@@ -1314,7 +1339,7 @@ def retrieve_global_candidates(
                 candidate_k=candidate_k,
                 filter_expr=filter_expr,
                 timings=timings,
-                trace_patch=trace_patch,
+                trace_patch=attempt_trace,
                 hybrid_error=hybrid_error,
                 candidate_strategy_requested=candidate_strategy_requested,
                 candidate_strategy_fallback_from=CandidateStrategyId.STANDARD,
@@ -1325,7 +1350,7 @@ def retrieve_global_candidates(
             return CandidateRetrievalResult(
                 candidates=[],
                 retrieval_mode="failed",
-                trace_patch=strategy_trace,
+                trace_patch=attempt_trace,
                 stage_errors=[
                     _stage_error("hybrid_retrieve", hybrid_error, "dense_retrieve"),
                     _stage_error("dense_retrieve", str(dense_exc)),
@@ -1347,6 +1372,7 @@ def retrieve_scoped_candidates(
         effective=CandidateStrategyId.STANDARD,
         detail=CandidateStrategyDetail.SCOPED_HYBRID,
     )
+    strategy_trace.setdefault("hybrid_search_call_count", 0)
     if embeddings.dense is None:
         return CandidateRetrievalResult(
             candidates=[],
@@ -1366,6 +1392,10 @@ def retrieve_scoped_candidates(
         )
 
     stage_start = time.perf_counter()
+    attempt_trace = dict(strategy_trace)
+    attempt_trace["hybrid_search_call_count"] = (
+        int(attempt_trace.get("hybrid_search_call_count") or 0) + 2
+    )
 
     def _scoped_retrieve():
         return _milvus_manager.hybrid_retrieve(
@@ -1413,14 +1443,14 @@ def retrieve_scoped_candidates(
                 filter_expr=filters.scoped_filter or filters.effective_filter,
                 timings=timings,
                 retrieval_mode="dense_fallback_scoped",
-                trace_patch=trace_patch,
+                trace_patch=attempt_trace,
                 candidate_strategy_fallback_from=CandidateStrategyId.STANDARD,
             )
             dense.stage_errors.extend(stage_errors)
             return dense
         except Exception as exc:
             stage_errors.append(_stage_error("dense_retrieve", str(exc)))
-            return CandidateRetrievalResult([], "failed", trace_patch, stage_errors)
+            return CandidateRetrievalResult([], "failed", attempt_trace, stage_errors)
 
     scoped = _retrieval_annotate_scope_scores(scoped, filters.matched_files)
     global_ = _retrieval_annotate_scope_scores(global_, filters.matched_files)
@@ -1428,8 +1458,7 @@ def retrieve_scoped_candidates(
         [(scoped, 1.0 - DOC_SCOPE_GLOBAL_RESERVE_WEIGHT), (global_, DOC_SCOPE_GLOBAL_RESERVE_WEIGHT)],
         rrf_k=MILVUS_RRF_K,
     )
-    patch = dict(trace_patch)
-    patch.update(strategy_trace)
+    patch = dict(attempt_trace)
     patch["scoped_candidate_count"] = len(scoped)
     patch["global_candidate_count"] = len(global_)
     return CandidateRetrievalResult(merged, "hybrid_scoped", patch, stage_errors)
@@ -1452,6 +1481,8 @@ def retrieve_layered_candidate_pool(
         effective=CandidateStrategyId.LAYERED,
         detail=CandidateStrategyDetail.LAYERED_SPLIT,
     )
+    layered_trace.setdefault("hybrid_search_call_count", 0)
+    layered_trace.setdefault("split_search_call_count", 0)
     if embeddings.dense is None:
         return CandidateRetrievalResult(
             candidates=[],
@@ -1472,8 +1503,10 @@ def retrieve_layered_candidate_pool(
         )
 
     stage_errors: list[StageErrorDict] = []
+    retrieval_trace = dict(layered_trace)
     stage_start = time.perf_counter()
     try:
+        retrieval_trace["split_search_call_count"] += 1
         candidates = _milvus_manager.split_retrieve(
             embeddings.dense,
             embeddings.sparse,
@@ -1484,6 +1517,7 @@ def retrieve_layered_candidate_pool(
             filter_expr=filter_expr,
         )
         if _LAYERED_CANDIDATE_PRESET.l0_hybrid_guarantee_k > 0:
+            retrieval_trace["hybrid_search_call_count"] += 1
             hybrid = _milvus_manager.hybrid_retrieve(
                 embeddings.dense,
                 embeddings.sparse,
@@ -1495,6 +1529,7 @@ def retrieve_layered_candidate_pool(
             )
             _append_hybrid_guarantee(candidates, hybrid)
         if len(candidates) < _LAYERED_CANDIDATE_PRESET.l0_fallback_pool_min:
+            retrieval_trace["hybrid_search_call_count"] += 1
             hybrid = _milvus_manager.hybrid_retrieve(
                 embeddings.dense,
                 embeddings.sparse,
@@ -1518,7 +1553,7 @@ def retrieve_layered_candidate_pool(
             candidate_k=candidate_k,
             filter_expr=filter_expr,
             timings=timings,
-            trace_patch=trace_patch,
+            trace_patch=retrieval_trace,
             candidate_strategy_requested=CandidateStrategyId.LAYERED,
             candidate_strategy_detail=fallback_detail,
         )
@@ -1541,7 +1576,7 @@ def retrieve_layered_candidate_pool(
         config=_LAYERED_CANDIDATE_PRESET,
     )
     timings["l1_prefilter_ms"] = elapsed_ms(l1_start)
-    patch = dict(layered_trace)
+    patch = dict(retrieval_trace)
     patch.update({
         "v3_layers": ["query_plan", "layered_split", "l1_prefilter", "rerank", "structure_rerank"],
         "layered_l0_candidate_count": l0_candidate_count,
@@ -1552,18 +1587,21 @@ def retrieve_layered_candidate_pool(
 
 
 def apply_candidate_adjustments(
-    query_plan: QueryPlan,
+    query_plan: QueryPlan | PreciseQueryPlan,
     candidates: list[dict],
     trace_patch: dict[str, Any],
+    *,
+    plan_enabled: bool | None = None,
 ) -> tuple[list[dict], dict[str, Any]]:
     patch = dict(trace_patch)
     adjusted = candidates
-    if QUERY_PLAN_ENABLED and query_plan.scope_mode == "boost":
+    effective_plan_enabled = QUERY_PLAN_ENABLED if plan_enabled is None else plan_enabled
+    if effective_plan_enabled and query_plan.scope_mode == "boost":
         adjusted = _apply_filename_boost(query_plan, adjusted)
         boosted_count = sum(1 for doc in adjusted if doc.get("filename_boost_applied"))
         patch["filename_boost_applied"] = boosted_count > 0
         patch["filename_boosted_candidate_count"] = boosted_count
-    if QUERY_PLAN_ENABLED and HEADING_LEXICAL_ENABLED and query_plan.scope_mode in {"filter", "boost"} and query_plan.heading_hint:
+    if effective_plan_enabled and HEADING_LEXICAL_ENABLED and query_plan.scope_mode in {"filter", "boost"} and query_plan.heading_hint:
         adjusted = _apply_heading_lexical_scoring(query_plan=query_plan, candidates=adjusted)
     return adjusted, patch
 
@@ -1652,6 +1690,9 @@ def prepare_candidate_retrieval(
     context_files: list[str] | None = None,
     *,
     candidate_k_override: int | None = None,
+    query_plan: QueryPlan | PreciseQueryPlan | None = None,
+    query_plan_active: bool | None = None,
+    strict_scope_filter: bool = False,
 ) -> PreparedRetrieval:
     total_start = time.perf_counter()
     timings: Dict[str, float] = {}
@@ -1662,39 +1703,98 @@ def prepare_candidate_retrieval(
     for warning in request.config.candidate_strategy.warnings:
         stage_errors.append(_stage_error("candidate_strategy_config", warning, "standard_candidate_strategy"))
 
-    query_plan = build_query_plan(request, timings, stage_errors)
-    search_query = query_plan.semantic_query
-    filters = build_retrieval_filters(query_plan, request.context_files)
+    effective_query_plan = query_plan or build_query_plan(request, timings, stage_errors)
+    if query_plan_active is None:
+        query_plan_active = QUERY_PLAN_ENABLED or bool(
+            query_plan
+            and (
+                query_plan.intent_type is not None
+                or query_plan.scope_mode != "none"
+                or query_plan.matched_files
+                or query_plan.anchors
+                or query_plan.semantic_query != query_plan.raw_query
+            )
+        )
+    search_query = effective_query_plan.semantic_query
+    filters = build_retrieval_filters(effective_query_plan, request.context_files)
 
     # Terminology preflight: expand sparse query with canonical/variant terms
-    term_preflight = terminology_preflight(query)
-    sparse_query: str | None = None
-    if term_preflight:
-        search_query = term_preflight["normalized_query"]
-        sparse_query = term_preflight["sparse_expansion"]
+    term_preflight = None
+    sparse_query: str | None = search_query
+    try:
+        term_preflight = terminology_preflight(search_query)
+        if term_preflight:
+            search_query = term_preflight["normalized_query"]
+            sparse_query = term_preflight["sparse_expansion"]
+    except Exception as exc:
+        stage_errors.append(_stage_error("terminology_preflight", str(exc), "semantic_query"))
 
     embeddings = embed_search_query(search_query, timings, stage_errors, sparse_query=sparse_query)
 
+    strict_filter_expr = (
+        filters.effective_filter if filters.filename_filter else filters.scoped_filter
+    )
+    use_strict_scope = bool(
+        strict_scope_filter
+        and query_plan_active
+        and effective_query_plan.scope_mode == "filter"
+        and strict_filter_expr
+    )
     use_scoped = (
-        QUERY_PLAN_ENABLED
-        and query_plan.scope_mode == "filter"
+        not use_strict_scope
+        and query_plan_active
+        and effective_query_plan.scope_mode == "filter"
         and bool(filters.matched_files)
         and not filters.filename_filter
         and bool(filters.scoped_filter)
     )
-    if use_scoped:
+    if use_strict_scope:
         trace_patch = _query_plan_trace(
-            query_plan,
-            semantic_query=search_query,
+            effective_query_plan,
+            semantic_query=effective_query_plan.semantic_query,
+            v3_layers=["query_plan", "strict_scope_filter", "hybrid", "rerank", "structure_rerank"],
+            scope_filter_applied=True,
+            plan_enabled=query_plan_active,
+        )
+        trace_patch["strict_scope_filter"] = True
+        if use_layered:
+            result = retrieve_layered_candidate_pool(
+                embeddings,
+                candidate_k=candidate_k,
+                filter_expr=strict_filter_expr or filters.effective_filter,
+                query_plan=effective_query_plan,
+                scope_matched_files=filters.matched_files,
+                timings=timings,
+                trace_patch=trace_patch,
+                retrieval_mode="hybrid_scoped",
+            )
+        else:
+            result = retrieve_global_candidates(
+                embeddings,
+                candidate_k=candidate_k,
+                filter_expr=strict_filter_expr or filters.effective_filter,
+                timings=timings,
+                trace_patch=trace_patch,
+                candidate_strategy_detail=CandidateStrategyDetail.SCOPED_HYBRID,
+            )
+            if result.retrieval_mode == "hybrid":
+                result.retrieval_mode = "hybrid_scoped"
+            elif result.retrieval_mode == "dense_fallback":
+                result.retrieval_mode = "dense_fallback_scoped"
+    elif use_scoped:
+        trace_patch = _query_plan_trace(
+            effective_query_plan,
+            semantic_query=effective_query_plan.semantic_query,
             v3_layers=["query_plan", "doc_resolver", "scoped_hybrid", "weighted_rrf", "rerank", "structure_rerank"],
             scope_filter_applied=True,
+            plan_enabled=query_plan_active,
         )
         if use_layered:
             result = retrieve_layered_candidate_pool(
                 embeddings,
                 candidate_k=candidate_k,
                 filter_expr=filters.scoped_filter or filters.effective_filter,
-                query_plan=query_plan,
+                query_plan=effective_query_plan,
                 scope_matched_files=filters.matched_files,
                 timings=timings,
                 trace_patch=trace_patch,
@@ -1710,17 +1810,19 @@ def prepare_candidate_retrieval(
             )
     else:
         trace_patch = _query_plan_trace(
-            query_plan,
-            semantic_query=search_query,
+            effective_query_plan,
+            semantic_query=effective_query_plan.semantic_query,
             v3_layers=["query_plan", "global_hybrid", "rerank", "structure_rerank"],
             scope_filter_applied=False,
+            plan_enabled=query_plan_active,
         )
+        trace_patch["strict_scope_filter"] = False
         if use_layered:
             result = retrieve_layered_candidate_pool(
                 embeddings,
                 candidate_k=candidate_k,
                 filter_expr=filters.effective_filter,
-                query_plan=query_plan,
+                query_plan=effective_query_plan,
                 scope_matched_files=filters.matched_files,
                 timings=timings,
                 trace_patch=trace_patch,
@@ -1736,7 +1838,17 @@ def prepare_candidate_retrieval(
             )
 
     stage_errors.extend(result.stage_errors)
-    retrieved, trace_patch = apply_candidate_adjustments(query_plan, result.candidates, result.trace_patch)
+    result.trace_patch.setdefault("query_plan_enabled", query_plan_active)
+    retrieved, trace_patch = apply_candidate_adjustments(
+        effective_query_plan,
+        result.candidates,
+        result.trace_patch,
+        plan_enabled=query_plan_active,
+    )
+    trace_patch["dense_embedding_call_count"] = 1
+    trace_patch["sparse_embedding_call_count"] = 1
+    trace_patch["embedding_call_count"] = 2
+    trace_patch.setdefault("hybrid_search_call_count", 0)
 
     if term_preflight:
         trace_patch["term_matches"] = term_preflight["term_matches"]
@@ -1762,7 +1874,7 @@ def prepare_candidate_retrieval(
         top_k=top_k,
         candidate_k=candidate_k,
         context_files=request.context_files,
-        query_plan=query_plan,
+        query_plan=effective_query_plan,
         filters=filters,
         candidates=retrieved,
         retrieval_mode=retrieval_mode,
@@ -1781,12 +1893,18 @@ def retrieve_candidate_pool(
     context_files: list[str] | None = None,
     *,
     candidate_k: int | None = None,
+    query_plan: QueryPlan | PreciseQueryPlan | None = None,
+    query_plan_active: bool | None = None,
+    strict_scope_filter: bool = False,
 ) -> Dict[str, Any]:
     prepared = prepare_candidate_retrieval(
         query,
         top_k=top_k,
         context_files=context_files,
         candidate_k_override=candidate_k,
+        query_plan=query_plan,
+        query_plan_active=query_plan_active,
+        strict_scope_filter=strict_scope_filter,
     )
     prepared.timings["total_retrieve_ms"] = elapsed_ms(prepared.total_start)
     meta = build_retrieval_meta(
@@ -1885,9 +2003,20 @@ def retrieve_documents(
     query: str,
     top_k: int = 5,
     context_files: list[str] | None = None,
-    query_entities: list[Any] | None = None,
+    query_term_matches: list[Any] | None = None,
+    *,
+    query_plan: QueryPlan | PreciseQueryPlan | None = None,
+    query_plan_active: bool | None = None,
+    strict_scope_filter: bool = False,
 ) -> Dict[str, Any]:
-    prepared = prepare_candidate_retrieval(query, top_k=top_k, context_files=context_files)
+    prepared = prepare_candidate_retrieval(
+        query,
+        top_k=top_k,
+        context_files=context_files,
+        query_plan=query_plan,
+        query_plan_active=query_plan_active,
+        strict_scope_filter=strict_scope_filter,
+    )
 
     if prepared.failed:
         return _failed_retrieval_response(
@@ -1917,5 +2046,5 @@ def retrieve_documents(
         base_filter=prepared.filters.base_filter,
         retrieval_mode=prepared.retrieval_mode,
         hybrid_error=prepared.hybrid_error,
-        query_entities=query_entities,
+        query_term_matches=query_term_matches,
     )

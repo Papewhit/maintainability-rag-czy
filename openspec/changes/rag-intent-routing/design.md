@@ -26,7 +26,7 @@
 - 不做 LLM 微调。所有目标基于现有 FAST_MODEL 开箱即用达成。如评测显示不达标，先升级到更大模型或加 few-shot 示例，而不是微调。
 - 不引入新的长期记忆层。意图解析只用本轮 query + 当前 context_files，不依赖历史会话。
 - 不做意图分类的多分类细化（precise/comprehensive 二分即可，analysis_type 作为 comprehensive 内部子字段）。
-- 不重写 `plan_rag_turn`。它继续负责 session 级 FORCED_PRELOAD vs OPTIONAL_TOOL 路由；intent 解析作为 RAG graph 内部第一节点独立存在。
+- 不重写 `plan_rag_turn`。它继续通过 context_files 与既有通用文档检索关键词负责 session 级 FORCED_PRELOAD vs OPTIONAL_TOOL 路由；不得在此分类 precise/comprehensive、构造 QueryPlan 或编排 sub-query。intent 解析作为 RAG graph 内部第一节点独立存在。
 - 不从 query 提取 product / equipment / component / parameter / maintenance_action 等 semantic entities，不在 QueryPlan 中预留 `EntityMatch`，也不为后续知识图谱保留隐式契约。
 - 不把 terminology 结果写入 QueryPlan。terminology preflight 独立维护 `term_matches`、`normalized_query`、`sparse_expansion` 和 `protected_tokens`，其既有 chunk metadata 与 rerank 消费保持不变。
 
@@ -34,7 +34,7 @@
 
 ### 决策 1：意图解析下沉到 RAG graph 内部，而非提到 `plan_rag_turn`
 
-`plan_rag_turn` 当前职责是判断"本轮是否要走 RAG、context_files 是否需要预加载"。把 intent 解析放进去会让它跨两层抽象（session 级 + query 级），且 OPTIONAL_TOOL 模式下 Agent 决定调用 search_knowledge_base 时已经丢失了 `plan_rag_turn` 的解析结果。
+`plan_rag_turn` 当前职责是通过 context_files 与既有通用文档检索关键词判断"本轮是否要走 RAG、context_files 是否需要预加载"。该确定性 session gate 不是 precise/comprehensive intent classifier。把 QueryPlan 或 sub-query 解析放进去会让它跨两层抽象（session 级 + retrieval intent），且 OPTIONAL_TOOL 模式下 Agent 决定调用 search_knowledge_base 时已经丢失了 `plan_rag_turn` 的解析结果。
 
 下沉到 RAG graph 内部后，无论从 FORCED_PRELOAD 还是 OPTIONAL_TOOL 进入 `run_rag_graph()`，第一步都是 `intent_parse`，意图解析对调用方式透明。
 
@@ -96,11 +96,14 @@ class ComprehensiveQueryPlan:
     sub_queries: list[SubQuery]
     coverage_domains: list[str]
     postprocess_profile: str = "quality_first_v1"
+    retrieval_scope: RetrievalScope
 ```
 
 两者通过 union type `QueryPlan = PreciseQueryPlan | ComprehensiveQueryPlan` 在 RAGState 中表达。
 
 `ComprehensiveQueryPlan.clean_query` 由运行时 query preparation 确定性写入，不属于 LLM structured output。它是 comprehensive baseline branch 的源文本；该 branch 后续仍独立完成 semantic-query preparation 与 terminology preflight，不能把 `clean_query` 直接当作 normalization 结果。
+
+`RetrievalScope` 是运行时确定性结构解析结果，不属于 LLM schema。它携带 `scope_mode`、`matched_files`、`doc_hints`、`anchors`、`heading_hint` 和来源，并由 baseline 与全部生成 sub-query 共享。共享的是 scope 语义而不是无条件硬过滤：普通 `《文档名》` 在 comprehensive 查询中默认解析为 boost，允许每个 branch 继续检索全局语料；只有“仅在/仅限/检索范围限定为”等明确封闭措辞或显式 `context_files` 才解析为 filter。Intent-routing 不根据局部召回动态放宽 filter；放宽属于 `rag-multilevel-fallback` Level 2。
 
 这两个 plan 只表达检索编排，不承载 query semantic entities。现有 terminology preflight 在 graph 的独立状态中提供规范化和 sparse expansion；`entity_types` / `term_match_count` 仍是 terminology 产生的 chunk metadata，不是 QueryPlan 字段。
 
@@ -124,6 +127,7 @@ classifier 关闭不是运行时失败：trace 记录 classifier disabled 和 co
 2. 未匹配到文件的 `《...》` 文档提示、未被结构解析器消费的文本和其中术语必须保留，不能因为外观像结构提示就丢弃。
 3. `semantic_query` 是进入 terminology 前的最终检索基底；它可在 `clean_query` 基础上继续删除已经成功转成 scope 的型号等冗余 token，但不得删除没有对应结构约束的内容。
 4. intent LLM 只给出 intent、结构提示和目标粒度，不生成 terminology canonical 值，不负责 query normalization。
+5. comprehensive 成功解析文档提示后，消费 span 的同时必须把 scope 保存到 `ComprehensiveQueryPlan.retrieval_scope`；不得只删除文档名而丢弃约束。普通文档提示默认 boost，明确封闭措辞或 context_files 才 filter。
 
 terminology preflight 在结构解析之后执行，输入必须是 `semantic_query`；comprehensive 路径由 `clean_query` 构造的 baseline branch 与每个实际 sub-query 都必须独立执行相同 preflight。其输出按固定职责消费：
 
@@ -140,6 +144,8 @@ semantic_query / sub_query.query
 
 该顺序确保文档名中的领域词在成功限域后只作为 scope 消费，不再以 terminology 形式重复进入 dense/BM25；如果文档名未解析成功，则它仍留在检索文本中并可正常命中 terminology。
 
+Precise 路径进入既有 HyDE/step-back fallback 时，只替换该次检索使用的 `semantic_query`，必须继承初始 `PreciseQueryPlan` 的 matched_files、scope_mode、anchors、heading_hint 等确定性结构约束，并保留原始 raw_query 作为审计输入。扩展文本仍独立执行 terminology preflight；Level 1 query expansion 不得隐式把 filter/boost 改为 global，scope relax 仍只属于 fallback Level 2。
+
 ### 决策 6：模型选择优先级
 
 意图分类优先使用配置项 `RAG_INTENT_CLASSIFIER_MODEL` 指定的模型；未配置时默认使用 FAST_MODEL。评测不达标时，按以下顺序尝试更大模型：
@@ -149,7 +155,7 @@ semantic_query / sub_query.query
 
 ### 决策 7：综合分析只采用 graph 内并行检索
 
-ComprehensiveQueryPlan 在运行时固定构造一个 `branch_id="baseline"`、`branch_kind="baseline"` 的检索分支，其源文本是确定性 `clean_query`；它与全部 LLM sub-query 在同一次 `run_rag_graph()` 调用内并行检索，并由 effective `ComprehensivePostprocessPolicy` 完成 branch rerank、merge 和共享后处理。baseline 不是 LLM 输出、不是 coverage domain，也不写回 `sub_queries`。`sub_query_count` 只统计 LLM 生成项，真实执行量另记为 `retrieval_branch_count = sub_query_count + 1`。Chat Agent 只接收 graph 的最终检索结果，不读取 QueryPlan、不逐个调用 branch，也不参与检索决策。现有 `search_knowledge_base(query)` 单次工具接口和每轮一次调用限制保持不变。
+ComprehensiveQueryPlan 在运行时固定构造一个 `branch_id="baseline"`、`branch_kind="baseline"` 的检索分支，其源文本是确定性 `clean_query`；它与受 fanout 上限约束的 LLM sub-query 在同一次 `run_rag_graph()` 调用内并行检索。graph 在 embedding/Milvus 调用前按 priority 数字升序保留 sub-query，同 priority 保持 LLM 原始顺序；默认最多保留 4 个，可由 `RAG_COMPREHENSIVE_MAX_SUB_QUERIES` 调整，但运行时硬上限为 8。截断后的 effective QueryPlan 写回 graph state，使 rerank、merge、reservation 和 confidence 只消费实际执行分支。每个 branch 使用自己的 query 文本执行 terminology preflight，同时继承 plan 的同一 `retrieval_scope`，不得自行放宽 filter。随后由 effective `ComprehensivePostprocessPolicy` 完成 branch rerank、merge 和共享后处理。baseline 不是 LLM 输出、不是 coverage domain，也不写回 `sub_queries`。`requested_sub_query_count` 记录 LLM 请求项总数，`sub_query_count` 只统计实际执行的生成项，真实执行量记为 `retrieval_branch_count = sub_query_count + 1`。Chat Agent 只接收 graph 的最终检索结果，不读取 QueryPlan、不逐个调用 branch，也不参与检索决策。现有 `search_knowledge_base(query)` 单次工具接口和每轮一次调用限制保持不变。
 
 本 change 不提供 `multi_turn` / `parallel` 模式开关，也不设计根据中间检索结果动态增加、删除或调整 sub-query 的循环。结果驱动的 multi-turn 检索仅作为候选 enhancement 记录；若未来计划上线，必须通过独立 OpenSpec change 明确状态、预算和停止条件，并以 A/B 实验验证质量收益相对于延迟与成本的影响。
 
@@ -178,9 +184,9 @@ merge_sub_query_results：
   -> comprehensive confidence gate（全局一次）
 ```
 
-跨 query 不平均 dense、BM25 或 CrossEncoder 原始 score；这些 score 只在各自 branch 内产生 local rank。merge 使用 local rank 的 priority-weighted RRF。baseline 使用固定中性 effective priority `2`，LLM sub-query 使用其 schema priority。重复 chunk 只保留一份，并携带 `matched_branch_ids`、`per_branch_local_rank`、`per_branch_rerank_score`、`best_local_rank`、`baseline_matched` 和仅对生成分支计数的 `coverage_count`。leaf 被 auto_merge 替换为 parent 时，上述 provenance 必须求并集并保留可追溯的最佳 local rank。
+跨 query 不平均 dense、BM25 或 CrossEncoder 原始 score；这些 score 只在各自 branch 内产生 local rank。merge 使用 local rank 的 priority-weighted RRF。baseline 使用固定中性 effective priority `2`，LLM sub-query 使用其 schema priority。重复 chunk 只保留一份，并携带 `matched_branch_ids`、`per_branch_local_rank`、`per_branch_rerank_score`、`best_local_rank`、`multi_query_rrf_score`、`baseline_matched` 和仅对生成分支计数的 `coverage_count`。leaf 被 auto_merge 替换为 parent 时，上述 provenance 必须求并集并保留可追溯的最佳 local rank；parent 的 `multi_query_rrf_score` 继承 contributing leaves 的最大值，以保留已有排名信号而不因 parent 聚合重复累加。
 
-branch diagnostics 记录 baseline 与每个 sub-query 的 branch_kind、candidate_count、top score/rank、耗时与错误，供 trace 和后续 fallback Level 1 定位失败的生成分支；baseline 失败只记录诊断，不作为 Level 1 rewrite 目标。branch diagnostics 不是独立 confidence gate。最终 confidence 只在共享 top-k 后执行，并可消费生成 sub-query representation 与 `baseline_matched` 信号。
+branch diagnostics 记录 baseline 与每个 sub-query 的 branch_kind、candidate_count、top score/rank、耗时、错误以及共享 retrieval_scope 的 mode/source/matched_files，顶层 trace 同样记录该 scope，供 API/history、评测和后续 fallback Level 1 验证 boost/filter 实际语义并定位失败的生成分支；baseline 失败只记录诊断，不作为 Level 1 rewrite 目标。branch diagnostics 不是独立 confidence gate。最终 confidence 只在共享 top-k 后执行，并可消费生成 sub-query representation 与 `baseline_matched` 信号。
 
 最终选择采用静态 branch reservation，不建立证据账本，也不触发 multi-turn。reservation 只作用于成功的 LLM sub-query：当 `top_k >= successful_generated_branch_count` 时，每个成功生成分支至少保留一个候选，剩余位置按全局排序填充；当成功生成分支数超过 top_k 时，按 SubQuery.priority、稳定 branch id 和 global rank 决定保留顺序。baseline 不占 reservation 席位，只能凭合并后的 global rank 进入剩余位置，因此不会稀释已规划的 coverage domain。
 
@@ -212,11 +218,11 @@ quality_first_v1
 
 `RAG_COMPREHENSIVE_POSTPROCESS_PROFILE` 默认 `quality_first_v1`。未知 profile 必须降级到该默认值并记录结构化配置 warning 与 effective profile；不得部分接受一个非法组合。未来增加便宜 profile 时，必须以新的版本化 registry entry 整体加入并提供组合契约测试，避免独立环境开关形成未经验证的笛卡尔积。
 
-`RERANK_CANDIDATE_POOL_SIZE` 在 comprehensive 路径是 baseline 与全部生成分支共享的全局 rerank 输出候选预算，不按 branch 复制。CrossEncoder pair budget 独立解析：当前 device tier 的 `RERANK_INPUT_K_CPU/GPU` 大于 0 时作为全局 pair cap，否则回退到全局输出候选预算。预算先给每个可执行 branch 最小配额，剩余按 effective priority 分配；baseline 的 effective priority 固定为 `2`。预算不足覆盖所有分支时，未获 CrossEncoder 配额的分支保留 Milvus local rank 并在 trace 标记 `branch_rerank_budget_exhausted=true`，不能清空其候选。
+`RERANK_CANDIDATE_POOL_SIZE` 在 comprehensive 路径是 baseline 与全部生成分支共享的全局 rerank 输出候选预算，不按 branch 复制，并复用 precise 的 effective pool 规则：未配置/`<=0` 回退到 `top_k*4`，过小的正值提升到 final `top_k`，最后受实际候选总数限制。CrossEncoder pair budget 独立解析：当前 device tier 的 `RERANK_INPUT_K_CPU/GPU` 大于 0 时作为全局 pair cap，否则回退到全局输出候选预算。预算先给每个可执行 branch 最小配额，剩余按 effective priority 分配；baseline 的 effective priority 固定为 `2`。预算不足覆盖所有分支时，未获 CrossEncoder 配额但拥有 output 配额的分支在该配额内保留 Milvus local rank，并在 trace 标记 `branch_rerank_budget_exhausted=true`；pair 配额小于 output 配额时，CrossEncoder local rank 在前，未配对尾部按 Milvus local rank 补足 output 配额。output 配额为 0 的分支不向 merge 传入候选。成功、部分 pair、无 pair、rerank 异常和 no-CrossEncoder 消融路径都必须执行相同 output quota，使实际 merge pool 与 trace used budget 一致。
 
 ### 决策 10：综合后处理成本必须评测后才能上线
 
-`quality_first_v1` 明确是质量优先基线，不假定其成本可接受。上线评测必须至少记录：LLM sub-query count、包含 baseline 的 retrieval branch count、baseline 独立命中/最终入选率、dense/sparse embedding 调用数、hybrid search 调用数、rerank pair 总量、各分支与合并候选数、merge/postprocess 耗时、端到端 P50/P95、CPU/GPU 峰值与错误/降级率，并绑定质量指标（生成分支代表率、引用有效性、回答质量）。
+`quality_first_v1` 明确是质量优先基线，不假定其成本可接受。上线评测必须至少记录：LLM requested/executed/truncated sub-query count、包含 baseline 的 retrieval branch count、baseline 独立命中/最终入选率、dense/sparse embedding 调用数、hybrid search 调用数、rerank pair 总量、各分支与合并候选数、merge/postprocess 耗时、端到端 P50/P95、CPU/GPU 峰值与错误/降级率，并绑定质量指标（生成分支代表率、引用有效性、回答质量）。错误/降级率同时消费顶层 stage_errors、branch_errors 与 branch diagnostics 的 error，避免保留候选的 branch-local rerank 降级被误报为成功。paired run 使用 version 2 source fingerprint：对排序后的固定证据文件以及全部 `backend/rag/**/*.py`、`backend/infra/**/*.py`、`backend/shared/**/*.py` 求哈希，确保 trace identity、terminology preflight、embedding/vector retrieval 等传递依赖变化都会使对照失配，而不是只绑定 graph 入口文件。
 
 评测必须包含至少一个消融对照：保留相同 parallel retrieval 和 weighted-RRF merge，但关闭 branch CrossEncoder，只使用 Milvus local rank。该对照可作为 eval-only profile，不得在没有独立质量证据时成为生产默认。默认开启 intent classifier/comprehensive 路径前，必须形成质量增益相对于延迟和资源成本的评测结论；阈值在基线运行后确定，不在设计中伪造固定数值。
 
@@ -236,6 +242,30 @@ quality_first_v1
 
 具体数值在标注完成后根据模型初评结果设定。不达标时，升级模型而非微调。
 
+### 决策 12：以 validation-only 配置验证 anchor 工作流，不改变结构清洗规则
+
+成功解析的 anchor 已从自由文本转换为结构化约束，因此继续按决策 5 从 semantic query 移除。不能仅依据 `HEADING_LEXICAL_ENABLED` 的状态推断 anchor 是否在整条链路被消费：heading lexical 直接以 anchor 重排已有候选，confidence anchor gate 用它判断结果匹配，现有 fallback 又可能根据 `anchor_mismatch` 发起补偿检索。反过来，任何单个开关启用也不能证明整条能力完整。
+
+本 change 增加 `.env.rag-intent-routing-workflow.example`，仅供受控工作流验证时成组开启：
+
+```text
+RAG_INTENT_CLASSIFIER_ENABLED=true
+QUERY_PLAN_ENABLED=true
+HEADING_LEXICAL_ENABLED=true
+CONFIDENCE_GATE_ENABLED=true
+ENABLE_ANCHOR_GATE=true
+RAG_FALLBACK_ENABLED=true
+```
+
+该文件不改变运行时默认值，不是生产推荐配置。只有在真实 FAST_MODEL / release Milvus 上完成 paired A/B、成本评测及 fallback 行为验证后，才可通过单独 enablement change 讨论升级。多个独立开关缺少统一 capability configuration 约束是根因，但统一 profile、启动时约束或隐式联动均不在本 change 重新设计；由 `docs/known-issues/anchor-capability-configuration.md` 持续治理。
+
+验证期间还必须区分两个已确认问题面：
+
+- extraction mismatch：query preparation、confidence 与 chunk heading normalizer 支持的 anchor 类型和规范化规则并不一致，且 LLM additional anchors 可引入前两者未共享的 surface form。
+- fallback contract gap：当前 precise confidence 会从 raw query 重提取 anchor，rewrite 输出可能把已消费 anchor 写回 semantic query；未来 Level 2 放宽 scope 后尚无不变量保证仍有 anchor 消费者；comprehensive shared postprocess 虽可产出 fallback 信号，但 graph 尚未接入 precise 的 grade/rewrite fallback 子图。
+
+这两类发现不通过“把 anchor 留在 semantic query”绕过，而作为统一 capability/anchor contract 的退出条件记录。
+
 ## Risks / Trade-offs
 
 **风险 1：LLM 输出不稳定**
@@ -254,7 +284,7 @@ quality_first_v1
 缓解：
 - 评测集中精确查找样本占 70%，确保模型在大头场景上达标
 - 评测不达标时升级模型（默认 → GRADE_MODEL → MODEL），不微调
-- 引入 `intent_confidence` 字段，置信度低于阈值时偏向 precise（保守选择）
+- 记录 `intent_confidence` 供评测与灰度观测；v1 不在缺少真实基线时伪造阈值或改写模型 intent，后续若引入低置信度保守路由必须通过独立 change 和评测确定阈值
 
 **风险 3：综合分析的 sub_query 质量取决于 LLM**
 
@@ -306,5 +336,5 @@ baseline 与每个 sub-query 都需要 dense/BM25 embedding、Milvus hybrid sear
 ## 依赖与衔接
 
 - **与 `rag-terminology-module` 顺序衔接**：intent/结构解析先确定 semantic query，terminology preflight 再提供术语规范化、sparse expansion 和术语 metadata；intent classifier 不读取或输出 entities，QueryPlan 不拥有 terminology 字段。当前 `term_match_count` 与 `entity_types` 的可选 rerank fusion 行为保持不变。
-- **被 `rag-multilevel-fallback` 依赖**：fallback 的 Level 1 rewrite router 需要 ComprehensiveQueryPlan 作为输入；Level 2 scope relax 需要 PreciseQueryPlan 的 scope_mode 字段。
+- **被 `rag-multilevel-fallback` 依赖**：fallback 的 Level 1 rewrite router 需要 ComprehensiveQueryPlan 作为输入；Level 2 scope relax 需要读取 PreciseQueryPlan.scope_mode 或 ComprehensiveQueryPlan.retrieval_scope.scope_mode。intent-routing 内部不执行该放宽。
 - **修改 `rag-postprocess-pipeline`**：precise 保持 shared-postprocess-v1；comprehensive 以 clean-query baseline + LLM sub-query 构成 retrieval branches，在 branch-local rerank 后插入 multi-query merge，再复用一次 auto-merge / step-chain / structure-rerank / top-k / confidence，并增加全局预算与 branch provenance 契约。
