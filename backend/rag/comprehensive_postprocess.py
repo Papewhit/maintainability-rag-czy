@@ -644,6 +644,11 @@ def _inherit_parent_provenance(before: Sequence[dict], after: Sequence[dict]) ->
                     ranks[branch_id] = next_rank
                     if branch_id in (doc.get("per_branch_rerank_score") or {}):
                         scores[branch_id] = float(doc["per_branch_rerank_score"][branch_id])
+        multi_query_scores = [
+            float(doc["multi_query_rrf_score"])
+            for doc in contributors
+            if doc.get("multi_query_rrf_score") is not None
+        ]
         item.update({
             "matched_branch_ids": branch_ids,
             "per_branch_local_rank": ranks,
@@ -652,6 +657,8 @@ def _inherit_parent_provenance(before: Sequence[dict], after: Sequence[dict]) ->
             "baseline_matched": any(bool(doc.get("baseline_matched")) for doc in contributors),
             "coverage_count": sum(1 for branch_id in branch_ids if branch_id != "baseline"),
         })
+        if multi_query_scores:
+            item["multi_query_rrf_score"] = max(multi_query_scores)
         result.append(item)
     return result
 

@@ -184,7 +184,7 @@ merge_sub_query_results：
   -> comprehensive confidence gate（全局一次）
 ```
 
-跨 query 不平均 dense、BM25 或 CrossEncoder 原始 score；这些 score 只在各自 branch 内产生 local rank。merge 使用 local rank 的 priority-weighted RRF。baseline 使用固定中性 effective priority `2`，LLM sub-query 使用其 schema priority。重复 chunk 只保留一份，并携带 `matched_branch_ids`、`per_branch_local_rank`、`per_branch_rerank_score`、`best_local_rank`、`baseline_matched` 和仅对生成分支计数的 `coverage_count`。leaf 被 auto_merge 替换为 parent 时，上述 provenance 必须求并集并保留可追溯的最佳 local rank。
+跨 query 不平均 dense、BM25 或 CrossEncoder 原始 score；这些 score 只在各自 branch 内产生 local rank。merge 使用 local rank 的 priority-weighted RRF。baseline 使用固定中性 effective priority `2`，LLM sub-query 使用其 schema priority。重复 chunk 只保留一份，并携带 `matched_branch_ids`、`per_branch_local_rank`、`per_branch_rerank_score`、`best_local_rank`、`multi_query_rrf_score`、`baseline_matched` 和仅对生成分支计数的 `coverage_count`。leaf 被 auto_merge 替换为 parent 时，上述 provenance 必须求并集并保留可追溯的最佳 local rank；parent 的 `multi_query_rrf_score` 继承 contributing leaves 的最大值，以保留已有排名信号而不因 parent 聚合重复累加。
 
 branch diagnostics 记录 baseline 与每个 sub-query 的 branch_kind、candidate_count、top score/rank、耗时、错误以及共享 retrieval_scope 的 mode/source/matched_files，顶层 trace 同样记录该 scope，供 API/history、评测和后续 fallback Level 1 验证 boost/filter 实际语义并定位失败的生成分支；baseline 失败只记录诊断，不作为 Level 1 rewrite 目标。branch diagnostics 不是独立 confidence gate。最终 confidence 只在共享 top-k 后执行，并可消费生成 sub-query representation 与 `baseline_matched` 信号。
 

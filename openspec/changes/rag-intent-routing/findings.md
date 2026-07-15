@@ -426,3 +426,17 @@ last_verified_date: 2026-07-15
 - Disposition: validation
 - Disposition target: docs/validation/rag-intent-routing-evaluation.md
 - Resolution evidence: `summarize_comprehensive_runs()` uses a shared error predicate for both error_rate and degradation_rate.
+
+## RAG-INTENT-F031
+
+- Kind: behavior_defect
+- Primary scope: rag.comprehensive.auto_merge_provenance
+- Evidence status: confirmed
+- Observation: When comprehensive auto-merge replaced leaf candidates with a parent, branch ids/ranks were repaired but the public `multi_query_rrf_score` was not inherited.
+- Inference: Parent chunks lost the cross-query ranking signal whenever auto-merge fired, making trace/API evaluation inconsistent with non-merged candidates.
+- Decision: Inherit the maximum `multi_query_rrf_score` among contributing leaves while unioning parent provenance. Maximum preserves the strongest existing rank signal without inflating it by summing multiple child representations.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; the shared structural pipeline red/green test reproduces a two-leaf parent replacement and verifies the inherited score.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `_inherit_parent_provenance()` now restores the multi-query score together with branch ids, ranks, baseline state, and coverage.

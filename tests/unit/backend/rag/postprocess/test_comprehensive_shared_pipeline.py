@@ -324,9 +324,13 @@ def test_shared_structural_stages_execute_once_and_parent_inherits_provenance():
         ),
     ]
     calls = {"auto": 0, "step": 0, "structure": 0, "confidence": 0}
+    expected_parent_rrf = {}
 
     def auto_merge(docs, top_k):
         calls["auto"] += 1
+        expected_parent_rrf["score"] = max(
+            doc["multi_query_rrf_score"] for doc in docs
+        )
         return [{"chunk_id": "parent", "merged_from_children": True}], {"auto_merge_applied": True}
 
     def step_chain(docs, top_k):
@@ -356,6 +360,9 @@ def test_shared_structural_stages_execute_once_and_parent_inherits_provenance():
     assert docs[0]["matched_branch_ids"] == ["baseline", "sub_query_0"]
     assert docs[0]["baseline_matched"] is True
     assert docs[0]["coverage_count"] == 1
+    assert docs[0]["multi_query_rrf_score"] == pytest.approx(
+        expected_parent_rrf["score"]
+    )
     assert trace["shared_postprocess_count"] == 1
     assert trace["shared_postprocess_version"] == "shared-postprocess-v1"
     assert trace["timings"]["auto_merge_ms"] >= 0

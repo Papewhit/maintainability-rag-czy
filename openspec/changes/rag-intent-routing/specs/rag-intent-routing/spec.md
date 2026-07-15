@@ -120,7 +120,7 @@ Comprehensive 路径 MUST 对 clean-query baseline 与每个 sub-query 执行 qu
 
 #### Scenario: 共享结构后处理
 - **WHEN** 跨 query merge 产生统一候选池
-- **THEN** 按顺序执行 `auto_merge → step_chain_check → structure_rerank → branch-aware top_k → comprehensive confidence_gate`；parent 替换 leaf 时保留并合并 matched_branch_ids、baseline_matched 与 local-rank provenance
+- **THEN** 按顺序执行 `auto_merge → step_chain_check → structure_rerank → branch-aware top_k → comprehensive confidence_gate`；parent 替换 leaf 时保留并合并 matched_branch_ids、baseline_matched 与 local-rank provenance，并继承 contributing leaves 中最高的 `multi_query_rrf_score`，不得在 parent 输出中丢失跨 query 排名信号
 
 #### Scenario: branch-aware top-k
 - **WHEN** successful_generated_branch_count 小于等于 top_k
