@@ -54,6 +54,8 @@ def test_retrieve_initial_consumes_precise_plan_and_preserves_intent_trace():
         raw_query="raw query",
         clean_query="clean query",
         semantic_query="semantic query",
+        scope_mode="filter",
+        matched_files=(("manual.pdf", 1.0),),
     )
     intent_result = IntentParseResult(
         intent="precise_lookup",
@@ -95,6 +97,7 @@ def test_retrieve_initial_consumes_precise_plan_and_preserves_intent_trace():
 
     assert retrieve.call_args.args[0] == "raw query"
     assert retrieve.call_args.kwargs["query_plan"] is plan
+    assert retrieve.call_args.kwargs["strict_scope_filter"] is True
     assert "query_entities" not in retrieve.call_args.kwargs
     assert result["rag_trace"]["intent_confidence"] == 0.9
     assert result["term_matches"] == [{"surface": "query"}]

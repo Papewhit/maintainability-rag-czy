@@ -344,6 +344,7 @@ def retrieve_initial(state: RAGState) -> RAGState:
     query_plan = state.get("query_plan")
     if isinstance(query_plan, PreciseQueryPlan):
         retrieve_kwargs["query_plan"] = query_plan
+        retrieve_kwargs["strict_scope_filter"] = query_plan.scope_mode == "filter"
     retrieved = retrieve_documents(query, **retrieve_kwargs)
     results = retrieved.get("docs", [])
     attached_docs = []
@@ -936,6 +937,10 @@ def _expanded_query_plan(state: RAGState, query: str) -> PreciseQueryPlan | None
     return replace(plan, semantic_query=query)
 
 
+def _strict_scope_filter_for_plan(plan: PreciseQueryPlan | None) -> bool:
+    return isinstance(plan, PreciseQueryPlan) and plan.scope_mode == "filter"
+
+
 def _candidate_retrieval_job(
     query: str,
     context_files: list[str],
@@ -948,6 +953,7 @@ def _candidate_retrieval_job(
         context_files=context_files,
         candidate_k=candidate_k,
         query_plan=query_plan,
+        strict_scope_filter=_strict_scope_filter_for_plan(query_plan),
     )
 
 
@@ -1135,6 +1141,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
                     top_k=5,
                     context_files=context_files,
                     query_plan=_expanded_query_plan(state, hypothetical_doc),
+                    strict_scope_filter=_strict_scope_filter_for_plan(state.get("query_plan")),
                 )
             ),
             "step_back": _submit_with_context(
@@ -1143,6 +1150,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
                     top_k=5,
                     context_files=context_files,
                     query_plan=_expanded_query_plan(state, expanded_query),
+                    strict_scope_filter=_strict_scope_filter_for_plan(state.get("query_plan")),
                 )
             ),
         }
@@ -1163,6 +1171,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
                     top_k=5,
                     context_files=context_files,
                     query_plan=_expanded_query_plan(state, hypothetical_doc),
+                    strict_scope_filter=_strict_scope_filter_for_plan(state.get("query_plan")),
                 )
             )
             retrieved_hyde = _await_with_deadline(future, fallback_deadline, rag_trace, "hyde_retrieve", "initial_retrieval")
@@ -1213,6 +1222,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
                     top_k=5,
                     context_files=context_files,
                     query_plan=_expanded_query_plan(state, expanded_query),
+                    strict_scope_filter=_strict_scope_filter_for_plan(state.get("query_plan")),
                 )
             )
             retrieved_stepback = _await_with_deadline(future, fallback_deadline, rag_trace, "stepback_retrieve", "initial_retrieval")

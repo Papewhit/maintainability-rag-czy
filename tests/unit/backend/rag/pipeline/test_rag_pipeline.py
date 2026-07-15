@@ -140,6 +140,7 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertTrue(all(plan.scope_mode == "filter" for plan in fallback_plans))
         self.assertTrue(all(plan.matched_files == scoped_plan.matched_files for plan in fallback_plans))
         self.assertTrue(all(plan.anchors == scoped_plan.anchors for plan in fallback_plans))
+        self.assertTrue(all(kwargs["strict_scope_filter"] is True for kwargs in retrieval_kwargs))
         self.assertFalse(result["rag_trace"].get("fallback_timed_out", False))
         self.assertEqual(result["rag_trace"]["retrieval_stage"], "expanded")
 
@@ -203,6 +204,7 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertEqual(fallback_plan.scope_mode, "filter")
         self.assertEqual(fallback_plan.matched_files, scoped_plan.matched_files)
         self.assertEqual(fallback_plan.anchors, scoped_plan.anchors)
+        self.assertTrue(pool.call_args.kwargs["strict_scope_filter"])
         finish.assert_called_once()
         self.assertEqual(
             finish.call_args.kwargs["query_term_matches"],
@@ -286,6 +288,7 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertTrue(all(plan.raw_query == scoped_plan.raw_query for plan in fallback_plans))
         self.assertTrue(all(plan.scope_mode == "filter" for plan in fallback_plans))
         self.assertTrue(all(plan.matched_files == scoped_plan.matched_files for plan in fallback_plans))
+        self.assertTrue(all(kwargs["strict_scope_filter"] is True for kwargs in retrieval_kwargs))
         self.assertEqual(result["rag_trace"]["fallback_second_pass_mode"], "candidate_only")
         self.assertEqual(result["rag_trace"]["candidate_only_pass_rerank_execution_mode"], "skipped_candidate_only")
         self.assertEqual(result["rag_trace"]["final_rerank_execution_mode"], "executed")

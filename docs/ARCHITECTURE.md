@@ -128,7 +128,7 @@ intent_parse
 
 `ComprehensiveQueryPlan.retrieval_scope` carries one deterministic document-scope meaning across the baseline and every generated branch. Ordinary resolved `《document》` hints are shared boosts, so branches may still search the global corpus. Explicitly closed wording and `context_files` produce a shared hard filter. Branches never relax that filter inside intent routing; scope relaxation belongs to fallback Level 2.
 
-On the precise path, HyDE and step-back fallback retrievals replace only the plan's semantic retrieval text. They retain the original raw query and deterministic file/scope/anchor constraints, so Level 1 query expansion cannot silently become scope relaxation; expanded text performs its own terminology preflight.
+On the precise path, HyDE and step-back fallback retrievals replace only the plan's semantic retrieval text. They retain the original raw query and deterministic file/scope/anchor constraints, so Level 1 query expansion cannot silently become scope relaxation; expanded text performs its own terminology preflight. A precise `scope_mode="filter"` is passed as a strict filter for initial, full expanded, and candidate-only expanded retrieval, while `boost` alone permits an unfiltered global reserve (`RAG-INTENT-F027`).
 
 ## Shared Evidence Postprocess
 

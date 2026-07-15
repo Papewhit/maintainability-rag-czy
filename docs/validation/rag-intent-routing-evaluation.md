@@ -6,7 +6,7 @@ scope: evaluation.rag.intent_routing
 source_commit: 2f5480d2add5d0e43aa086a80960360e9f272bfb
 source_fingerprint: sha256:28c0cf97cdcc393559924478387f42f88ff30f28f9dfd8654c3d2195985baadc
 executed_at: 2026-07-15T04:08:22Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026]
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027]
 supersedes: []
 ---
 
@@ -64,7 +64,7 @@ The rerank query contract accepts only `query_term_matches`, populated from term
 
 `backend/rag/observability.py` provides pure aggregation over supplied `rag_trace` records into classifier P50/P95, failure/fallback rates, intent share, comprehensive profile and fan-out buckets, baseline rates, retrieval/rerank costs, budget exhaustion, and merge/postprocess/end-to-end P50/P95. Public trace retains `semantic_query`, `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens`, so terminology offsets and actual dense/BM25 composition remain inspectable. Public retrieved chunks retain candidate-level branch provenance. Merge degradation retains the provenance-annotated branch union and exposes skipped/error state plus branch, merged, unique, and deduplicated candidate counts. Branch rerank keeps independently allocated output quota by filling any unpaired tail from Milvus local rank. Metadata-only retrieval and CrossEncoder failures enter branch error diagnostics without dropping candidates and inform comprehensive confidence when a generated branch is empty. This change does not connect a persisted trace reader, exporter, dashboard, or alerting sink.
 
-Comprehensive structural resolution is also contract-tested: a resolved ordinary document hint becomes a shared boost scope, while explicit closed wording and context_files become a shared filter. Baseline and every generated branch receive the same typed scope; no branch dynamically relaxes a filter. Precise Level 1 HyDE and step-back fallback likewise preserve the initial typed scope while replacing only the branch `semantic_query`; each rewritten query runs terminology preflight independently. Default-off compatibility traces retain `query_plan_enabled=false` even though the graph carries an inert compatibility plan object.
+Comprehensive structural resolution is also contract-tested: a resolved ordinary document hint becomes a shared boost scope, while explicit closed wording and context_files become a shared filter. Baseline and every generated branch receive the same typed scope; no branch dynamically relaxes a filter. Precise initial and Level 1 HyDE/step-back retrievals propagate `scope_mode="filter"` as a strict filter, preserve the initial typed scope while replacing only the branch `semantic_query`, and run terminology preflight independently. Boost plans retain the global reserve. Default-off compatibility traces retain `query_plan_enabled=false` even though the graph carries an inert compatibility plan object.
 
 ## Inputs
 

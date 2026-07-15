@@ -63,7 +63,11 @@ RAG graph MUST 在检索前以确定性顺序执行结构解析、query cleaning
 
 #### Scenario: precise fallback 保留结构约束
 - **WHEN** 带有 filter/boost、matched_files 或 anchors 的 PreciseQueryPlan 进入 HyDE/step-back 扩展检索
-- **THEN** 每个扩展检索只以该扩展文本替换 semantic_query，并独立执行 terminology preflight；原 raw_query 与结构约束必须继承，MUST NOT 因扩展文本不含原文档提示而重建为无约束 global plan；scope relax 只由 fallback Level 2 执行
+- **THEN** 每个扩展检索只以该扩展文本替换 semantic_query，并独立执行 terminology preflight；原 raw_query 与结构约束必须继承；`scope_mode="filter"` 在初始与全部扩展检索中都必须传为 hard filter，`boost` 才允许 global reserve；MUST NOT 因扩展文本不含原文档提示而重建为无约束 global plan；scope relax 只由 fallback Level 2 执行
+
+#### Scenario: precise filter 不混入 global reserve
+- **WHEN** PreciseQueryPlan 由 context_files 或明确封闭语义形成 `scope_mode="filter"`
+- **THEN** candidate preparation 只执行 scoped filtered retrieval，不合并 unfiltered global reserve；只有 fallback Level 2 可以显式放宽该 filter
 
 ### Requirement: comprehensive 共享 retrieval scope
 ComprehensiveQueryPlan MUST 携带运行时确定性生成的 typed `retrieval_scope`。成功消费的文档提示对应的 `matched_files`、scope mode 与结构提示 MUST 保存在该 scope 中，并由 baseline 与全部生成 sub-query 共享；不得在删除文档名后把 branch 降为无约束全局检索。共享 scope MUST 区分 boost 与 filter，MUST NOT 把普通文档提示无条件升级为硬过滤。

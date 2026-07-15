@@ -370,3 +370,17 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `decompose_and_fanout` recognizes `retrieval_mode="failed"` and populates `BranchRetrievalResult.error`; the focused red/green graph test passes.
+
+## RAG-INTENT-F027
+
+- Kind: behavior_defect
+- Primary scope: rag.retrieval.precise_scope_filter
+- Evidence status: confirmed
+- Observation: Precise retrieval passed a `scope_mode="filter"` QueryPlan into candidate preparation without setting `strict_scope_filter`. Candidate preparation therefore used the scoped-plus-global-reserve path intended for boosts and could admit out-of-scope chunks.
+- Inference: Explicit single-document/context-file lookups and their Level 1 expansions could violate the accepted closed-scope contract; preserving the plan object alone did not enforce the filter.
+- Decision: Derive `strict_scope_filter` from the typed PreciseQueryPlan at every initial, full expanded, and candidate-only expanded retrieval call. Boost and none plans continue to pass false.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/rag/pipeline/test_intent_state.py` and `test_rag_pipeline.py` reproduce the missing flag and now cover initial plus full/candidate-only HyDE/step-back paths.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/pipeline.py` propagates hard-filter semantics consistently across the precise path; four focused red/green tests pass.
