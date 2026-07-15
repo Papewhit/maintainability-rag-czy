@@ -3,10 +3,10 @@ document_type: validation_report
 validation_id: VAL-RAG-INTENT-001
 status: partial
 scope: evaluation.rag.intent_routing
-source_commit: a4c8dc4b7163ed062cf880cb81785ffafe2b4f52
-source_fingerprint: sha256:b249eea72896e77ebc434582807fd974cd5c48c849032b641053fc136edd9326
-executed_at: 2026-07-15T00:34:02Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015]
+source_commit: 3fcf876069d22a54ca654a49d7b9ae5ef2941591
+source_fingerprint: sha256:35747dc2ca23f58a10cc14c294618d202daf80027f82382dedac595f14dccae3
+executed_at: 2026-07-15T01:01:03Z
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016]
 supersedes: []
 ---
 
@@ -16,7 +16,7 @@ supersedes: []
 
 This report validates the repeatable evaluation contracts for intent classification, comprehensive parallel retrieval cost/quality comparison, terminology-to-rerank boundaries, and rollout observability. It does not claim that the current FAST_MODEL or production retrieval infrastructure meets an activation threshold.
 
-The bound source fingerprint normalizes line endings to LF and covers the intent/query-plan implementation, graph and postprocess policies, rerank boundary, runtime configuration, evaluation/observability code, OpenSpec design/spec, and both annotated intent datasets. `source_commit` is the committed implementation anchor at the time of this working-tree validation; the fingerprint is the stronger binding for the reviewed source set and must be regenerated after any covered file changes.
+The bound source fingerprint normalizes line endings to LF and covers the public API trace schema, intent/query-plan implementation, graph and postprocess policies, rerank boundary, runtime configuration, evaluation/observability code, OpenSpec design/spec, and both annotated intent datasets. `source_commit` is the committed implementation anchor at the time of this working-tree validation; the fingerprint is the stronger binding for the reviewed source set and must be regenerated after any covered file changes.
 
 ## Method
 
@@ -68,8 +68,8 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 ## Inputs
 
-- Source commit anchor: `a4c8dc4b7163ed062cf880cb81785ffafe2b4f52`
-- Source fingerprint: `sha256:b249eea72896e77ebc434582807fd974cd5c48c849032b641053fc136edd9326`
+- Source commit anchor: `3fcf876069d22a54ca654a49d7b9ae5ef2941591`
+- Source fingerprint: `sha256:35747dc2ca23f58a10cc14c294618d202daf80027f82382dedac595f14dccae3`
 - Dataset: 100 annotated intent samples (70 precise / 30 comprehensive)
 - Profiles: `quality_first_v1` and `eval_no_crossencoder_v1`
 - Environment: Windows, Python 3.12; no FAST_MODEL credentials, Milvus release corpus, or answer/judge model were configured for this run
