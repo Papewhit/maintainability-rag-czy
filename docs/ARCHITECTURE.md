@@ -1,7 +1,7 @@
 ---
 document_type: current_architecture
 status: current
-verified_commit: 3176dddf3aff7344b77bda02ebe0f05a56c1b714
+verified_commit: 1c7a78291d9a01d9acaa445c517706f4b9ec32a5
 last_verified_date: 2026-07-15
 authority: current-system-overview
 ---
