@@ -1,7 +1,7 @@
 ---
 document_type: finding_ledger
 change: rag-intent-routing
-last_verified_commit: de268676f195362589a010c42c68218289754e2b
+last_verified_commit: 5c11537fa659d42cd1b2cf7ebc152fef7fe414ab
 last_verified_date: 2026-07-15
 ---
 
