@@ -146,7 +146,7 @@ Comprehensive 路径的 `RERANK_CANDIDATE_POOL_SIZE` MUST 是 baseline 与全部
 
 #### Scenario: 全局 rerank 预算分配
 - **WHEN** 多个分支竞争有限 rerank budget
-- **THEN** budget policy 分别计算 output candidate budget 与 CrossEncoder pair budget，先分配每个可执行分支（含 baseline）的最小配额，再按 effective priority 分配剩余配额；baseline effective priority 固定为 2；未获 CrossEncoder 配额的分支保留 Milvus local rank 和候选，trace 标记 budget exhaustion，不清空该分支
+- **THEN** budget policy 分别计算 output candidate budget 与 CrossEncoder pair budget，先分配每个可执行分支（含 baseline）的最小配额，再按 effective priority 分配剩余配额；baseline effective priority 固定为 2；未获 CrossEncoder 配额但拥有 output 配额的分支按 Milvus local rank 保留不超过该 output 配额的候选并标记 budget exhaustion；output 配额为 0 的分支不得向 merge 传入候选；任意成功、降级或异常路径传入 merge 的候选总数不得超过全局 output budget
 
 #### Scenario: 禁止候选与查询笛卡尔积
 - **WHEN** 一个 candidate 只由部分 sub-query 召回

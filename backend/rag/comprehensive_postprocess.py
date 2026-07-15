@@ -147,16 +147,33 @@ class CrossEncoderLocalReranker:
         *,
         rerank_fn: RerankFn,
     ) -> BranchRetrievalResult:
-        if not result.candidates or budget.output_candidates <= 0 or budget.pairs <= 0:
+        if not result.candidates:
             meta = {
                 **result.meta,
-                "branch_rerank_budget_exhausted": bool(result.candidates),
+                "branch_rerank_budget_exhausted": False,
                 "allocated_output_budget": budget.output_candidates,
                 "allocated_pair_budget": budget.pairs,
                 "used_output_budget": 0,
                 "used_pair_budget": 0,
             }
-            return BranchRetrievalResult(result.branch, result.candidates, meta, result.error)
+            return BranchRetrievalResult(result.branch, (), meta, result.error)
+
+        local_rank_candidates = tuple(result.candidates[: max(0, budget.output_candidates)])
+        if budget.output_candidates <= 0 or budget.pairs <= 0:
+            meta = {
+                **result.meta,
+                "branch_rerank_budget_exhausted": True,
+                "allocated_output_budget": budget.output_candidates,
+                "allocated_pair_budget": budget.pairs,
+                "used_output_budget": len(local_rank_candidates),
+                "used_pair_budget": 0,
+            }
+            return BranchRetrievalResult(
+                result.branch,
+                local_rank_candidates,
+                meta,
+                result.error,
+            )
 
         pair_docs = list(result.candidates[: budget.pairs])
         term_matches = list(result.meta.get("term_matches") or [])
@@ -167,6 +184,7 @@ class CrossEncoderLocalReranker:
                 top_k=budget.output_candidates,
                 query_term_matches=term_matches,
             )
+            reranked = list(reranked[: budget.output_candidates])
             meta = {
                 **result.meta,
                 **rerank_meta,
@@ -183,11 +201,16 @@ class CrossEncoderLocalReranker:
                 "branch_rerank_budget_exhausted": False,
                 "allocated_output_budget": budget.output_candidates,
                 "allocated_pair_budget": budget.pairs,
-                "used_output_budget": 0,
-                "used_pair_budget": 0,
+                "used_output_budget": len(local_rank_candidates),
+                "used_pair_budget": len(pair_docs),
                 "rerank_error": str(exc),
             }
-            return BranchRetrievalResult(result.branch, result.candidates, meta, str(exc))
+            return BranchRetrievalResult(
+                result.branch,
+                local_rank_candidates,
+                meta,
+                str(exc),
+            )
 
 
 class MilvusRankOnlyReranker:
@@ -203,13 +226,13 @@ class MilvusRankOnlyReranker:
     ) -> BranchRetrievalResult:
         del rerank_fn
         limit = budget.output_candidates
-        candidates = result.candidates[:limit] if limit > 0 else result.candidates
+        candidates = result.candidates[: max(0, limit)]
         meta = {
             **result.meta,
             "branch_rerank_budget_exhausted": limit <= 0 and bool(result.candidates),
             "allocated_output_budget": limit,
             "allocated_pair_budget": 0,
-            "used_output_budget": len(candidates) if limit > 0 else 0,
+            "used_output_budget": len(candidates),
             "used_pair_budget": 0,
             "rerank_applied": False,
         }

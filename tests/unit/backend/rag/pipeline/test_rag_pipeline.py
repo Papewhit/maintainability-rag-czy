@@ -76,6 +76,7 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertEqual(result["rag_trace"]["retrieval_stage"], "initial")
 
     def test_retrieve_expanded_complex_retrievals_run_in_parallel(self):
+        retrieval_kwargs = []
         state = {
             "question": "q",
             "docs": [],
@@ -84,11 +85,14 @@ class RagPipelinePromptTests(unittest.TestCase):
             "expansion_type": "complex",
             "expanded_query": "step query",
             "hypothetical_doc": "hyde query",
-            "rag_trace": {},
+            "rag_trace": {
+                "term_matches": [{"entity_type": "component", "canonical": "initial-only"}],
+            },
             "fallback_deadline": time.perf_counter() + 5,
         }
 
-        def slow_retrieve(query, top_k=5, context_files=None):
+        def slow_retrieve(query, top_k=5, context_files=None, **kwargs):
+            retrieval_kwargs.append(kwargs)
             time.sleep(0.2)
             return {
                 "docs": [{"text": query, "filename": f"{query}.pdf", "chunk_id": query, "score": 0.9}],
@@ -109,6 +113,8 @@ class RagPipelinePromptTests(unittest.TestCase):
 
         self.assertLess(elapsed, 0.35)
         self.assertEqual(len(result["docs"]), 2)
+        self.assertTrue(retrieval_kwargs)
+        self.assertTrue(all("query_term_matches" not in kwargs for kwargs in retrieval_kwargs))
         self.assertFalse(result["rag_trace"].get("fallback_timed_out", False))
         self.assertEqual(result["rag_trace"]["retrieval_stage"], "expanded")
 

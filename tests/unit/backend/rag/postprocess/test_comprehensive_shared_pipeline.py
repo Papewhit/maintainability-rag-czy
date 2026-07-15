@@ -64,6 +64,31 @@ def test_branch_rerank_uses_branch_query_terms_and_partial_failure_keeps_local_c
     assert trace["branch_errors"][0]["branch_kind"] == "sub_query"
 
 
+def test_branch_rerank_caps_output_when_reranker_expands_requested_top_k():
+    branch = build_retrieval_branches(_plan())[0]
+    inputs = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=tuple({"chunk_id": f"candidate-{index}"} for index in range(5)),
+        )
+    ]
+
+    def expanding_rerank(**kwargs):
+        return list(kwargs["docs"]), {"rerank_input_count": len(kwargs["docs"])}
+
+    results, trace = run_branch_rerank(
+        resolve_comprehensive_postprocess_policy("quality_first_v1").policy,
+        inputs,
+        output_candidate_budget=2,
+        pair_budget=5,
+        rerank_fn=expanding_rerank,
+    )
+
+    assert len(results[0].candidates) == 2
+    assert results[0].meta["used_output_budget"] == 2
+    assert trace["used_output_budget"] == 2
+
+
 def test_pair_budget_exhaustion_never_clears_unreranked_branch_candidates():
     branches = build_retrieval_branches(
         ComprehensiveQueryPlan(
@@ -102,6 +127,72 @@ def test_pair_budget_exhaustion_never_clears_unreranked_branch_candidates():
     assert trace["rerank_pair_count"] == 1
 
 
+def test_zero_and_missing_pair_quotas_never_exceed_global_output_budget():
+    branches = build_retrieval_branches(
+        ComprehensiveQueryPlan(
+            raw_query="综合",
+            clean_query="综合",
+            analysis_type="general",
+            sub_queries=(
+                SubQuery(query="high", domain="high", priority=1),
+                SubQuery(query="low", domain="low", priority=3),
+            ),
+            coverage_domains=("high", "low"),
+        )
+    )
+    inputs = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=tuple(
+                {"chunk_id": f"{branch.branch_id}-{index}"}
+                for index in range(5)
+            ),
+        )
+        for branch in branches
+    ]
+
+    results, trace = run_branch_rerank(
+        resolve_comprehensive_postprocess_policy("quality_first_v1").policy,
+        inputs,
+        output_candidate_budget=2,
+        pair_budget=1,
+        rerank_fn=lambda **kwargs: (
+            kwargs["docs"],
+            {"rerank_input_count": len(kwargs["docs"])},
+        ),
+    )
+
+    assert sum(len(result.candidates) for result in results) == 2
+    assert trace["used_output_budget"] == 2
+    assert trace["rerank_pair_count"] == 1
+
+
+def test_rerank_exception_preserves_local_rank_only_within_output_quota():
+    branch = build_retrieval_branches(_plan())[0]
+    inputs = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=tuple({"chunk_id": f"candidate-{index}"} for index in range(5)),
+        )
+    ]
+
+    def failing_rerank(**kwargs):
+        raise RuntimeError("rerank unavailable")
+
+    results, trace = run_branch_rerank(
+        resolve_comprehensive_postprocess_policy("quality_first_v1").policy,
+        inputs,
+        output_candidate_budget=2,
+        pair_budget=5,
+        rerank_fn=failing_rerank,
+    )
+
+    assert len(results[0].candidates) == 2
+    assert results[0].meta["used_output_budget"] == 2
+    assert results[0].meta["used_pair_budget"] == 5
+    assert trace["used_output_budget"] == 2
+
+
 def test_eval_ablation_never_allocates_or_executes_crossencoder_pairs():
     branches = build_retrieval_branches(_plan())
     inputs = [
@@ -124,6 +215,31 @@ def test_eval_ablation_never_allocates_or_executes_crossencoder_pairs():
     assert trace["allocated_pair_budget"] == 0
     assert trace["used_pair_budget"] == 0
     assert trace["rerank_pair_count"] == 0
+
+
+def test_eval_ablation_enforces_zero_output_quota():
+    branches = build_retrieval_branches(_plan())
+    inputs = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=tuple(
+                {"chunk_id": f"{branch.branch_id}-{index}"}
+                for index in range(5)
+            ),
+        )
+        for branch in branches
+    ]
+
+    results, trace = run_branch_rerank(
+        resolve_comprehensive_postprocess_policy("eval_no_crossencoder_v1").policy,
+        inputs,
+        output_candidate_budget=1,
+        pair_budget=99,
+        rerank_fn=lambda **kwargs: (_ for _ in ()).throw(AssertionError("unused")),
+    )
+
+    assert sum(len(result.candidates) for result in results) == 1
+    assert trace["used_output_budget"] == 1
 
 
 def test_shared_structural_stages_execute_once_and_parent_inherits_provenance():
