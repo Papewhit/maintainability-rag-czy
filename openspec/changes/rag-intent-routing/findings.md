@@ -510,3 +510,17 @@ last_verified_date: 2026-07-15
 - Disposition: validation
 - Disposition target: docs/validation/rag-intent-routing-evaluation.md
 - Resolution evidence: The validation report separates deterministic compiled-graph evidence from the pending real-model and release-Milvus paired evaluation.
+
+## RAG-INTENT-F037
+
+- Kind: behavior_defect
+- Primary scope: rag.comprehensive.rerank_device_degradation
+- Evidence status: confirmed
+- Observation: `branch_rerank_node()` resolved the configured rerank device before entering `run_branch_rerank()`. A GPU-only configuration on a host without CUDA therefore raised outside the branch-local degradation boundary and discarded already retrieved comprehensive candidates; the evaluation-only no-CrossEncoder profile performed the same unnecessary probe.
+- Inference: A recoverable local rerank configuration failure could become a whole-graph failure, while the ablation profile could fail despite requiring no CrossEncoder pairs.
+- Decision: Probe the device only when the effective policy uses CrossEncoder pairs and has output work. On probe failure, set pair budget to zero, retain the shared output budget and Milvus-ranked candidates, and record a recoverable stage error. Mark the device tier not applicable and skip probing for no-CrossEncoder execution.
+- Residual risk: none
+- Evidence: `@codex` review on PR #4 at commit `2472de4`; red/green tests in `tests/unit/backend/rag/pipeline/test_comprehensive_graph.py` cover quality-first probe failure and no-CrossEncoder probe avoidance.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/pipeline.py::branch_rerank_node()` now preserves candidate output and trace diagnostics without changing the postprocess profile or graph topology.

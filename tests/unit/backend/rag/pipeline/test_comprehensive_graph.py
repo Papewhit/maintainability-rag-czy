@@ -356,6 +356,94 @@ def test_comprehensive_branch_budget_reuses_effective_rerank_pool_rules(
     assert rerank.call_args.kwargs["output_candidate_budget"] == expected_budget
 
 
+def test_comprehensive_branch_rerank_degrades_when_device_probe_fails():
+    branches = build_retrieval_branches(_plan())
+    branch_results = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=({"chunk_id": branch.branch_id, "rrf_rank": 1},),
+        )
+        for branch in branches
+    ]
+    config = replace(
+        load_runtime_config({}),
+        rerank_candidate_pool_size=3,
+        rerank_input_k_gpu=12,
+    )
+
+    with (
+        patch("backend.rag.pipeline._runtime_config", return_value=config),
+        patch(
+            "backend.rag.pipeline._rerank_device_tier",
+            side_effect=RuntimeError("CUDA is unavailable"),
+        ),
+        patch("backend.rag.pipeline._rerank_documents") as rerank,
+    ):
+        result = rag_pipeline.branch_rerank_node(
+            {
+                "comprehensive_policy_resolution": resolve_comprehensive_postprocess_policy(
+                    "quality_first_v1"
+                ),
+                "branch_retrieval_results": branch_results,
+                "rag_trace": {},
+            }
+        )
+
+    rerank.assert_not_called()
+    assert [item.candidates for item in result["branch_rerank_results"]] == [
+        item.candidates for item in branch_results
+    ]
+    assert result["rag_trace"]["rerank_pair_budget_cap"] == 0
+    assert result["rag_trace"]["rerank_pair_device_tier"] == "unavailable"
+    assert result["rag_trace"]["rerank_pair_count"] == 0
+    assert result["rag_trace"]["rerank_budget_exhausted"] is True
+    assert result["rag_trace"]["stage_errors"] == [
+        {
+            "stage": "comprehensive_rerank_device",
+            "error": "CUDA is unavailable",
+            "fallback_to": "milvus_local_rank",
+            "severity": "warning",
+            "recoverable": True,
+            "user_visible": False,
+        }
+    ]
+
+
+def test_no_crossencoder_profile_skips_rerank_device_probe():
+    branch = build_retrieval_branches(_plan())[0]
+    branch_results = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=({"chunk_id": branch.branch_id, "rrf_rank": 1},),
+        )
+    ]
+    config = replace(load_runtime_config({}), rerank_candidate_pool_size=1)
+
+    with (
+        patch("backend.rag.pipeline._runtime_config", return_value=config),
+        patch(
+            "backend.rag.pipeline._rerank_device_tier",
+            side_effect=AssertionError("device probe must be skipped"),
+        ) as device_probe,
+    ):
+        result = rag_pipeline.branch_rerank_node(
+            {
+                "comprehensive_policy_resolution": resolve_comprehensive_postprocess_policy(
+                    "eval_no_crossencoder_v1"
+                ),
+                "branch_retrieval_results": branch_results,
+                "rag_trace": {},
+            }
+        )
+
+    device_probe.assert_not_called()
+    assert result["branch_rerank_results"][0].candidates == branch_results[0].candidates
+    assert result["rag_trace"]["rerank_pair_budget_cap"] == 0
+    assert result["rag_trace"]["rerank_pair_device_tier"] == "not_applicable"
+    assert result["rag_trace"]["rerank_pair_count"] == 0
+    assert result["rag_trace"]["stage_errors"] == []
+
+
 def test_graph_routes_by_plan_type_without_profile_specific_conditionals():
     graph = rag_pipeline.build_rag_graph()
     nodes = set(graph.get_graph().nodes)

@@ -57,6 +57,7 @@
 - [x] 4.12 单元/集成测试覆盖 baseline 固定加入且不进入 coverage/reservation、空 clean_query 降级而非 raw/empty 回填、profile registry、非法组合拒绝、预算分配、local rerank、weighted RRF、去重/provenance、共享后处理只执行一次、top-k reservation、部分失败保留，以及 graph 不包含 profile-specific if/else
 - [x] 4.13 在 embedding/Milvus fanout 前按 priority 截断生成 sub-query：默认 4、配置范围 1-8，同 priority 保持原顺序；effective plan 与公共 trace 记录实际执行及丢弃项
 - [x] 4.14 新增确定性 compiled-graph E2E，覆盖 intent classifier → ComprehensiveQueryPlan → baseline + sub-query 并行 dense/BM25 边界 → merge → 一次共享后处理 → 公共 trace；外部 LLM、embedding、reranker 与 Milvus 使用受控替身，不将其作为真实模型、release index 或成本/质量证据
+- [x] 4.15 修复 comprehensive rerank device probe 非恢复异常：quality-first 探测失败时 pair budget 降为 0 并保留 Milvus-ranked output candidates，no-CrossEncoder profile 跳过探测；回归测试覆盖两条路径
 
 **验收**：comprehensive 查询在一次 graph 调用内完成 branch-local relevance、跨 query merge 和一次共享后处理；策略通过 profile 组合且 graph 不感知具体算法；成本预算不会随 sub-query 数复制；部分失败不清空可用结果；无 Chat Agent multi-turn 调用路径。
 

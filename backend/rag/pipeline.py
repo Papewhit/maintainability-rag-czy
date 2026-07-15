@@ -668,11 +668,31 @@ def branch_rerank_node(state: RAGState) -> RAGState:
         rerank_top_n=config.rerank_top_n,
         rerank_candidate_pool_size=config.rerank_candidate_pool_size,
     )
-    device_tier = _rerank_device_tier()
-    configured_pair_cap = (
-        config.rerank_input_k_gpu if device_tier == "gpu" else config.rerank_input_k_cpu
+    device_error_trace: dict[str, Any] = {}
+    needs_crossencoder = bool(
+        resolution.policy.branch_reranker.uses_crossencoder_pairs and output_budget > 0
     )
-    pair_budget = configured_pair_cap if configured_pair_cap > 0 else output_budget
+    if not needs_crossencoder:
+        device_tier = "not_applicable"
+        pair_budget = 0
+    else:
+        try:
+            device_tier = _rerank_device_tier()
+            configured_pair_cap = (
+                config.rerank_input_k_gpu
+                if device_tier == "gpu"
+                else config.rerank_input_k_cpu
+            )
+            pair_budget = configured_pair_cap if configured_pair_cap > 0 else output_budget
+        except Exception as exc:
+            device_tier = "unavailable"
+            pair_budget = 0
+            _append_stage_error(
+                device_error_trace,
+                "comprehensive_rerank_device",
+                str(exc),
+                "milvus_local_rank",
+            )
     results, patch = run_branch_rerank(
         resolution.policy,
         branch_results,
@@ -684,6 +704,7 @@ def branch_rerank_node(state: RAGState) -> RAGState:
         "rerank_output_candidate_budget": output_budget,
         "rerank_pair_budget_cap": pair_budget,
         "rerank_pair_device_tier": device_tier,
+        "stage_errors": list(device_error_trace.get("stage_errors") or []),
         "timings": {"comprehensive_branch_rerank_ms": elapsed_ms(started)},
     })
     return {

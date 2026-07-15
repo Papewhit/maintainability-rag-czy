@@ -181,6 +181,10 @@ Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERA
 - **WHEN** 多个分支竞争有限 rerank budget
 - **THEN** budget policy 分别计算 output candidate budget 与 CrossEncoder pair budget，先分配每个可执行分支（含 baseline）的最小配额，再按 effective priority 分配剩余配额；baseline effective priority 固定为 2；未获 CrossEncoder 配额但拥有 output 配额的分支按 Milvus local rank 保留不超过该 output 配额的候选并标记 budget exhaustion；output 配额为 0 的分支不得向 merge 传入候选；任意成功、降级或异常路径传入 merge 的候选总数不得超过全局 output budget
 
+#### Scenario: rerank device 不可用时保留候选
+- **WHEN** quality-first profile 需要 CrossEncoder pairs，但配置的 rerank device 无法解析或不可用
+- **THEN** device probe 必须作为可恢复的 branch-rerank stage failure 记录，pair budget 降为 0，output candidate budget 与已召回候选继续按 Milvus local rank 进入 merge；不得让异常逃出 graph；no-CrossEncoder profile 不得执行该 device probe，也不记录伪降级
+
 #### Scenario: 禁止候选与查询笛卡尔积
 - **WHEN** 一个 candidate 只由部分 sub-query 召回
 - **THEN** relevance 计算只与其来源 sub-query 配对；不得默认执行 all candidates × all sub-queries CrossEncoder 组合
