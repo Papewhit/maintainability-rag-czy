@@ -113,6 +113,7 @@ class RagTrace(BaseModel):
     query_plan_enabled: Optional[bool] = None
     scope_filter_applied: Optional[bool] = None
     strict_scope_filter: Optional[bool] = None
+    retrieval_scope: Optional[Dict[str, Any]] = None
     query: Optional[str] = None
     semantic_query: Optional[str] = None
     normalized_query: Optional[str] = None

@@ -186,7 +186,7 @@ merge_sub_query_results：
 
 跨 query 不平均 dense、BM25 或 CrossEncoder 原始 score；这些 score 只在各自 branch 内产生 local rank。merge 使用 local rank 的 priority-weighted RRF。baseline 使用固定中性 effective priority `2`，LLM sub-query 使用其 schema priority。重复 chunk 只保留一份，并携带 `matched_branch_ids`、`per_branch_local_rank`、`per_branch_rerank_score`、`best_local_rank`、`baseline_matched` 和仅对生成分支计数的 `coverage_count`。leaf 被 auto_merge 替换为 parent 时，上述 provenance 必须求并集并保留可追溯的最佳 local rank。
 
-branch diagnostics 记录 baseline 与每个 sub-query 的 branch_kind、candidate_count、top score/rank、耗时与错误，供 trace 和后续 fallback Level 1 定位失败的生成分支；baseline 失败只记录诊断，不作为 Level 1 rewrite 目标。branch diagnostics 不是独立 confidence gate。最终 confidence 只在共享 top-k 后执行，并可消费生成 sub-query representation 与 `baseline_matched` 信号。
+branch diagnostics 记录 baseline 与每个 sub-query 的 branch_kind、candidate_count、top score/rank、耗时、错误以及共享 retrieval_scope 的 mode/source/matched_files，顶层 trace 同样记录该 scope，供 API/history、评测和后续 fallback Level 1 验证 boost/filter 实际语义并定位失败的生成分支；baseline 失败只记录诊断，不作为 Level 1 rewrite 目标。branch diagnostics 不是独立 confidence gate。最终 confidence 只在共享 top-k 后执行，并可消费生成 sub-query representation 与 `baseline_matched` 信号。
 
 最终选择采用静态 branch reservation，不建立证据账本，也不触发 multi-turn。reservation 只作用于成功的 LLM sub-query：当 `top_k >= successful_generated_branch_count` 时，每个成功生成分支至少保留一个候选，剩余位置按全局排序填充；当成功生成分支数超过 top_k 时，按 SubQuery.priority、稳定 branch id 和 global rank 决定保留顺序。baseline 不占 reservation 席位，只能凭合并后的 global rank 进入剩余位置，因此不会稀释已规划的 coverage domain。
 
@@ -222,7 +222,7 @@ quality_first_v1
 
 ### 决策 10：综合后处理成本必须评测后才能上线
 
-`quality_first_v1` 明确是质量优先基线，不假定其成本可接受。上线评测必须至少记录：LLM sub-query count、包含 baseline 的 retrieval branch count、baseline 独立命中/最终入选率、dense/sparse embedding 调用数、hybrid search 调用数、rerank pair 总量、各分支与合并候选数、merge/postprocess 耗时、端到端 P50/P95、CPU/GPU 峰值与错误/降级率，并绑定质量指标（生成分支代表率、引用有效性、回答质量）。paired run 使用 version 2 source fingerprint：对排序后的固定证据文件以及全部 `backend/rag/**/*.py`、`backend/infra/**/*.py`、`backend/shared/**/*.py` 求哈希，确保 trace identity、terminology preflight、embedding/vector retrieval 等传递依赖变化都会使对照失配，而不是只绑定 graph 入口文件。
+`quality_first_v1` 明确是质量优先基线，不假定其成本可接受。上线评测必须至少记录：LLM sub-query count、包含 baseline 的 retrieval branch count、baseline 独立命中/最终入选率、dense/sparse embedding 调用数、hybrid search 调用数、rerank pair 总量、各分支与合并候选数、merge/postprocess 耗时、端到端 P50/P95、CPU/GPU 峰值与错误/降级率，并绑定质量指标（生成分支代表率、引用有效性、回答质量）。错误/降级率同时消费顶层 stage_errors、branch_errors 与 branch diagnostics 的 error，避免保留候选的 branch-local rerank 降级被误报为成功。paired run 使用 version 2 source fingerprint：对排序后的固定证据文件以及全部 `backend/rag/**/*.py`、`backend/infra/**/*.py`、`backend/shared/**/*.py` 求哈希，确保 trace identity、terminology preflight、embedding/vector retrieval 等传递依赖变化都会使对照失配，而不是只绑定 graph 入口文件。
 
 评测必须包含至少一个消融对照：保留相同 parallel retrieval 和 weighted-RRF merge，但关闭 branch CrossEncoder，只使用 Milvus local rank。该对照可作为 eval-only profile，不得在没有独立质量证据时成为生产默认。默认开启 intent classifier/comprehensive 路径前，必须形成质量增益相对于延迟和资源成本的评测结论；阈值在基线运行后确定，不在设计中伪造固定数值。
 

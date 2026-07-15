@@ -191,8 +191,17 @@ def test_fanout_applies_one_shared_scope_plan_to_every_branch(scope_mode, source
     assert result["rag_trace"]["query_plan_enabled"] is True
     assert result["rag_trace"]["scope_filter_applied"] is (scope_mode == "filter")
     assert result["rag_trace"]["strict_scope_filter"] is (scope_mode == "filter")
+    assert result["rag_trace"]["retrieval_scope"] == {
+        "scope_mode": scope_mode,
+        "source": source,
+        "matched_files": [{"filename": "记录汇编.pdf", "score": 1.0}],
+    }
     assert all(
         diagnostic["strict_scope_filter"] is (scope_mode == "filter")
+        for diagnostic in result["rag_trace"]["branch_retrieval_diagnostics"]
+    )
+    assert all(
+        diagnostic["retrieval_scope"] == result["rag_trace"]["retrieval_scope"]
         for diagnostic in result["rag_trace"]["branch_retrieval_diagnostics"]
     )
 

@@ -398,3 +398,31 @@ last_verified_date: 2026-07-15
 - Disposition: validation
 - Disposition target: docs/validation/rag-intent-routing-evaluation.md
 - Resolution evidence: `routing_source_fingerprint()` expands and sorts the governed runtime globs before hashing; the validation report records the version 2 coverage boundary and bound digest.
+
+## RAG-INTENT-F029
+
+- Kind: evidence_gap
+- Primary scope: rag.trace.retrieval_scope
+- Evidence status: confirmed
+- Observation: Comprehensive boost scope was represented only by false hard-filter flags, while branch diagnostics omitted the resolved scope source and matched files.
+- Inference: API/history traces could not distinguish an ordinary document-hint boost from an unscoped global query, so rollout evidence could not verify the accepted shared-scope behavior.
+- Decision: Serialize the resolved shared retrieval scope as mode/source/matched_files in the top-level comprehensive trace and every branch retrieval diagnostic, and preserve it through the public RagTrace schema.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; focused pipeline and schema red/green tests cover boost/filter scope and public serialization.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/pipeline.py`, `backend/contracts/schemas.py`, and the focused comprehensive/schema tests preserve identical scope telemetry without changing retrieval semantics.
+
+## RAG-INTENT-F030
+
+- Kind: evidence_gap
+- Primary scope: evaluation.rag.degradation_rate
+- Evidence status: confirmed
+- Observation: Comprehensive summary counted only top-level stage_errors, while branch-local rerank failures can preserve candidates and be recorded solely in branch_errors or branch diagnostic error.
+- Inference: The quality/cost activation gate could underreport branch error and degradation rates as zero.
+- Decision: Count a case as error/degraded when stage_errors, branch_errors, or branch retrieval/rerank diagnostic errors are present.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; parameterized evaluation red/green tests cover branch_errors and branch_diagnostics.
+- Disposition: validation
+- Disposition target: docs/validation/rag-intent-routing-evaluation.md
+- Resolution evidence: `summarize_comprehensive_runs()` uses a shared error predicate for both error_rate and degradation_rate.

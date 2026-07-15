@@ -180,6 +180,7 @@ class RagTrace(TypedDict, total=False):
     query_plan_enabled: bool
     scope_filter_applied: bool
     strict_scope_filter: bool
+    retrieval_scope: dict[str, Any]
     query: str
     semantic_query: str
     normalized_query: str

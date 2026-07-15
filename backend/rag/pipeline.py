@@ -434,6 +434,14 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
     context_files = list(state.get("context_files") or [])
     branches = build_retrieval_branches(plan)
     resolution = resolve_comprehensive_postprocess_policy(plan.postprocess_profile)
+    scope_trace = {
+        "scope_mode": plan.retrieval_scope.scope_mode,
+        "source": plan.retrieval_scope.source,
+        "matched_files": [
+            {"filename": filename, "score": round(score, 3)}
+            for filename, score in plan.retrieval_scope.matched_files
+        ],
+    }
 
     def branch_query_plan(query: str, scope: RetrievalScope) -> PreciseQueryPlan:
         return PreciseQueryPlan(
@@ -547,6 +555,7 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         "query_plan_enabled": True,
         "scope_filter_applied": plan.retrieval_scope.scope_mode == "filter",
         "strict_scope_filter": plan.retrieval_scope.scope_mode == "filter",
+        "retrieval_scope": scope_trace,
         "branch_retrieval_diagnostics": [
             {
                 "branch_id": result.branch.branch_id,
@@ -573,6 +582,7 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
                     "strict_scope_filter",
                     plan.retrieval_scope.scope_mode == "filter",
                 ),
+                "retrieval_scope": scope_trace,
                 "dense_embedding_call_count": int(
                     result.meta.get("dense_embedding_call_count") or 0
                 ),

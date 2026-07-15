@@ -79,6 +79,23 @@ def test_comprehensive_eval_aggregates_cost_quality_buckets_and_percentiles():
     assert summary["answer_quality_mean"] == 0.85
 
 
+@pytest.mark.parametrize(
+    "failure_trace",
+    [
+        {"branch_errors": [{"branch_id": "sub_query_0", "error": "rerank failed"}]},
+        {"branch_diagnostics": [{"branch_id": "sub_query_0", "error": "rerank failed"}]},
+    ],
+)
+def test_comprehensive_eval_counts_branch_failures_as_errors_and_degradation(failure_trace):
+    run = _run("case-a", "quality_first_v1", total_ms=100.0, answer_quality=0.9)
+    run["rag_trace"].update(failure_trace)
+
+    summary = summarize_comprehensive_runs([run])
+
+    assert summary["error_rate"] == 1.0
+    assert summary["degradation_rate"] == 1.0
+
+
 def test_profile_comparison_requires_paired_source_bound_runs_and_reports_deltas():
     quality = [
         _run("case-a", "quality_first_v1", total_ms=140.0, answer_quality=0.9),

@@ -89,6 +89,11 @@ def test_rag_trace_schema_preserves_postprocess_fields():
         query_plan_enabled=True,
         scope_filter_applied=True,
         strict_scope_filter=True,
+        retrieval_scope={
+            "scope_mode": "boost",
+            "source": "document_hints",
+            "matched_files": [{"filename": "manual.pdf", "score": 0.9}],
+        },
     )
 
     payload = trace.model_dump()
@@ -118,6 +123,7 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert payload["branch_retrieval_diagnostics"][0]["branch_id"] == "baseline"
     assert payload["rerank_pair_count"] == 6
     assert payload["strict_scope_filter"] is True
+    assert payload["retrieval_scope"]["source"] == "document_hints"
 
     response = ChatResponse.model_validate({"response": "ok", "rag_trace": payload})
     response_trace = response.model_dump()["rag_trace"]
@@ -134,3 +140,6 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert response_trace["term_matches"][0]["start"] == 0
     assert response_trace["budget_strategy_id"] == "priority_weighted_v1"
     assert response_trace["branch_diagnostics"][0]["used_pair_budget"] == 3
+    assert response_trace["retrieval_scope"]["matched_files"] == [
+        {"filename": "manual.pdf", "score": 0.9}
+    ]

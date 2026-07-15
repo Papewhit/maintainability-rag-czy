@@ -205,7 +205,7 @@ Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERA
 
 #### Scenario: comprehensive 后处理与成本 trace
 - **WHEN** comprehensive 路径完成或局部降级后返回
-- **THEN** rag_trace 包含 requested/effective postprocess profile、各策略组件 id、baseline branch diagnostics、每个分支及总量的 allocated/used output budget 与 CrossEncoder pair budget、实际 rerank pair count、branch/merged/final candidate counts、各阶段耗时、分支错误与 budget exhaustion、baseline_matched/selected 及生成分支代表情况；这些字段即使局部阶段失败也保留已知值
+- **THEN** rag_trace 包含 requested/effective postprocess profile、各策略组件 id、解析后的共享 retrieval_scope（scope_mode、source、matched_files）、baseline branch diagnostics、每个分支及总量的 allocated/used output budget 与 CrossEncoder pair budget、实际 rerank pair count、branch/merged/final candidate counts、各阶段耗时、分支错误与 budget exhaustion、baseline_matched/selected 及生成分支代表情况；每个 branch retrieval diagnostic 也保留共享 retrieval_scope，这些字段即使局部阶段失败也保留已知值
 
 #### Scenario: 规则降级 trace
 - **WHEN** LLM 调用失败触发规则降级
@@ -233,6 +233,10 @@ Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERA
 #### Scenario: paired A/B 绑定完整运行时源码
 - **WHEN** comprehensive quality/cost runner 生成 quality-first 与消融 profile 的 paired report
 - **THEN** source fingerprint 必须绑定版本化、排序后的 source file list，至少覆盖全部 `backend/rag/**/*.py`、检索相关 `backend/infra/**/*.py`、共享 normalization/utilities、公共 trace schema、评测实现、runner、spec 和数据集；任一被覆盖运行时依赖变化都必须改变 fingerprint，禁止仅绑定直接入口文件
+
+#### Scenario: branch-local 降级计入评测错误率
+- **WHEN** branch CrossEncoder/rerank 失败但保留 local-rank candidates，错误仅记录在 `branch_errors` 或 branch diagnostic 的 `error`
+- **THEN** comprehensive summary 的 error_rate 与 degradation_rate 必须把该 case 计为失败/降级，不得因顶层 stage_errors 为空而报告为零
 
 ### Requirement: 与 plan_rag_turn 的职责边界
 `plan_rag_turn()` SHALL 保留既有 session 级 RAG 触发行为：context_files 和通用文档检索关键词 MAY 用于选择 FORCED_PRELOAD、OPTIONAL_TOOL 或 NO_RAG。该触发判断 MUST NOT 分类 `precise_lookup` / `comprehensive_analysis`，MUST NOT 构造 QueryPlan、生成 sub-query 或选择后处理策略；这些 intent-routing 动作 MUST 全部由 RAG graph 内部的 `intent_parse` 节点承担。

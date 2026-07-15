@@ -190,6 +190,18 @@ def _rate(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator, 6) if denominator else None
 
 
+def _has_recorded_error(trace: dict[str, Any]) -> bool:
+    if trace.get("stage_errors"):
+        return True
+    if any(item.get("error") for item in trace.get("branch_errors") or []):
+        return True
+    return any(
+        item.get("error")
+        for key in ("branch_retrieval_diagnostics", "branch_diagnostics")
+        for item in trace.get(key) or []
+    )
+
+
 def summarize_comprehensive_runs(runs: Iterable[dict[str, Any]]) -> dict[str, Any]:
     items = list(runs)
     traces = [dict(item.get("rag_trace") or {}) for item in items]
@@ -214,9 +226,9 @@ def summarize_comprehensive_runs(runs: Iterable[dict[str, Any]]) -> dict[str, An
         if (summary := _latency_summary(timing[key] for timing in timings if timing.get(key) is not None))
         is not None
     }
-    error_cases = sum(bool(trace.get("stage_errors")) for trace in traces)
+    error_cases = sum(_has_recorded_error(trace) for trace in traces)
     degradation_cases = sum(
-        bool(trace.get("stage_errors"))
+        _has_recorded_error(trace)
         or bool(trace.get("rerank_budget_exhausted"))
         or any(bool(value) for key, value in trace.items() if key.endswith("_skipped"))
         for trace in traces
