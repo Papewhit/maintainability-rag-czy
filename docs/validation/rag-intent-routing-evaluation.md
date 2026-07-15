@@ -3,10 +3,10 @@ document_type: validation_report
 validation_id: VAL-RAG-INTENT-001
 status: partial
 scope: evaluation.rag.intent_routing
-source_commit: d77ae8f97e372657b5aa69ba178b2cc6e04581fd
-source_fingerprint: sha256:1a2dbc442e46729a1db1122c99d8b7e1d52231e5d1c57a2f3b15d9d34553b552
-executed_at: 2026-07-14T15:33:56Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013]
+source_commit: a4c8dc4b7163ed062cf880cb81785ffafe2b4f52
+source_fingerprint: sha256:b249eea72896e77ebc434582807fd974cd5c48c849032b641053fc136edd9326
+executed_at: 2026-07-15T00:34:02Z
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015]
 supersedes: []
 ---
 
@@ -64,10 +64,12 @@ The rerank query contract accepts only `query_term_matches`, populated from term
 
 `backend/rag/observability.py` provides pure aggregation over supplied `rag_trace` records into classifier P50/P95, failure/fallback rates, intent share, comprehensive profile and fan-out buckets, baseline rates, retrieval/rerank costs, budget exhaustion, and merge/postprocess/end-to-end P50/P95. This change does not connect a persisted trace reader, exporter, dashboard, or alerting sink.
 
+Comprehensive structural resolution is also contract-tested: a resolved ordinary document hint becomes a shared boost scope, while explicit closed wording and context_files become a shared filter. Baseline and every generated branch receive the same typed scope; no branch dynamically relaxes a filter. Default-off compatibility traces retain `query_plan_enabled=false` even though the graph carries an inert compatibility plan object.
+
 ## Inputs
 
-- Source commit anchor: `d77ae8f97e372657b5aa69ba178b2cc6e04581fd`
-- Source fingerprint: `sha256:1a2dbc442e46729a1db1122c99d8b7e1d52231e5d1c57a2f3b15d9d34553b552`
+- Source commit anchor: `a4c8dc4b7163ed062cf880cb81785ffafe2b4f52`
+- Source fingerprint: `sha256:b249eea72896e77ebc434582807fd974cd5c48c849032b641053fc136edd9326`
 - Dataset: 100 annotated intent samples (70 precise / 30 comprehensive)
 - Profiles: `quality_first_v1` and `eval_no_crossencoder_v1`
 - Environment: Windows, Python 3.12; no FAST_MODEL credentials, Milvus release corpus, or answer/judge model were configured for this run
