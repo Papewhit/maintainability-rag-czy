@@ -17,6 +17,7 @@ from backend.rag.utils import (
     _apply_structure_rerank,
     _auto_merge_documents,
     _evaluate_retrieval_confidence,
+    _effective_rerank_output_size,
     _rerank_device_tier,
     _rerank_documents,
     _step_chain_check,
@@ -589,7 +590,12 @@ def branch_rerank_node(state: RAGState) -> RAGState:
     if not isinstance(resolution, ComprehensivePolicyResolution):
         raise TypeError("branch_rerank requires a resolved comprehensive policy")
     config = _runtime_config()
-    output_budget = max(0, int(config.rerank_candidate_pool_size))
+    output_budget = _effective_rerank_output_size(
+        5,
+        sum(len(result.candidates) for result in branch_results),
+        rerank_top_n=config.rerank_top_n,
+        rerank_candidate_pool_size=config.rerank_candidate_pool_size,
+    )
     device_tier = _rerank_device_tier()
     configured_pair_cap = (
         config.rerank_input_k_gpu if device_tier == "gpu" else config.rerank_input_k_cpu

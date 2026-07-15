@@ -144,6 +144,8 @@ Comprehensive 路径 MUST 对 clean-query baseline 与每个 sub-query 执行 qu
 ### Requirement: comprehensive 共享预算与成本评测 gate
 Comprehensive 路径的 `RERANK_CANDIDATE_POOL_SIZE` MUST 是 baseline 与全部生成分支共享的全局 rerank 输出候选预算，MUST NOT 为每个 branch 复制。CrossEncoder pair budget MUST 独立使用当前 device tier 的 `RERANK_INPUT_K_CPU/GPU` 上限；上限未配置时 SHALL 回退到全局输出候选预算。默认启用 comprehensive 路径前 MUST 完成质量与成本联合评测；没有评测结论时 `RAG_INTENT_CLASSIFIER_ENABLED` 默认值 MUST 保持 false。
 
+Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERANK_CANDIDATE_POOL_SIZE<=0` 时回退到 `top_k*4`，正值小于 final `top_k` 时提升到 `top_k`，随后再受实际候选总数上限约束；不得把未配置值解释为清空全部 comprehensive 候选。
+
 #### Scenario: 全局 rerank 预算分配
 - **WHEN** 多个分支竞争有限 rerank budget
 - **THEN** budget policy 分别计算 output candidate budget 与 CrossEncoder pair budget，先分配每个可执行分支（含 baseline）的最小配额，再按 effective priority 分配剩余配额；baseline effective priority 固定为 2；未获 CrossEncoder 配额但拥有 output 配额的分支按 Milvus local rank 保留不超过该 output 配额的候选并标记 budget exhaustion；output 配额为 0 的分支不得向 merge 传入候选；任意成功、降级或异常路径传入 merge 的候选总数不得超过全局 output budget

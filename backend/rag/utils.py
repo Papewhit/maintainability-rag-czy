@@ -509,14 +509,26 @@ def _effective_candidate_k(top_k: int) -> int:
     return max(top_k * 10, 50)
 
 
-def _effective_rerank_output_size(top_k: int, candidate_count: int) -> int:
+def _effective_rerank_output_size(
+    top_k: int,
+    candidate_count: int,
+    *,
+    rerank_top_n: int | None = None,
+    rerank_candidate_pool_size: int | None = None,
+) -> int:
     if candidate_count <= 0:
         return 0
-    if RERANK_TOP_N > 0:
+    configured_top_n = RERANK_TOP_N if rerank_top_n is None else rerank_top_n
+    configured_pool = (
+        RERANK_CANDIDATE_POOL_SIZE
+        if rerank_candidate_pool_size is None
+        else rerank_candidate_pool_size
+    )
+    if configured_top_n > 0:
         logger.warning("RERANK_TOP_N is deprecated; use RERANK_CANDIDATE_POOL_SIZE instead")
-        requested = RERANK_TOP_N
+        requested = configured_top_n
     else:
-        requested = RERANK_CANDIDATE_POOL_SIZE if RERANK_CANDIDATE_POOL_SIZE > 0 else top_k * 4
+        requested = configured_pool if configured_pool > 0 else top_k * 4
     requested = max(top_k, requested)
     return min(candidate_count, requested)
 

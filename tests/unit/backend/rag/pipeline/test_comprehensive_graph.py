@@ -178,6 +178,53 @@ def test_each_branch_independently_composes_dense_and_bm25_from_its_own_query():
     assert all(result.meta["term_matches"] for result in result["branch_retrieval_results"])
 
 
+@pytest.mark.parametrize(
+    ("configured_pool", "expected_budget"),
+    [(0, 6), (2, 5)],
+)
+def test_comprehensive_branch_budget_reuses_effective_rerank_pool_rules(
+    configured_pool,
+    expected_budget,
+):
+    plan = _plan()
+    branches = build_retrieval_branches(plan)
+    branch_results = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=tuple(
+                {"chunk_id": f"{branch.branch_id}-{index}"}
+                for index in range(2)
+            ),
+        )
+        for branch in branches
+    ]
+    config = replace(
+        load_runtime_config({}),
+        rerank_candidate_pool_size=configured_pool,
+        rerank_top_n=0,
+        rerank_input_k_cpu=20,
+    )
+
+    with (
+        patch("backend.rag.pipeline._runtime_config", return_value=config),
+        patch(
+            "backend.rag.pipeline.run_branch_rerank",
+            return_value=(branch_results, {}),
+        ) as rerank,
+    ):
+        rag_pipeline.branch_rerank_node(
+            {
+                "comprehensive_policy_resolution": resolve_comprehensive_postprocess_policy(
+                    "quality_first_v1"
+                ),
+                "branch_retrieval_results": branch_results,
+                "rag_trace": {},
+            }
+        )
+
+    assert rerank.call_args.kwargs["output_candidate_budget"] == expected_budget
+
+
 def test_graph_routes_by_plan_type_without_profile_specific_conditionals():
     graph = rag_pipeline.build_rag_graph()
     nodes = set(graph.get_graph().nodes)
