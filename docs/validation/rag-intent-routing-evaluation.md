@@ -3,10 +3,10 @@ document_type: validation_report
 validation_id: VAL-RAG-INTENT-001
 status: partial
 scope: evaluation.rag.intent_routing
-source_commit: e0556c5dd2108a557089618871a6b2b8b9ce3053
-source_fingerprint: sha256:6d8fcf084d0fc6737ffef13ed568d88f544278e91817deb30a37a13afbbc2703
-executed_at: 2026-07-15T01:38:00Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016]
+source_commit: de268676f195362589a010c42c68218289754e2b
+source_fingerprint: sha256:66ecf58bc0ab1a9ea4b3fe717ff6a61104023b55e74896a7c4480310f529d4a0
+executed_at: 2026-07-15T02:58:04Z
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020]
 supersedes: []
 ---
 
@@ -62,14 +62,14 @@ uv run python tests/eval/rag/run_comprehensive_intent_routing_evaluation.py
 
 The rerank query contract accepts only `query_term_matches`, populated from terminology `term_matches` after structural query preparation. Legacy `query_entities` input is ignored and omitted from trace/API schemas. Chunk `entity_types` and `term_match_count` remain available; the latter is explicitly measured as all terminology matches in a chunk, not query-specific exact matches. The response keys `entity_metadata_score_applied`, `entity_type_coverage`, and `entity_match_density` remain as wire-compatible historical terminology names; they do not represent semantic entity matching.
 
-`backend/rag/observability.py` provides pure aggregation over supplied `rag_trace` records into classifier P50/P95, failure/fallback rates, intent share, comprehensive profile and fan-out buckets, baseline rates, retrieval/rerank costs, budget exhaustion, and merge/postprocess/end-to-end P50/P95. This change does not connect a persisted trace reader, exporter, dashboard, or alerting sink.
+`backend/rag/observability.py` provides pure aggregation over supplied `rag_trace` records into classifier P50/P95, failure/fallback rates, intent share, comprehensive profile and fan-out buckets, baseline rates, retrieval/rerank costs, budget exhaustion, and merge/postprocess/end-to-end P50/P95. Public trace retains `semantic_query` so terminology match offsets have an explicit coordinate space. Merge degradation retains the branch union and exposes skipped/error state plus branch, merged, unique, and deduplicated candidate counts. This change does not connect a persisted trace reader, exporter, dashboard, or alerting sink.
 
-Comprehensive structural resolution is also contract-tested: a resolved ordinary document hint becomes a shared boost scope, while explicit closed wording and context_files become a shared filter. Baseline and every generated branch receive the same typed scope; no branch dynamically relaxes a filter. Default-off compatibility traces retain `query_plan_enabled=false` even though the graph carries an inert compatibility plan object.
+Comprehensive structural resolution is also contract-tested: a resolved ordinary document hint becomes a shared boost scope, while explicit closed wording and context_files become a shared filter. Baseline and every generated branch receive the same typed scope; no branch dynamically relaxes a filter. Precise Level 1 HyDE and step-back fallback likewise preserve the initial typed scope while replacing only the branch `semantic_query`; each rewritten query runs terminology preflight independently. Default-off compatibility traces retain `query_plan_enabled=false` even though the graph carries an inert compatibility plan object.
 
 ## Inputs
 
-- Source commit anchor: `e0556c5dd2108a557089618871a6b2b8b9ce3053`
-- Source fingerprint: `sha256:6d8fcf084d0fc6737ffef13ed568d88f544278e91817deb30a37a13afbbc2703`
+- Source commit anchor: `de268676f195362589a010c42c68218289754e2b`
+- Source fingerprint: `sha256:66ecf58bc0ab1a9ea4b3fe717ff6a61104023b55e74896a7c4480310f529d4a0`
 - Dataset: 100 annotated intent samples (70 precise / 30 comprehensive)
 - Profiles: `quality_first_v1` and `eval_no_crossencoder_v1`
 - Environment: Windows, Python 3.12; no FAST_MODEL credentials, Milvus release corpus, or answer/judge model were configured for this run
