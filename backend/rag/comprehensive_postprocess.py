@@ -297,6 +297,34 @@ class PriorityWeightedRRFMerger:
         }
 
 
+def complete_merge_trace(merged: Sequence[dict], meta: dict[str, Any]) -> dict[str, Any]:
+    """Return complete success telemetry for the multi-query merge stage."""
+    return {
+        **meta,
+        "merged_candidate_count": len(merged),
+        "multi_query_merge_skipped": False,
+    }
+
+
+def merge_failure_fallback(
+    branch_results: Sequence[BranchRetrievalResult],
+    error: Exception,
+) -> tuple[list[dict], dict[str, Any]]:
+    """Preserve branch candidates and all knowable counts after merge failure."""
+    merged = [dict(doc) for result in branch_results for doc in result.candidates]
+    unique_count = len({candidate_identity(doc) for doc in merged})
+    message = str(error)
+    return merged, {
+        "merge_error": message,
+        "multi_query_merge_error": message,
+        "multi_query_merge_skipped": True,
+        "branch_candidate_count": len(merged),
+        "merged_candidate_count": len(merged),
+        "merged_unique_candidate_count": unique_count,
+        "deduplicated_candidate_count": 0,
+    }
+
+
 class BranchAwareSelector:
     strategy_id = "generated_branch_reservation_v1"
 
@@ -595,9 +623,9 @@ def run_shared_postprocess(
         merge_started = time.perf_counter()
         try:
             merged, merge_meta = policy.merger.merge(branch_results, rrf_k=rrf_k)
+            merge_meta = complete_merge_trace(merged, merge_meta)
         except Exception as exc:
-            merged = [dict(doc) for result in branch_results for doc in result.candidates]
-            merge_meta = {"merge_error": str(exc)}
+            merged, merge_meta = merge_failure_fallback(branch_results, exc)
             stage_errors.append({"stage": "multi_query_merge", "error": str(exc)})
         timings["multi_query_merge_ms"] = (time.perf_counter() - merge_started) * 1000.0
 

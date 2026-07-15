@@ -21,7 +21,7 @@ Precise 路径 MUST 保持 `rerank → auto_merge → step_chain_check → struc
 
 #### Scenario: 任意共享阶段失败的降级
 - **WHEN** precise 或 comprehensive 的某个共享后处理阶段抛异常
-- **THEN** 在 stage_errors 中记录 stage 名和原因；用上一阶段输出继续后续安全阶段；trace 中标记 `<stage>_skipped=true`；不得清空已经合并的可用证据
+- **THEN** 在 stage_errors 中记录 stage 名和原因；用上一阶段输出继续后续安全阶段；trace 中标记 `<stage>_skipped=true`；不得清空已经合并的可用证据；multi_query_merge 失败时还必须保留 branch union 并记录 error、branch/merged/unique/deduplicated 候选计数
 
 ### Requirement: rerank 候选池解耦
 Precise 路径继续以 `RERANK_CANDIDATE_POOL_SIZE` 控制单 query rerank 输出。Comprehensive 路径 MUST 将该值解释为跨 clean-query baseline 与全部 sub-query 共享的全局 rerank 输出候选预算，并由 effective postprocess profile 的 budget policy 分配；CrossEncoder pair budget 由当前 device tier 的 `RERANK_INPUT_K_CPU/GPU` 解析，未配置时回退到输出候选预算。最终 top_k 仍只在全局 structure rerank 后截断。

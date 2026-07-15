@@ -162,8 +162,11 @@ class RagTrace(TypedDict, total=False):
     baseline_selected: bool
     shared_postprocess_count: int
     branch_candidate_count: int
+    merged_candidate_count: int
     merged_unique_candidate_count: int
     deduplicated_candidate_count: int
+    multi_query_merge_skipped: bool
+    multi_query_merge_error: str
     final_candidate_count: int
     generated_branch_representation_count: int
     successful_generated_branch_ids: list[str]
@@ -174,6 +177,7 @@ class RagTrace(TypedDict, total=False):
     scope_filter_applied: bool
     strict_scope_filter: bool
     query: str
+    semantic_query: str
     expanded_query: str
     retrieved_chunks: list[dict[str, Any]]
     initial_retrieved_chunks: list[dict[str, Any]]

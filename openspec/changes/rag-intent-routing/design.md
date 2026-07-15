@@ -26,7 +26,7 @@
 - 不做 LLM 微调。所有目标基于现有 FAST_MODEL 开箱即用达成。如评测显示不达标，先升级到更大模型或加 few-shot 示例，而不是微调。
 - 不引入新的长期记忆层。意图解析只用本轮 query + 当前 context_files，不依赖历史会话。
 - 不做意图分类的多分类细化（precise/comprehensive 二分即可，analysis_type 作为 comprehensive 内部子字段）。
-- 不重写 `plan_rag_turn`。它继续负责 session 级 FORCED_PRELOAD vs OPTIONAL_TOOL 路由；intent 解析作为 RAG graph 内部第一节点独立存在。
+- 不重写 `plan_rag_turn`。它继续通过 context_files 与既有通用文档检索关键词负责 session 级 FORCED_PRELOAD vs OPTIONAL_TOOL 路由；不得在此分类 precise/comprehensive、构造 QueryPlan 或编排 sub-query。intent 解析作为 RAG graph 内部第一节点独立存在。
 - 不从 query 提取 product / equipment / component / parameter / maintenance_action 等 semantic entities，不在 QueryPlan 中预留 `EntityMatch`，也不为后续知识图谱保留隐式契约。
 - 不把 terminology 结果写入 QueryPlan。terminology preflight 独立维护 `term_matches`、`normalized_query`、`sparse_expansion` 和 `protected_tokens`，其既有 chunk metadata 与 rerank 消费保持不变。
 
@@ -34,7 +34,7 @@
 
 ### 决策 1：意图解析下沉到 RAG graph 内部，而非提到 `plan_rag_turn`
 
-`plan_rag_turn` 当前职责是判断"本轮是否要走 RAG、context_files 是否需要预加载"。把 intent 解析放进去会让它跨两层抽象（session 级 + query 级），且 OPTIONAL_TOOL 模式下 Agent 决定调用 search_knowledge_base 时已经丢失了 `plan_rag_turn` 的解析结果。
+`plan_rag_turn` 当前职责是通过 context_files 与既有通用文档检索关键词判断"本轮是否要走 RAG、context_files 是否需要预加载"。该确定性 session gate 不是 precise/comprehensive intent classifier。把 QueryPlan 或 sub-query 解析放进去会让它跨两层抽象（session 级 + retrieval intent），且 OPTIONAL_TOOL 模式下 Agent 决定调用 search_knowledge_base 时已经丢失了 `plan_rag_turn` 的解析结果。
 
 下沉到 RAG graph 内部后，无论从 FORCED_PRELOAD 还是 OPTIONAL_TOOL 进入 `run_rag_graph()`，第一步都是 `intent_parse`，意图解析对调用方式透明。
 
@@ -143,6 +143,8 @@ semantic_query / sub_query.query
 无术语命中时，`normalized_query` 和 `sparse_expansion` 必须等于本次 preflight 的输入，而不是 `raw_query`。terminology 未加载或失败时，dense 和 BM25 也都使用该输入。当前实现先构造 `query_plan.semantic_query`，随后用基于 raw query 的 terminology 结果覆盖它；该组合缺陷必须在本 change 中修复。
 
 该顺序确保文档名中的领域词在成功限域后只作为 scope 消费，不再以 terminology 形式重复进入 dense/BM25；如果文档名未解析成功，则它仍留在检索文本中并可正常命中 terminology。
+
+Precise 路径进入既有 HyDE/step-back fallback 时，只替换该次检索使用的 `semantic_query`，必须继承初始 `PreciseQueryPlan` 的 matched_files、scope_mode、anchors、heading_hint 等确定性结构约束，并保留原始 raw_query 作为审计输入。扩展文本仍独立执行 terminology preflight；Level 1 query expansion 不得隐式把 filter/boost 改为 global，scope relax 仍只属于 fallback Level 2。
 
 ### 决策 6：模型选择优先级
 
@@ -258,7 +260,7 @@ quality_first_v1
 缓解：
 - 评测集中精确查找样本占 70%，确保模型在大头场景上达标
 - 评测不达标时升级模型（默认 → GRADE_MODEL → MODEL），不微调
-- 引入 `intent_confidence` 字段，置信度低于阈值时偏向 precise（保守选择）
+- 记录 `intent_confidence` 供评测与灰度观测；v1 不在缺少真实基线时伪造阈值或改写模型 intent，后续若引入低置信度保守路由必须通过独立 change 和评测确定阈值
 
 **风险 3：综合分析的 sub_query 质量取决于 LLM**
 

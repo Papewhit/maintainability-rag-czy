@@ -359,3 +359,73 @@ def test_comprehensive_graph_runs_once_and_returns_merged_context_with_full_trac
     ).model_dump()["rag_trace"]
     assert chat_payload["branch_candidate_count"] == 3
     assert message_payload["deduplicated_candidate_count"] == 0
+
+
+def test_multi_query_merge_failure_preserves_candidates_and_complete_trace():
+    class FailingMerger:
+        strategy_id = "failing_merge_v1"
+
+        def merge(self, branch_results, *, rrf_k):
+            del branch_results, rrf_k
+            raise RuntimeError("merge exploded")
+
+    plan = _plan()
+    branches = build_retrieval_branches(plan)
+    resolution = resolve_comprehensive_postprocess_policy("quality_first_v1")
+    failing_merger = FailingMerger()
+    policy = replace(
+        resolution.policy,
+        merger=failing_merger,
+        merge_strategy_id=failing_merger.strategy_id,
+    )
+    resolution = replace(resolution, policy=policy)
+    branch_results = [
+        BranchRetrievalResult(
+            branches[0],
+            (
+                {"chunk_id": "shared", "text": "baseline shared"},
+                {"chunk_id": "baseline-only", "text": "baseline only"},
+            ),
+            {},
+        ),
+        BranchRetrievalResult(
+            branches[1],
+            (
+                {"chunk_id": "shared", "text": "generated shared"},
+                {"chunk_id": "generated-only", "text": "generated only"},
+            ),
+            {},
+        ),
+        BranchRetrievalResult(branches[2], (), {}, "branch unavailable"),
+    ]
+
+    result = rag_pipeline.merge_sub_query_results(
+        {
+            "comprehensive_policy_resolution": resolution,
+            "branch_rerank_results": branch_results,
+            "rag_trace": {
+                "tool_used": True,
+                "tool_name": "search_knowledge_base",
+                "stage_errors": [],
+            },
+        }
+    )
+
+    assert len(result["merged_candidates"]) == 4
+    trace = result["rag_trace"]
+    assert trace["multi_query_merge_skipped"] is True
+    assert trace["multi_query_merge_error"] == "merge exploded"
+    assert trace["branch_candidate_count"] == 4
+    assert trace["merged_candidate_count"] == 4
+    assert trace["merged_unique_candidate_count"] == 3
+    assert trace["deduplicated_candidate_count"] == 0
+    assert trace["stage_errors"][-1] == {
+        "stage": "multi_query_merge",
+        "error": "merge exploded",
+        "fallback_to": "branch_union",
+    }
+
+    payload = ChatResponse(response="ok", rag_trace=trace).model_dump()["rag_trace"]
+    assert payload["multi_query_merge_skipped"] is True
+    assert payload["multi_query_merge_error"] == "merge exploded"
+    assert payload["merged_candidate_count"] == 4

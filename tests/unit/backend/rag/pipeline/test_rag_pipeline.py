@@ -9,6 +9,7 @@ from unittest.mock import patch
 PROJECT_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "pyproject.toml").is_file())
 
 import backend.rag.pipeline as rag_pipeline  # noqa: E402
+from backend.rag.query_plan import PreciseQueryPlan  # noqa: E402
 from backend.rag.runtime_config import load_runtime_config  # noqa: E402
 
 
@@ -30,6 +31,19 @@ class FakeGrader:
 
 
 class RagPipelinePromptTests(unittest.TestCase):
+    @staticmethod
+    def _scoped_plan() -> PreciseQueryPlan:
+        return PreciseQueryPlan(
+            raw_query="《Manual》中如何拆卸泵体？",
+            semantic_query="如何拆卸泵体？",
+            clean_query="如何拆卸泵体？",
+            doc_hints=("Manual",),
+            scope_mode="filter",
+            matched_files=(("manual.pdf", 1.0),),
+            anchors=("第三章",),
+            route="scoped_hybrid",
+        )
+
     def test_grade_prompt_keeps_json_example_literal(self):
         grader = FakeGrader()
         runtime_config = replace(load_runtime_config({}), fallback_enabled=True)
@@ -77,6 +91,7 @@ class RagPipelinePromptTests(unittest.TestCase):
 
     def test_retrieve_expanded_complex_retrievals_run_in_parallel(self):
         retrieval_kwargs = []
+        scoped_plan = self._scoped_plan()
         state = {
             "question": "q",
             "docs": [],
@@ -85,6 +100,7 @@ class RagPipelinePromptTests(unittest.TestCase):
             "expansion_type": "complex",
             "expanded_query": "step query",
             "hypothetical_doc": "hyde query",
+            "query_plan": scoped_plan,
             "rag_trace": {
                 "term_matches": [{"entity_type": "component", "canonical": "initial-only"}],
             },
@@ -115,6 +131,15 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertEqual(len(result["docs"]), 2)
         self.assertTrue(retrieval_kwargs)
         self.assertTrue(all("query_term_matches" not in kwargs for kwargs in retrieval_kwargs))
+        fallback_plans = [kwargs["query_plan"] for kwargs in retrieval_kwargs]
+        self.assertEqual(
+            {plan.semantic_query for plan in fallback_plans},
+            {"hyde query", "step query"},
+        )
+        self.assertTrue(all(plan.raw_query == scoped_plan.raw_query for plan in fallback_plans))
+        self.assertTrue(all(plan.scope_mode == "filter" for plan in fallback_plans))
+        self.assertTrue(all(plan.matched_files == scoped_plan.matched_files for plan in fallback_plans))
+        self.assertTrue(all(plan.anchors == scoped_plan.anchors for plan in fallback_plans))
         self.assertFalse(result["rag_trace"].get("fallback_timed_out", False))
         self.assertEqual(result["rag_trace"]["retrieval_stage"], "expanded")
 
@@ -124,6 +149,7 @@ class RagPipelinePromptTests(unittest.TestCase):
             fallback_candidate_only_enabled=True,
             fallback_expanded_candidate_k=17,
         )
+        scoped_plan = self._scoped_plan()
         state = {
             "question": "q",
             "docs": [{"text": "initial", "filename": "a.pdf", "chunk_id": "c1"}],
@@ -131,6 +157,7 @@ class RagPipelinePromptTests(unittest.TestCase):
             "context_files": [],
             "expansion_type": "step_back",
             "expanded_query": "expanded q",
+            "query_plan": scoped_plan,
             "rag_trace": {
                 "timings": {"initial_retrieve_ms": 7.0},
                 "stage_errors": [{"stage": "initial_warning", "error": "kept"}],
@@ -170,6 +197,12 @@ class RagPipelinePromptTests(unittest.TestCase):
 
         pool.assert_called_once()
         self.assertEqual(pool.call_args.kwargs["candidate_k"], 17)
+        fallback_plan = pool.call_args.kwargs["query_plan"]
+        self.assertEqual(fallback_plan.raw_query, scoped_plan.raw_query)
+        self.assertEqual(fallback_plan.semantic_query, "expanded q")
+        self.assertEqual(fallback_plan.scope_mode, "filter")
+        self.assertEqual(fallback_plan.matched_files, scoped_plan.matched_files)
+        self.assertEqual(fallback_plan.anchors, scoped_plan.anchors)
         finish.assert_called_once()
         self.assertEqual(
             finish.call_args.kwargs["query_term_matches"],
@@ -194,6 +227,8 @@ class RagPipelinePromptTests(unittest.TestCase):
 
     def test_retrieve_expanded_candidate_only_complex_runs_candidate_queries_in_parallel(self):
         runtime_config = replace(load_runtime_config({}), fallback_candidate_only_enabled=True)
+        scoped_plan = self._scoped_plan()
+        retrieval_kwargs = []
         state = {
             "question": "q",
             "docs": [],
@@ -202,11 +237,13 @@ class RagPipelinePromptTests(unittest.TestCase):
             "expansion_type": "complex",
             "expanded_query": "step query",
             "hypothetical_doc": "hyde query",
+            "query_plan": scoped_plan,
             "rag_trace": {},
             "fallback_deadline": time.perf_counter() + 5,
         }
 
-        def slow_candidate_pool(query, top_k=5, context_files=None, candidate_k=None):
+        def slow_candidate_pool(query, top_k=5, context_files=None, candidate_k=None, **kwargs):
+            retrieval_kwargs.append(kwargs)
             time.sleep(0.2)
             return {
                 "candidates": [{"text": query, "filename": f"{query}.pdf", "chunk_id": query}],
@@ -241,6 +278,14 @@ class RagPipelinePromptTests(unittest.TestCase):
 
         self.assertLess(elapsed, 0.35)
         self.assertEqual(len(result["docs"]), 2)
+        fallback_plans = [kwargs["query_plan"] for kwargs in retrieval_kwargs]
+        self.assertEqual(
+            {plan.semantic_query for plan in fallback_plans},
+            {"hyde query", "step query"},
+        )
+        self.assertTrue(all(plan.raw_query == scoped_plan.raw_query for plan in fallback_plans))
+        self.assertTrue(all(plan.scope_mode == "filter" for plan in fallback_plans))
+        self.assertTrue(all(plan.matched_files == scoped_plan.matched_files for plan in fallback_plans))
         self.assertEqual(result["rag_trace"]["fallback_second_pass_mode"], "candidate_only")
         self.assertEqual(result["rag_trace"]["candidate_only_pass_rerank_execution_mode"], "skipped_candidate_only")
         self.assertEqual(result["rag_trace"]["final_rerank_execution_mode"], "executed")

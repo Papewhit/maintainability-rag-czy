@@ -110,6 +110,8 @@ Invalid `RAG_CANDIDATE_STRATEGY` values fall back to standard with a trace warni
 
 `run_rag_graph()` enters through `intent_parse`. `RAG_INTENT_CLASSIFIER_ENABLED=false` is the production default: no model is called, and the node creates a compatibility `PreciseQueryPlan` that preserves the legacy raw/global behavior unless the independent legacy `QUERY_PLAN_ENABLED` switch is enabled. Model failure, timeout, schema failure, or bounded-capacity exhaustion also degrades to a precise compatibility plan without retrying.
 
+Before graph entry, `plan_rag_turn()` retains the existing session-level RAG trigger based on attached context files and generic document-retrieval markers. That deterministic gate may choose forced preload versus optional tool use, but it does not classify precise/comprehensive intent, construct a QueryPlan, generate sub-queries, or select postprocess behavior.
+
 When explicitly enabled, the classifier produces either a precise plan or a comprehensive plan. It does not produce semantic entities, terminology normalization, `semantic_query`, or postprocess strategy choices. Deterministic query preparation owns structural span consumption; terminology preflight then consumes the resulting retrieval text and independently supplies `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens`.
 
 ```text
@@ -125,6 +127,8 @@ intent_parse
 `backend/rag/comprehensive_postprocess.py` resolves a frozen, versioned strategy composition. `quality_first_v1` is the production profile and `eval_no_crossencoder_v1` is evaluation-only. Unknown profiles atomically fall back to `quality_first_v1`. The Chat Agent still invokes `search_knowledge_base(query)` once; it never receives or iterates sub-queries, and this capability has no multi-turn mode. Sub-query rewrite remains outside this change as fallback Level 1 work.
 
 `ComprehensiveQueryPlan.retrieval_scope` carries one deterministic document-scope meaning across the baseline and every generated branch. Ordinary resolved `《document》` hints are shared boosts, so branches may still search the global corpus. Explicitly closed wording and `context_files` produce a shared hard filter. Branches never relax that filter inside intent routing; scope relaxation belongs to fallback Level 2.
+
+On the precise path, HyDE and step-back fallback retrievals replace only the plan's semantic retrieval text. They retain the original raw query and deterministic file/scope/anchor constraints, so Level 1 query expansion cannot silently become scope relaxation; expanded text performs its own terminology preflight.
 
 ## Shared Evidence Postprocess
 
@@ -169,7 +173,7 @@ The unset index profile is backward-compatible `legacy`. Profiles logically isol
 
 ## Trace, Evaluation, and Degradation
 
-Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers intent/model fallback, requested/effective strategy, per-branch and aggregate embedding/search/rerank costs, stage status/errors/timings, terminology fusion coverage, final representation, and confidence. `backend/rag/observability.py` defines pure aggregation over supplied traces for rollout metrics including classifier and graph P50/P95, failure/fallback rates, intent share, profile/bucket counts, baseline rates, retrieval calls, rerank pairs, and budget exhaustion. It is not yet connected to a persisted trace reader, exporter, dashboard, or alerting path.
+Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers intent/model fallback, requested/effective strategy, per-branch and aggregate embedding/search/rerank costs, stage status/errors/timings, terminology fusion coverage, final representation, and confidence. Public trace retains `semantic_query` alongside terminology match offsets. A failed multi-query merge preserves the undeduplicated branch union and reports the skipped/error state plus all knowable candidate counts before shared postprocess continues (`RAG-INTENT-F020`). `backend/rag/observability.py` defines pure aggregation over supplied traces for rollout metrics including classifier and graph P50/P95, failure/fallback rates, intent share, profile/bucket counts, baseline rates, retrieval calls, rerank pairs, and budget exhaustion. It is not yet connected to a persisted trace reader, exporter, dashboard, or alerting path.
 
 Evaluation lives under `tests/eval/`, `tests/regression/`, and `backend/evaluation/`. Reports must bind a commit and source fingerprint and distinguish deterministic substitutes from real models/infrastructure. Microbenchmarks are not production-capacity evidence.
 

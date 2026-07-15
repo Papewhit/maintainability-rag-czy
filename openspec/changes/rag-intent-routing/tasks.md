@@ -25,7 +25,7 @@
 - [x] 3.3 修改 `retrieve_initial` 接受 PreciseQueryPlan 作为输入而非 raw query
 - [x] 3.4 实现 `decompose_and_fanout` 节点：comprehensive 路径下并发或顺序执行每个 sub_query 的检索
 - [x] 3.5 实现 `merge_sub_query_results` 节点：只依赖 resolved ComprehensivePostprocessPolicy 接口合并多 sub-query 结果
-- [x] 3.6 `plan_rag_turn` 不变，但 trace 增加 `query_plan_type` 字段反映 intent 解析结果
+- [x] 3.6 `plan_rag_turn` 保留既有 context_files / 通用文档检索关键词的 session 级触发规则，不参与 precise/comprehensive 分类、QueryPlan 或 sub-query 编排；trace 增加 `query_plan_type` 字段反映 graph 内 intent 解析结果
 
 **验收**：完整 RAG 流程在 precise 和 comprehensive 两条路径下都能产出回答；现有测试 `tests/test_rag_pipeline.py` 全绿。
 

@@ -35,7 +35,7 @@
 - `backend/rag/pipeline.py`：在 `build_rag_graph` 入口前增加 `intent_parse` 节点；在结构解析后执行 query preparation；新增 graph 内并行 fan-out 的 `retrieve_comprehensive` 和确定性合并的 `merge_sub_query_results` 节点。
 - `backend/rag/utils.py`：`build_query_plan` 改为消费 intent 解析结果；dense 使用 terminology-normalized semantic query，BM25 使用基于同一 semantic query 的 sparse expansion，禁止 terminology preflight 用 raw query 覆盖 semantic query。
 - `backend/rag/comprehensive_postprocess.py`（新文件）：定义 typed strategy protocols、`ComprehensivePostprocessPolicy`、具名 profile registry、预算分配、priority-weighted RRF merge 和 branch-aware final selection；graph 节点不得散落 profile-specific 分支。
-- `backend/chat/rag_execution.py`：`plan_rag_turn` 不再做 query 内容分析（intent 解析下沉到 RAG graph 内部），只保留 session 级路由（FORCED_PRELOAD vs OPTIONAL_TOOL）。
+- `backend/chat/rag_execution.py`：`plan_rag_turn` 保留既有 session 级 RAG 触发规则（context_files 与通用文档检索关键词，用于 FORCED_PRELOAD vs OPTIONAL_TOOL），但不得执行 precise/comprehensive 分类、QueryPlan 构造或 sub-query 编排；这些 intent-routing 动作全部下沉到 RAG graph。
 - `backend/rag/runtime_config.py`：新增 intent classifier 的模型、超时、启用配置和 `RAG_COMPREHENSIVE_POSTPROCESS_PROFILE`；本 change 不增加 multi-turn 模式配置，也不为 profile 组件增加独立自由组合开关。
 - `tests/unit/backend/rag/` 与 `tests/eval/rag/`：分别验证 LLM 调用、规则降级、策略组合契约、并行后处理和意图/成本评测指标。
 

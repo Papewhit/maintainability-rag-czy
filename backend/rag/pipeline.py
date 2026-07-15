@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from dataclasses import replace
 from typing import Any, Callable, Literal, TypedDict, List, Optional
 import time
 from langchain.chat_models import init_chat_model
@@ -34,6 +35,8 @@ from backend.rag.comprehensive_postprocess import (
     BranchRetrievalResult,
     ComprehensivePolicyResolution,
     build_retrieval_branches,
+    complete_merge_trace,
+    merge_failure_fallback,
     resolve_comprehensive_postprocess_policy,
     run_branch_rerank,
     run_shared_postprocess,
@@ -631,10 +634,10 @@ def merge_sub_query_results(state: RAGState) -> RAGState:
             branch_results,
             rrf_k=max(1, int(_runtime_config().milvus_rrf_k)),
         )
+        meta = complete_merge_trace(merged, meta)
         errors: list[dict] = []
     except Exception as exc:
-        merged = [dict(doc) for result in branch_results for doc in result.candidates]
-        meta = {"merge_error": str(exc)}
+        merged, meta = merge_failure_fallback(branch_results, exc)
         errors = [{"stage": "multi_query_merge", "error": str(exc), "fallback_to": "branch_union"}]
     patch = {
         **meta,
@@ -910,12 +913,26 @@ def _candidate_query_for_strategy(state: RAGState, key: str) -> str:
     return state.get("expanded_query") or state["question"]
 
 
-def _candidate_retrieval_job(query: str, context_files: list[str], candidate_k: int) -> dict:
+def _expanded_query_plan(state: RAGState, query: str) -> PreciseQueryPlan | None:
+    """Reuse the original precise constraints with the fallback retrieval text."""
+    plan = state.get("query_plan")
+    if not isinstance(plan, PreciseQueryPlan):
+        return None
+    return replace(plan, semantic_query=query)
+
+
+def _candidate_retrieval_job(
+    query: str,
+    context_files: list[str],
+    candidate_k: int,
+    query_plan: PreciseQueryPlan | None,
+) -> dict:
     return retrieve_candidate_pool(
         query,
         top_k=5,
         context_files=context_files,
         candidate_k=candidate_k,
+        query_plan=query_plan,
     )
 
 
@@ -932,7 +949,10 @@ def _collect_candidate_only_retrievals(
     jobs = {}
     for key in keys:
         query = _candidate_query_for_strategy(state, key)
-        jobs[key] = _submit_with_context(lambda q=query: _candidate_retrieval_job(q, context_files, candidate_k))
+        query_plan = _expanded_query_plan(state, query)
+        jobs[key] = _submit_with_context(
+            lambda q=query, plan=query_plan: _candidate_retrieval_job(q, context_files, candidate_k, plan)
+        )
 
     candidates: list[dict] = []
     timings: dict[str, float] = {}
@@ -1094,8 +1114,22 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         hypothetical_doc = state.get("hypothetical_doc") or generate_hypothetical_document(state["question"])
         expanded_query = state.get("expanded_query") or state["question"]
         jobs = {
-            "hyde": _submit_with_context(lambda: retrieve_documents(hypothetical_doc, top_k=5, context_files=context_files)),
-            "step_back": _submit_with_context(lambda: retrieve_documents(expanded_query, top_k=5, context_files=context_files)),
+            "hyde": _submit_with_context(
+                lambda: retrieve_documents(
+                    hypothetical_doc,
+                    top_k=5,
+                    context_files=context_files,
+                    query_plan=_expanded_query_plan(state, hypothetical_doc),
+                )
+            ),
+            "step_back": _submit_with_context(
+                lambda: retrieve_documents(
+                    expanded_query,
+                    top_k=5,
+                    context_files=context_files,
+                    query_plan=_expanded_query_plan(state, expanded_query),
+                )
+            ),
         }
         for key, future in jobs.items():
             retrieved = _await_with_deadline(future, fallback_deadline, rag_trace, f"{key}_retrieve", "initial_retrieval")
@@ -1108,7 +1142,14 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         if "hyde" in precomputed_retrievals:
             retrieved_hyde = precomputed_retrievals["hyde"]
         else:
-            future = _submit_with_context(lambda: retrieve_documents(hypothetical_doc, top_k=5, context_files=context_files))
+            future = _submit_with_context(
+                lambda: retrieve_documents(
+                    hypothetical_doc,
+                    top_k=5,
+                    context_files=context_files,
+                    query_plan=_expanded_query_plan(state, hypothetical_doc),
+                )
+            )
             retrieved_hyde = _await_with_deadline(future, fallback_deadline, rag_trace, "hyde_retrieve", "initial_retrieval")
             if retrieved_hyde is None:
                 return _fallback_to_initial_retrieval(state, rag_trace, expanded_start)
@@ -1151,7 +1192,14 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         if "step_back" in precomputed_retrievals:
             retrieved_stepback = precomputed_retrievals["step_back"]
         else:
-            future = _submit_with_context(lambda: retrieve_documents(expanded_query, top_k=5, context_files=context_files))
+            future = _submit_with_context(
+                lambda: retrieve_documents(
+                    expanded_query,
+                    top_k=5,
+                    context_files=context_files,
+                    query_plan=_expanded_query_plan(state, expanded_query),
+                )
+            )
             retrieved_stepback = _await_with_deadline(future, fallback_deadline, rag_trace, "stepback_retrieve", "initial_retrieval")
             if retrieved_stepback is None:
                 return _fallback_to_initial_retrieval(state, rag_trace, expanded_start)

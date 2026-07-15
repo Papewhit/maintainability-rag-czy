@@ -15,7 +15,14 @@ def test_rag_trace_schema_preserves_postprocess_fields():
         candidate_count_after_rerank=20,
         candidate_count_after_structure_rerank=18,
         final_top_k_count=5,
-        term_matches=[{"entity_type": "component", "canonical": "pump"}],
+        semantic_query="MRG 拆卸怎么做",
+        term_matches=[{
+            "entity_type": "component",
+            "canonical": "主减速齿轮箱",
+            "surface": "MRG",
+            "start": 0,
+            "end": 3,
+        }],
         rerank_output_count=18,
         rerank_skipped=False,
         auto_merge_enabled=True,
@@ -74,7 +81,8 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert payload["rerank_candidate_pool_size"] == 20
     assert payload["candidate_count_before_rerank"] == 30
     assert payload["final_top_k_count"] == 5
-    assert payload["term_matches"][0]["canonical"] == "pump"
+    assert payload["semantic_query"] == "MRG 拆卸怎么做"
+    assert payload["term_matches"][0]["canonical"] == "主减速齿轮箱"
     assert payload["step_chain_repaired_groups"] == ["g1"]
     assert payload["entity_type_coverage"] == 1.0
     assert payload["timings"]["confidence_ms"] == 5.0
@@ -91,5 +99,7 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     response = ChatResponse.model_validate({"response": "ok", "rag_trace": payload})
     response_trace = response.model_dump()["rag_trace"]
     assert response_trace["intent"] == "comprehensive_analysis"
+    assert response_trace["semantic_query"] == "MRG 拆卸怎么做"
+    assert response_trace["term_matches"][0]["start"] == 0
     assert response_trace["budget_strategy_id"] == "priority_weighted_v1"
     assert response_trace["branch_diagnostics"][0]["used_pair_budget"] == 3

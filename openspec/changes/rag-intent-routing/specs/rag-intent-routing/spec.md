@@ -61,6 +61,10 @@ RAG graph MUST 在检索前以确定性顺序执行结构解析、query cleaning
 - **WHEN** ComprehensiveQueryPlan 生成多个 sub-query 并进入并行 fan-out
 - **THEN** runtime 先从 clean_query 构造 baseline branch；baseline 与每个实际 sub-query 在检索前独立执行 terminology preflight，并分别产出 dense normalized query 与 BM25 sparse expansion；LLM 生成值不得被当作 terminology canonicalization 结果
 
+#### Scenario: precise fallback 保留结构约束
+- **WHEN** 带有 filter/boost、matched_files 或 anchors 的 PreciseQueryPlan 进入 HyDE/step-back 扩展检索
+- **THEN** 每个扩展检索只以该扩展文本替换 semantic_query，并独立执行 terminology preflight；原 raw_query 与结构约束必须继承，MUST NOT 因扩展文本不含原文档提示而重建为无约束 global plan；scope relax 只由 fallback Level 2 执行
+
 ### Requirement: comprehensive 共享 retrieval scope
 ComprehensiveQueryPlan MUST 携带运行时确定性生成的 typed `retrieval_scope`。成功消费的文档提示对应的 `matched_files`、scope mode 与结构提示 MUST 保存在该 scope 中，并由 baseline 与全部生成 sub-query 共享；不得在删除文档名后把 branch 降为无约束全局检索。共享 scope MUST 区分 boost 与 filter，MUST NOT 把普通文档提示无条件升级为硬过滤。
 
@@ -209,7 +213,7 @@ Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERA
 
 #### Scenario: API 响应保留 intent-routing trace
 - **WHEN** graph 的 rag_trace 经 `ChatResponse` 或历史消息响应 schema 序列化
-- **THEN** intent、query-plan、comprehensive profile、branch diagnostics、budget/cost 和 scope telemetry 字段必须保留，不得因响应模型未声明字段而被静默过滤
+- **THEN** intent、query-plan、comprehensive profile、branch diagnostics、budget/cost、scope telemetry、terminology term_matches 及其 offset 对应的 semantic_query 必须保留，不得因响应模型未声明字段而被静默过滤
 
 ### Requirement: 评测集与阈值
 `tests/eval/data/intent_routing/` 下 MUST 存在意图分类评测集，包含至少 100 条标注样本（70% precise + 30% comprehensive），覆盖结构限域、目标粒度和所有 analysis_type。评测脚本 MUST 可重复运行，输出指标 MUST 达到既定阈值才允许将 `RAG_INTENT_CLASSIFIER_ENABLED` 默认值改为 true。
@@ -223,7 +227,11 @@ Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERA
 - **THEN** 各项指标达到预设基线时视为达标；不达标时配置项 `RAG_INTENT_CLASSIFIER_ENABLED` 默认保持 false。具体阈值在标注完成后根据初评结果设定，不在此处硬编码
 
 ### Requirement: 与 plan_rag_turn 的职责边界
-`plan_rag_turn()` MUST NOT 做 query 内容分析，SHALL 只做 session 级路由（FORCED_PRELOAD vs OPTIONAL_TOOL vs NO_RAG）。query 的意图分类和计划字段生成 MUST 全部由 RAG graph 内部的 `intent_parse` 节点承担。
+`plan_rag_turn()` SHALL 保留既有 session 级 RAG 触发行为：context_files 和通用文档检索关键词 MAY 用于选择 FORCED_PRELOAD、OPTIONAL_TOOL 或 NO_RAG。该触发判断 MUST NOT 分类 `precise_lookup` / `comprehensive_analysis`，MUST NOT 构造 QueryPlan、生成 sub-query 或选择后处理策略；这些 intent-routing 动作 MUST 全部由 RAG graph 内部的 `intent_parse` 节点承担。
+
+#### Scenario: 通用文档检索词只触发 session 路由
+- **WHEN** unified execution 已启用且无 context_files 的 query 命中既有通用文档检索关键词
+- **THEN** `plan_rag_turn` MAY 维持既有 FORCED_PRELOAD 行为，但不得产出 intent、QueryPlan 或 sub-query；进入 `run_rag_graph` 后仍由 `intent_parse` 独立完成 precise/comprehensive 分类
 
 #### Scenario: FORCED_PRELOAD 仍然走意图解析
 - **WHEN** 请求带 context_files，`plan_rag_turn` 判定为 FORCED_PRELOAD

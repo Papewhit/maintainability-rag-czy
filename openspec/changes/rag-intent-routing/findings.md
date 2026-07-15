@@ -230,3 +230,59 @@ last_verified_date: 2026-07-15
 - Disposition: change
 - Disposition target: openspec/changes/rag-intent-routing/
 - Resolution evidence: Public and internal RagTrace schemas now retain the required intent-routing trace, and the evaluation fingerprint binds that wire contract.
+
+## RAG-INTENT-F017
+
+- Kind: behavior_defect
+- Primary scope: rag.retrieval.precise_fallback_scope
+- Evidence status: confirmed
+- Observation: Initial precise retrieval consumed an intent-built scoped `PreciseQueryPlan`, but existing HyDE/step-back full and candidate-only fallback jobs passed only the expanded text and context_files. With no context_files and legacy QueryPlan disabled, candidate preparation rebuilt an unscoped global plan because the expanded text no longer contained the original document hint.
+- Inference: Level 1 query expansion could replace correctly scoped initial evidence with unrelated global chunks, implicitly performing the scope relaxation reserved for fallback Level 2.
+- Decision: Derive every expanded retrieval plan from the original PreciseQueryPlan, replacing only semantic_query while preserving raw_query, matched_files, scope_mode, anchors, heading_hint, route, and other deterministic constraints. Each expanded semantic query still runs its own terminology preflight.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/rag/pipeline/test_rag_pipeline.py` covers parallel full second-pass and candidate-only HyDE/step-back jobs and asserts preserved scope with branch-specific semantic queries.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/pipeline.py` carries a derived scoped plan into every expanded retrieval job; targeted fallback tests pass after reproducing three failures before the fix.
+
+## RAG-INTENT-F018
+
+- Kind: design_ambiguity
+- Primary scope: rag.chat_session_routing
+- Evidence status: confirmed
+- Observation: Proposal and delta spec said `plan_rag_turn()` must not analyze query content, while design and task 3.6 required it to remain unchanged. The existing contract uses generic document-retrieval markers to choose session-level forced preload, without classifying precise/comprehensive intent.
+- Inference: Removing the marker gate would either force every unified turn through RAG or return document questions to Agent-controlled optional tool selection, changing behavior and cost outside this change. Keeping the implementation without correcting the artifacts would falsely describe the same session gate as an intent-routing violation.
+- Decision: Preserve the existing context_files/document-marker session gate. Prohibit only precise/comprehensive classification, QueryPlan construction, sub-query orchestration, and postprocess selection outside the graph. The user accepted this boundary on 2026-07-15.
+- Residual risk: Generic document markers remain a coarse RAG invocation heuristic; changing that invocation policy requires a separately scoped change and cost/behavior evidence.
+- Evidence: Independent final review on 2026-07-15 identified the artifact conflict; user decision retained the existing session contract; `tests/unit/backend/rag/output/test_rag_execution.py` covers the trigger behavior.
+- Disposition: change
+- Disposition target: openspec/changes/rag-intent-routing/
+- Resolution evidence: Proposal, design, task 3.6, delta spec, and architecture now distinguish session-level RAG invocation from graph-owned retrieval intent routing.
+
+## RAG-INTENT-F019
+
+- Kind: behavior_defect
+- Primary scope: rag.api.terminology_trace
+- Evidence status: confirmed
+- Observation: Internal trace retained semantic_query and terminology term_matches, but the public RagTrace response schema declared only term_matches. FastAPI serialization therefore exposed start/end offsets while dropping the actual preflight input that defines their coordinate space.
+- Inference: ChatResponse and historical-message consumers could not reliably interpret terminology offsets after structural query cleaning.
+- Decision: Add semantic_query to the typed internal and public trace contracts and round-trip it with term_matches through ChatResponse.
+- Residual risk: none
+- Evidence: Independent final review on 2026-07-15; `tests/unit/backend/contracts/test_rag_trace_schema.py` reproduced the dropped field before the fix and now verifies semantic_query plus offsets after API serialization.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: Public RagTrace retains semantic_query and the routing source fingerprint binds the response schema.
+
+## RAG-INTENT-F020
+
+- Kind: behavior_defect
+- Primary scope: rag.postprocess.multi_query_merge
+- Evidence status: confirmed
+- Observation: When the comprehensive merger raised, graph code preserved branch candidates but emitted only merge_error and a stage error. It omitted the required `multi_query_merge_skipped` state and branch/merged/unique/deduplicated counts that remained directly knowable.
+- Inference: Failure traces could not distinguish a completed merge from a branch-union degradation or account for candidate-pool cost, despite continuing to answer with preserved evidence.
+- Decision: Centralize success and failure merge telemetry. Failure retains the branch union, marks the stage skipped, records the error, and reports every knowable candidate count; success explicitly marks the stage not skipped.
+- Residual risk: A skipped merger intentionally preserves the undeduplicated branch union; consumers must use the explicit skipped/error state and candidate counts to interpret this degraded evidence state.
+- Evidence: Independent final review on 2026-07-15; `tests/unit/backend/rag/pipeline/test_comprehensive_graph.py` covers duplicate candidates, branch failure, public serialization, and complete merge-degradation telemetry.
+- Disposition: change
+- Disposition target: openspec/changes/rag-intent-routing/
+- Resolution evidence: `backend/rag/comprehensive_postprocess.py` supplies shared merge trace helpers used by both graph and direct policy paths; targeted contract and postprocess tests pass.

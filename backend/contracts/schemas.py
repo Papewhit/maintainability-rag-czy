@@ -92,8 +92,11 @@ class RagTrace(BaseModel):
     baseline_selected: Optional[bool] = None
     shared_postprocess_count: Optional[int] = None
     branch_candidate_count: Optional[int] = None
+    merged_candidate_count: Optional[int] = None
     merged_unique_candidate_count: Optional[int] = None
     deduplicated_candidate_count: Optional[int] = None
+    multi_query_merge_skipped: Optional[bool] = None
+    multi_query_merge_error: Optional[str] = None
     final_candidate_count: Optional[int] = None
     generated_branch_representation_count: Optional[int] = None
     successful_generated_branch_ids: Optional[List[str]] = None
@@ -104,6 +107,7 @@ class RagTrace(BaseModel):
     scope_filter_applied: Optional[bool] = None
     strict_scope_filter: Optional[bool] = None
     query: Optional[str] = None
+    semantic_query: Optional[str] = None
     expanded_query: Optional[str] = None
     step_back_question: Optional[str] = None
     step_back_answer: Optional[str] = None
