@@ -218,7 +218,7 @@ quality_first_v1
 
 `RAG_COMPREHENSIVE_POSTPROCESS_PROFILE` 默认 `quality_first_v1`。未知 profile 必须降级到该默认值并记录结构化配置 warning 与 effective profile；不得部分接受一个非法组合。未来增加便宜 profile 时，必须以新的版本化 registry entry 整体加入并提供组合契约测试，避免独立环境开关形成未经验证的笛卡尔积。
 
-`RERANK_CANDIDATE_POOL_SIZE` 在 comprehensive 路径是 baseline 与全部生成分支共享的全局 rerank 输出候选预算，不按 branch 复制，并复用 precise 的 effective pool 规则：未配置/`<=0` 回退到 `top_k*4`，过小的正值提升到 final `top_k`，最后受实际候选总数限制。CrossEncoder pair budget 独立解析：当前 device tier 的 `RERANK_INPUT_K_CPU/GPU` 大于 0 时作为全局 pair cap，否则回退到全局输出候选预算。预算先给每个可执行 branch 最小配额，剩余按 effective priority 分配；baseline 的 effective priority 固定为 `2`。预算不足覆盖所有分支时，未获 CrossEncoder 配额但拥有 output 配额的分支在该配额内保留 Milvus local rank，并在 trace 标记 `branch_rerank_budget_exhausted=true`；output 配额为 0 的分支不向 merge 传入候选。成功、无 pair、rerank 异常和 no-CrossEncoder 消融路径都必须执行相同 output quota，使实际 merge pool 与 trace used budget 一致。
+`RERANK_CANDIDATE_POOL_SIZE` 在 comprehensive 路径是 baseline 与全部生成分支共享的全局 rerank 输出候选预算，不按 branch 复制，并复用 precise 的 effective pool 规则：未配置/`<=0` 回退到 `top_k*4`，过小的正值提升到 final `top_k`，最后受实际候选总数限制。CrossEncoder pair budget 独立解析：当前 device tier 的 `RERANK_INPUT_K_CPU/GPU` 大于 0 时作为全局 pair cap，否则回退到全局输出候选预算。预算先给每个可执行 branch 最小配额，剩余按 effective priority 分配；baseline 的 effective priority 固定为 `2`。预算不足覆盖所有分支时，未获 CrossEncoder 配额但拥有 output 配额的分支在该配额内保留 Milvus local rank，并在 trace 标记 `branch_rerank_budget_exhausted=true`；pair 配额小于 output 配额时，CrossEncoder local rank 在前，未配对尾部按 Milvus local rank 补足 output 配额。output 配额为 0 的分支不向 merge 传入候选。成功、部分 pair、无 pair、rerank 异常和 no-CrossEncoder 消融路径都必须执行相同 output quota，使实际 merge pool 与 trace used budget 一致。
 
 ### 决策 10：综合后处理成本必须评测后才能上线
 

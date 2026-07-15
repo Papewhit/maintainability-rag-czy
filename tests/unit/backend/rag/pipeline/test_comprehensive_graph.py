@@ -424,6 +424,39 @@ def test_multi_query_merge_failure_preserves_candidates_and_complete_trace():
         "error": "merge exploded",
         "fallback_to": "branch_union",
     }
+    by_text = {doc["text"]: doc for doc in result["merged_candidates"]}
+    assert by_text["baseline shared"]["matched_branch_ids"] == ["baseline"]
+    assert by_text["baseline shared"]["per_branch_local_rank"] == {"baseline": 1}
+    assert by_text["baseline shared"]["baseline_matched"] is True
+    assert by_text["generated shared"]["matched_branch_ids"] == ["sub_query_0"]
+    assert by_text["generated shared"]["per_branch_local_rank"] == {"sub_query_0": 1}
+    assert by_text["generated shared"]["baseline_matched"] is False
+
+    pass_stage = lambda docs, top_k: (docs, {})
+    with (
+        patch("backend.rag.pipeline._auto_merge_documents", side_effect=pass_stage),
+        patch("backend.rag.pipeline._step_chain_check", side_effect=pass_stage),
+        patch("backend.rag.pipeline._apply_structure_rerank", side_effect=pass_stage),
+        patch(
+            "backend.rag.pipeline._evaluate_retrieval_confidence",
+            return_value={"fallback_required": False, "confidence_gate_enabled": True},
+        ),
+    ):
+        postprocessed = rag_pipeline.shared_postprocess_node(
+            {
+                "query_plan": plan,
+                "comprehensive_policy_resolution": resolution,
+                "branch_rerank_results": branch_results,
+                "merged_candidates": result["merged_candidates"],
+                "merge_meta": result["merge_meta"],
+                "rag_trace": trace,
+            }
+        )
+
+    assert postprocessed["docs"]
+    assert postprocessed["rag_trace"]["represented_generated_branch_ids"] == ["sub_query_0"]
+    assert postprocessed["rag_trace"]["comprehensive_confidence_inputs"]["missing_generated_branch_ids"] == []
+    assert postprocessed["rag_trace"]["stage_errors"][-1]["fallback_to"] == "branch_union"
 
     payload = ChatResponse(response="ok", rag_trace=trace).model_dump()["rag_trace"]
     assert payload["multi_query_merge_skipped"] is True

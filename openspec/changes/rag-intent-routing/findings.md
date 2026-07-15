@@ -286,3 +286,31 @@ last_verified_date: 2026-07-15
 - Disposition: change
 - Disposition target: openspec/changes/rag-intent-routing/
 - Resolution evidence: `backend/rag/comprehensive_postprocess.py` supplies shared merge trace helpers used by both graph and direct policy paths; targeted contract and postprocess tests pass.
+
+## RAG-INTENT-F021
+
+- Kind: behavior_defect
+- Primary scope: rag.postprocess.branch_rerank_budget
+- Evidence status: confirmed
+- Observation: When a branch received more output-candidate quota than CrossEncoder pair quota, the successful rerank path returned only paired candidates and discarded the unpaired Milvus-ranked tail despite available output quota.
+- Inference: A lower device-tier pair cap could silently underfill the shared merge pool, reduce branch evidence coverage, and make used output telemetry diverge from the allocated quality/cost strategy.
+- Decision: Keep reranked pairs first, then fill the remaining branch output quota from the unpaired local-rank tail. Pair and output usage remain independently observable.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/rag/postprocess/test_comprehensive_shared_pipeline.py` reproduced the truncated branch and now asserts reranked-pair order plus Milvus-tail retention.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `CrossEncoderLocalReranker` now honors the allocated output quota when pair quota is smaller; the focused red/green test passes.
+
+## RAG-INTENT-F022
+
+- Kind: behavior_defect
+- Primary scope: rag.postprocess.merge_failure_provenance
+- Evidence status: confirmed
+- Observation: The multi-query merge failure fallback preserved raw branch candidates but omitted `matched_branch_ids`, `per_branch_local_rank`, and `baseline_matched`, although each candidate's source branch and rank remained known.
+- Inference: Branch-aware selection and comprehensive confidence could falsely report successful generated branches as unrepresented after a recoverable merger failure.
+- Decision: Annotate every retained branch-union candidate with its known branch/rank/rerank provenance, baseline flag, best local rank, and generated coverage count before shared postprocess continues.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/rag/pipeline/test_comprehensive_graph.py` verifies provenance fields and runs the degraded union through branch-aware shared postprocess without a false missing-branch signal.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `merge_failure_fallback` now preserves branch provenance while retaining the undeduplicated branch union and complete degradation telemetry.

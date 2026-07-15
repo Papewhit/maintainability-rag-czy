@@ -185,6 +185,10 @@ class CrossEncoderLocalReranker:
                 query_term_matches=term_matches,
             )
             reranked = list(reranked[: budget.output_candidates])
+            remaining_output = max(0, budget.output_candidates - len(reranked))
+            if remaining_output:
+                unpaired_tail = local_rank_candidates[len(pair_docs):]
+                reranked.extend(unpaired_tail[:remaining_output])
             meta = {
                 **result.meta,
                 **rerank_meta,
@@ -311,7 +315,28 @@ def merge_failure_fallback(
     error: Exception,
 ) -> tuple[list[dict], dict[str, Any]]:
     """Preserve branch candidates and all knowable counts after merge failure."""
-    merged = [dict(doc) for result in branch_results for doc in result.candidates]
+    merged = []
+    for result in branch_results:
+        branch_id = result.branch.branch_id
+        for local_rank, source in enumerate(result.candidates, 1):
+            item = dict(source)
+            branch_ids = set(item.get("matched_branch_ids") or [])
+            branch_ids.add(branch_id)
+            ranks = dict(item.get("per_branch_local_rank") or {})
+            ranks[branch_id] = min(local_rank, int(ranks.get(branch_id, local_rank)))
+            scores = dict(item.get("per_branch_rerank_score") or {})
+            if source.get("rerank_score") is not None:
+                scores[branch_id] = float(source["rerank_score"])
+            item.update({
+                "matched_branch_ids": sorted(branch_ids),
+                "per_branch_local_rank": ranks,
+                "per_branch_rerank_score": scores,
+                "best_local_rank": min(ranks.values()),
+                "baseline_matched": bool(item.get("baseline_matched"))
+                or result.branch.branch_kind == "baseline",
+                "coverage_count": sum(1 for item_id in branch_ids if item_id != "baseline"),
+            })
+            merged.append(item)
     unique_count = len({candidate_identity(doc) for doc in merged})
     message = str(error)
     return merged, {

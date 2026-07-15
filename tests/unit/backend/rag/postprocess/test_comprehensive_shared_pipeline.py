@@ -89,6 +89,41 @@ def test_branch_rerank_caps_output_when_reranker_expands_requested_top_k():
     assert trace["used_output_budget"] == 2
 
 
+def test_branch_rerank_fills_output_quota_with_unpaired_local_rank_tail():
+    branch = build_retrieval_branches(_plan())[0]
+    inputs = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=tuple(
+                {"chunk_id": f"candidate-{index}"}
+                for index in range(4)
+            ),
+        )
+    ]
+
+    def rerank_pairs(**kwargs):
+        reranked = [dict(doc, rerank_score=1.0 - index) for index, doc in enumerate(reversed(kwargs["docs"]))]
+        return reranked, {"rerank_input_count": len(kwargs["docs"])}
+
+    results, trace = run_branch_rerank(
+        resolve_comprehensive_postprocess_policy("quality_first_v1").policy,
+        inputs,
+        output_candidate_budget=4,
+        pair_budget=2,
+        rerank_fn=rerank_pairs,
+    )
+
+    assert [doc["chunk_id"] for doc in results[0].candidates] == [
+        "candidate-1",
+        "candidate-0",
+        "candidate-2",
+        "candidate-3",
+    ]
+    assert results[0].meta["used_pair_budget"] == 2
+    assert results[0].meta["used_output_budget"] == 4
+    assert trace["used_output_budget"] == 4
+
+
 def test_pair_budget_exhaustion_never_clears_unreranked_branch_candidates():
     branches = build_retrieval_branches(
         ComprehensiveQueryPlan(
