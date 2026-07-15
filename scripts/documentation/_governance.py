@@ -262,7 +262,10 @@ def _validate_architecture(root: Path, result: Result):
     matrix = re.search(r"^## Feature Status Matrix\s*$([\s\S]*?)(?=^## |\Z)", text, re.M)
     active = text if not matrix else text[:matrix.start()] + text[matrix.end():]
     for planned in ("rag-intent-routing", "rag-multilevel-fallback"):
-        if planned in active:
+        planned_reference = re.compile(
+            rf"(?<![A-Za-z0-9_.-]){re.escape(planned)}(?![A-Za-z0-9_.-])"
+        )
+        if planned_reference.search(active):
             result.errors.append(f"docs/ARCHITECTURE.md: planned change {planned} appears in active flow")
 
 

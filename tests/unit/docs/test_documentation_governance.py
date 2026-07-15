@@ -229,6 +229,23 @@ def test_planned_change_after_status_matrix_is_rejected(tmp_path: Path):
 
 
 @pytest.mark.unit
+def test_planned_change_slug_inside_filename_is_not_rejected(tmp_path: Path):
+    root = _repo(tmp_path)
+    (root / "docs/ARCHITECTURE.md").write_text(
+        "# Architecture\n"
+        "The `.env.rag-intent-routing-workflow.example` file is validation-only.\n"
+        "## Feature Status Matrix\n"
+        "| Intent | Implemented, default disabled |\n",
+        encoding="utf-8",
+    )
+
+    result = validator.Result()
+    validator._validate_architecture(root, result)
+
+    assert not any("appears in active flow" in error for error in result.errors)
+
+
+@pytest.mark.unit
 def test_ledger_rejects_unrecognized_finding_heading(tmp_path: Path):
     path = tmp_path / "findings.md"
     path.write_text("# Change Findings\n\n## BAD-1\n\n- Evidence status: observed\n", encoding="utf-8")

@@ -5,7 +5,7 @@ status: partial
 scope: evaluation.rag.intent_routing
 source_commit: c915b535c6270dd7824e2ff2cfad1716ec628d59
 source_fingerprint: sha256:dc1f27166e4057358ce635a0f35dc0b118331c0ed6041d2249a484dc44f2f99f
-executed_at: 2026-07-15T09:22:00Z
+executed_at: 2026-07-15T09:32:28Z
 source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032, RAG-INTENT-F033, RAG-INTENT-F034, RAG-INTENT-F035]
 supersedes: []
 ---
@@ -87,7 +87,7 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 | RAG evaluation suite | 66 passed, 1 real-model test skipped, 10 parameterized subtests passed | Harness, schema, pairing, aggregation, report path, resource/config binding, and historical-evidence checks work; no real-model quality claim |
 | Terminology boundary and related postprocess tests | 77 passed | Terminology signals remain consumed; semantic entity compatibility input is removed |
 | RAG + API + evaluation unit suites | 421 passed | Default-disabled compatibility, validation-only switch-bundle, and terminology-compatible trace contracts have no unit regression |
-| Repository non-slow/non-e2e matrix | 714 passed, 2 skipped, 6 deselected, 10 parameterized subtests passed | Full default test matrix has no regression at the bound implementation commit |
+| Repository non-slow/non-e2e matrix | 715 passed, 2 skipped, 6 deselected, 10 parameterized subtests passed | Full default test matrix has no regression at the bound implementation commit |
 | Real FAST_MODEL intent baseline | Not executed | Credentials were unavailable |
 | Paired real retrieval profile comparison | Not executed | Model credentials and release retrieval infrastructure were unavailable |
 
