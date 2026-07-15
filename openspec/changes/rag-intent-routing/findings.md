@@ -184,10 +184,10 @@ last_verified_date: 2026-07-15
 - Inference: A real run would systematically mark labeled filter/boost plans invalid, could never produce citation validity, could reuse a fingerprint across materially different judges or retrieval stores, and would break existing trace consumers.
 - Decision: Add and fingerprint a curated evaluation filename registry; bind it to real intent reports; measure generated citation consistency against retrieved filename/page evidence; expand source/config fingerprints; and retain `entity_metadata_score_applied`, `entity_type_coverage`, and `entity_match_density` as terminology-only historical response keys while keeping query-side inputs terminology-typed.
 - Residual risk: The synthetic filename registry proves parsing and plan validity, not that the release Milvus corpus contains those documents. Citation validity measures precision against retrieved evidence rather than recall against human qrels. Both limitations remain explicit in the partial validation report and 5B.3 stays incomplete.
-- Evidence: Third-stage independent review on 2026-07-14; `tests/eval/rag/test_intent_classifier_eval.py`, `tests/eval/rag/test_comprehensive_intent_routing_eval.py`, `tests/unit/backend/evaluation/test_answer_eval.py`, and trace contract tests cover the corrections.
+- Evidence: Third-stage independent review on 2026-07-14 and `@codex` review on 2026-07-15; `tests/eval/rag/test_intent_classifier_eval.py`, `tests/eval/rag/test_comprehensive_intent_routing_eval.py`, `tests/unit/backend/evaluation/test_answer_eval.py`, and success/failure trace contract tests cover the corrections.
 - Disposition: change
 - Disposition target: openspec/changes/rag-intent-routing/
-- Resolution evidence: The real runners now carry registry/model/retrieval fingerprints and a constructible citation-validity metric; existing terminology trace names remain serialized; targeted evaluation and contract tests pass.
+- Resolution evidence: The real runners now carry registry/model/retrieval fingerprints and a constructible citation-validity metric; all retrieval/rerank failure paths retain the historical terminology metadata response keys; targeted evaluation and contract tests pass.
 
 ## RAG-INTENT-F014
 
@@ -216,3 +216,17 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: Both default-off paths emit `query_plan_enabled=false`, and `build_initial_rag_trace()` preserves that value for downstream observability consumers.
+
+## RAG-INTENT-F016
+
+- Kind: behavior_defect
+- Primary scope: rag.api.trace_contract
+- Evidence status: confirmed
+- Observation: The graph produced the intent-routing and comprehensive cost/diagnostic fields required by the delta spec, but the public `RagTrace` Pydantic response model did not declare them. FastAPI response-model serialization therefore removed those fields from non-stream chat and historical-message responses.
+- Inference: Rollout monitors, evaluation tooling, and API clients could not observe the very cohort, branch, budget, and cost telemetry required to assess this default-disabled capability.
+- Decision: Explicitly type the intent, query-plan, comprehensive profile/strategy, branch diagnostics, budget/cost, representation, and scope fields in both internal and public trace contracts. Include the public response schema in the governed routing source fingerprint rather than allowing arbitrary extra response keys.
+- Residual risk: Future trace fields still require an intentional response-contract update and regression test; this is preferred to exposing unbounded internal extras.
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/contracts/test_rag_trace_schema.py` round-trips representative comprehensive telemetry through `ChatResponse`; the source-fingerprint contract asserts coverage of `backend/contracts/schemas.py`.
+- Disposition: change
+- Disposition target: openspec/changes/rag-intent-routing/
+- Resolution evidence: Public and internal RagTrace schemas now retain the required intent-routing trace, and the evaluation fingerprint binds that wire contract.

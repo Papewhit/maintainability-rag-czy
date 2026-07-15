@@ -205,6 +205,10 @@ Comprehensive 路径的 `RERANK_CANDIDATE_POOL_SIZE` MUST 是 baseline 与全部
 - **WHEN** `RAG_INTENT_CLASSIFIER_ENABLED=false`
 - **THEN** rag_trace 标明 classifier 未启用和 compatibility source，不包含 `intent_llm_error`，且 `intent_fallback_to_rules=false`
 
+#### Scenario: API 响应保留 intent-routing trace
+- **WHEN** graph 的 rag_trace 经 `ChatResponse` 或历史消息响应 schema 序列化
+- **THEN** intent、query-plan、comprehensive profile、branch diagnostics、budget/cost 和 scope telemetry 字段必须保留，不得因响应模型未声明字段而被静默过滤
+
 ### Requirement: 评测集与阈值
 `tests/eval/data/intent_routing/` 下 MUST 存在意图分类评测集，包含至少 100 条标注样本（70% precise + 30% comprehensive），覆盖结构限域、目标粒度和所有 analysis_type。评测脚本 MUST 可重复运行，输出指标 MUST 达到既定阈值才允许将 `RAG_INTENT_CLASSIFIER_ENABLED` 默认值改为 true。
 

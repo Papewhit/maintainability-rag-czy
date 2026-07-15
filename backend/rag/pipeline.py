@@ -300,6 +300,9 @@ def intent_parse_node(state: RAGState) -> RAGState:
     )
     plan = result.query_plan
     semantic_query = plan.semantic_query if isinstance(plan, PreciseQueryPlan) else plan.clean_query
+    trace = dict(result.trace)
+    trace.setdefault("tool_used", True)
+    trace.setdefault("tool_name", "search_knowledge_base")
     return {
         "intent_result": result,
         "query_plan": plan,
@@ -307,7 +310,7 @@ def intent_parse_node(state: RAGState) -> RAGState:
         "raw_query": plan.raw_query,
         "clean_query": plan.clean_query,
         "semantic_query": semantic_query,
-        "rag_trace": dict(result.trace),
+        "rag_trace": trace,
     }
 
 

@@ -13,6 +13,7 @@ from backend.rag.comprehensive_postprocess import (
 from backend.rag.intent import IntentParseResult
 from backend.rag.query_plan import ComprehensiveQueryPlan, RetrievalScope, SubQuery
 from backend.rag.runtime_config import load_runtime_config
+from backend.contracts.schemas import ChatResponse, MessageInfo
 
 
 pytestmark = pytest.mark.unit
@@ -240,20 +241,14 @@ def test_comprehensive_graph_runs_once_and_returns_merged_context_with_full_trac
         },
     )
 
-    def intent_node(state):
-        return {
-            "intent_result": intent_result,
-            "query_plan": plan,
-            "query_plan_type": "comprehensive",
-            "raw_query": plan.raw_query,
-            "clean_query": plan.clean_query,
-            "semantic_query": plan.clean_query,
-            "rag_trace": dict(intent_result.trace),
-        }
-
     def retrieve(query, **kwargs):
         return {
-            "candidates": [{"chunk_id": query, "text": f"evidence:{query}", "rrf_rank": 1}],
+            "candidates": [{
+                "chunk_id": query,
+                "filename": "manual.pdf",
+                "text": f"evidence:{query}",
+                "rrf_rank": 1,
+            }],
             "meta": {"term_matches": [{"surface": query}], "timings": {}, "stage_errors": []},
         }
 
@@ -271,7 +266,7 @@ def test_comprehensive_graph_runs_once_and_returns_merged_context_with_full_trac
     )
 
     with (
-        patch("backend.rag.pipeline.intent_parse_node", side_effect=intent_node),
+        patch("backend.rag.pipeline.build_intent_parse_result", return_value=intent_result),
         patch("backend.rag.pipeline.retrieve_candidate_pool", side_effect=retrieve),
         patch("backend.rag.pipeline._rerank_documents", side_effect=rerank),
         patch("backend.rag.pipeline._rerank_device_tier", return_value="cpu"),
@@ -300,3 +295,20 @@ def test_comprehensive_graph_runs_once_and_returns_merged_context_with_full_trac
     assert result["rag_trace"]["retrieval_branch_count"] == 3
     assert result["rag_trace"]["rerank_pair_count"] == 3
     assert result["rag_trace"]["shared_postprocess_count"] == 1
+    assert result["rag_trace"]["tool_used"] is True
+    assert result["rag_trace"]["tool_name"] == "search_knowledge_base"
+    assert result["rag_trace"]["branch_candidate_count"] == 3
+    assert result["rag_trace"]["deduplicated_candidate_count"] == 0
+
+    chat_payload = ChatResponse(
+        response="ok",
+        rag_trace=result["rag_trace"],
+    ).model_dump()["rag_trace"]
+    message_payload = MessageInfo(
+        type="assistant",
+        content="ok",
+        timestamp="2026-07-15T00:00:00Z",
+        rag_trace=result["rag_trace"],
+    ).model_dump()["rag_trace"]
+    assert chat_payload["branch_candidate_count"] == 3
+    assert message_payload["deduplicated_candidate_count"] == 0

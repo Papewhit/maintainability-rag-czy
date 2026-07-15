@@ -585,6 +585,10 @@ class RagUtilsDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["meta"]["retrieval_mode"], "failed")
         self.assertIn("hybrid down", result["meta"]["hybrid_error"])
         self.assertIn("dense down", result["meta"]["dense_error"])
+        self.assertFalse(result["meta"]["entity_metadata_score_applied"])
+        self.assertEqual(result["meta"]["entity_type_coverage"], 0.0)
+        self.assertEqual(result["meta"]["entity_match_density"], 0.0)
+        self.assertNotIn("terminology_metadata_score_applied", result["meta"])
 
     def test_structure_rerank_boosts_leafs_from_strong_root_and_limits_duplicates(self):
         docs = [

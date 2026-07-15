@@ -92,7 +92,7 @@
 ## 6. Milestone M6：上线开关与监控
 
 - [x] 6.1 默认 `RAG_INTENT_CLASSIFIER_ENABLED=false`，开关由部署方控制
-- [x] 6.2 监控指标：intent classifier 调用 P50/P95 延迟、LLM 失败率、规则降级率、各 intent 占比，以及 comprehensive profile、sub_query_count、retrieval_branch_count、baseline hit/selected、embedding/hybrid calls、rerank pairs、budget exhaustion、merge/postprocess 和端到端 P50/P95
+- [x] 6.2 监控指标：intent classifier 调用 P50/P95 延迟、LLM 失败率、规则降级率、各 intent 占比，以及 comprehensive profile、sub_query_count、retrieval_branch_count、baseline hit/selected、embedding/hybrid calls、rerank pairs、budget exhaustion、merge/postprocess 和端到端 P50/P95；公开 ChatResponse/历史消息 schema 保留这些 trace 字段
 - [x] 6.3 灰度策略文档：先 10% 流量启用，观察延迟和准确率，逐步全量
 - [x] 6.4 关闭开关时走兼容性 PreciseQueryPlan 路径；回归测试比较 semantic query、filters、route、检索结果和 `query_plan_enabled=false` telemetry，证明默认行为不变；另以显式回归用例记录并修复 `QUERY_PLAN_ENABLED=true` 时 terminology raw query 覆盖 semantic query 的既有缺陷
 - [ ] 6.5 完成评测后将默认值改为 true，作为单独的小 change 上线

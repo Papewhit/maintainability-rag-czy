@@ -705,7 +705,38 @@ def test_real_reranker_failure_marks_skipped_and_preserves_candidates():
     assert [doc["chunk_id"] for doc in result["docs"]] == ["c1"]
     assert result["meta"]["rerank_skipped"] is True
     assert result["meta"]["rerank_error"] == "inference failed"
+    assert result["meta"]["entity_metadata_score_applied"] is False
+    assert result["meta"]["entity_type_coverage"] == 0.0
+    assert result["meta"]["entity_match_density"] == 0.0
+    assert "terminology_metadata_score_applied" not in result["meta"]
     assert result["meta"]["stage_errors"][0]["stage"] == "rerank"
+
+
+def test_finish_pipeline_rerank_exception_preserves_historical_metadata_keys():
+    docs = [{"chunk_id": "c1", "text": "evidence", "score": 0.8}]
+
+    with (
+        patch.object(rag_utils, "_rerank_documents", side_effect=RuntimeError("rerank crashed")),
+        patch.object(rag_utils, "_auto_merge_documents", side_effect=lambda docs, top_k: (docs, {})),
+        patch.object(rag_utils, "_step_chain_check", side_effect=lambda docs, top_k: (docs, {})),
+        patch.object(rag_utils, "_apply_structure_rerank", side_effect=lambda docs, top_k: (docs, {})),
+        patch.object(rag_utils, "_evaluate_retrieval_confidence", return_value={}),
+    ):
+        result = rag_utils._finish_retrieval_pipeline(
+            query="evidence",
+            search_query="evidence",
+            retrieved=docs,
+            top_k=1,
+            candidate_k=1,
+            timings={},
+            stage_errors=[],
+            total_start=time.perf_counter(),
+        )
+
+    assert result["meta"]["entity_metadata_score_applied"] is False
+    assert result["meta"]["entity_type_coverage"] == 0.0
+    assert result["meta"]["entity_match_density"] == 0.0
+    assert "terminology_metadata_score_applied" not in result["meta"]
 
 
 def test_finish_pipeline_passes_terminology_entities_to_rerank():

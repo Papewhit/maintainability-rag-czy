@@ -332,9 +332,9 @@ def _finish_retrieval_pipeline(
             "rerank_error": str(exc),
             "rerank_skipped": True,
             "rerank_output_count": len(reranked),
-            "terminology_metadata_score_applied": False,
-            "terminology_type_coverage": 0.0,
-            "chunk_term_match_density": 0.0,
+            "entity_metadata_score_applied": False,
+            "entity_type_coverage": 0.0,
+            "entity_match_density": 0.0,
         }
         stage_errors.append(_stage_error("rerank", str(exc), "retrieved_candidates"))
     timings["rerank_ms"] = elapsed_ms(stage_start)
@@ -1651,9 +1651,9 @@ def _failed_retrieval_response(
             "step_chain_check_enabled": STEP_CHAIN_CHECK_ENABLED,
             "step_chain_repaired_groups": [],
             "step_chain_completion_count": 0,
-            "terminology_metadata_score_applied": False,
-            "terminology_type_coverage": 0.0,
-            "chunk_term_match_density": 0.0,
+            "entity_metadata_score_applied": False,
+            "entity_type_coverage": 0.0,
+            "entity_match_density": 0.0,
             "candidate_count": 0,
             "confidence_gate_enabled": CONFIDENCE_GATE_ENABLED,
             "fallback_required": CONFIDENCE_GATE_ENABLED,

@@ -13,6 +13,7 @@ from typing import Any, Callable, Iterable
 
 
 _ROUTING_SOURCE_FILES = (
+    "backend/contracts/schemas.py",
     "backend/evaluation/answer_eval.py",
     "backend/evaluation/comprehensive_routing.py",
     "backend/evaluation/intent_routing.py",

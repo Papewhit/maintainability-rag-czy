@@ -94,9 +94,6 @@ class RetrievalMeta(TypedDict, total=False):
     entity_type_coverage: float
     entity_match_density: float
     term_matches: list[dict[str, Any]]
-    query_plan_enabled: bool
-    scope_filter_applied: bool
-    strict_scope_filter: bool
     confidence_gate_enabled: bool
     confidence_ms: float
     confidence_gate_skipped: bool
@@ -118,6 +115,64 @@ class RagTrace(TypedDict, total=False):
     plan_applied: bool
     tool_used: bool
     tool_name: str
+    intent: str
+    intent_confidence: float
+    query_plan_type: str
+    intent_classifier_enabled: bool
+    intent_compatibility_source: str
+    intent_llm_model: str
+    intent_llm_ms: float
+    intent_llm_error: str
+    intent_fallback_to_rules: bool
+    analysis_type: str
+    sub_query_count: int
+    retrieval_branch_count: int
+    requested_comprehensive_postprocess_profile: str
+    effective_comprehensive_postprocess_profile: str
+    comprehensive_postprocess_profile_warning: str
+    comprehensive_postprocess_profile: str
+    comprehensive_policy_version: str
+    shared_postprocess_version: str
+    postprocess_contract: str
+    postprocess_contract_version: str
+    budget_strategy_id: str
+    branch_rerank_strategy_id: str
+    merge_strategy_id: str
+    final_selection_strategy_id: str
+    branch_retrieval_diagnostics: list[dict[str, Any]]
+    branch_diagnostics: list[dict[str, Any]]
+    branch_errors: list[dict[str, Any]]
+    allocated_output_budget: int
+    used_output_budget: int
+    allocated_pair_budget: int
+    used_pair_budget: int
+    rerank_pair_count: int
+    rerank_budget_exhausted: bool
+    rerank_output_candidate_budget: int
+    rerank_pair_budget_cap: int
+    rerank_pair_device_tier: str
+    dense_embedding_call_count: int
+    sparse_embedding_call_count: int
+    embedding_call_count: int
+    hybrid_search_call_count: int
+    split_search_call_count: int
+    baseline_candidate_count: int
+    baseline_hit: bool
+    baseline_matched: bool
+    baseline_selected: bool
+    shared_postprocess_count: int
+    branch_candidate_count: int
+    merged_unique_candidate_count: int
+    deduplicated_candidate_count: int
+    final_candidate_count: int
+    generated_branch_representation_count: int
+    successful_generated_branch_ids: list[str]
+    represented_generated_branch_ids: list[str]
+    structure_reservation_restored_branch_ids: list[str]
+    comprehensive_confidence_inputs: dict[str, Any]
+    query_plan_enabled: bool
+    scope_filter_applied: bool
+    strict_scope_filter: bool
     query: str
     expanded_query: str
     retrieved_chunks: list[dict[str, Any]]

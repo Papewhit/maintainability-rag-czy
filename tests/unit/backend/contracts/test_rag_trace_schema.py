@@ -1,6 +1,6 @@
 import pytest
 
-from backend.contracts.schemas import RagTrace
+from backend.contracts.schemas import ChatResponse, RagTrace
 
 
 pytestmark = pytest.mark.unit
@@ -46,6 +46,28 @@ def test_rag_trace_schema_preserves_postprocess_fields():
             "confidence_ms": 5.0,
         },
         stage_errors=[{"stage": "auto_merge", "error": "recovered", "severity": "warning"}],
+        intent="comprehensive_analysis",
+        intent_confidence=0.91,
+        query_plan_type="comprehensive",
+        intent_llm_model="fast-model",
+        intent_llm_ms=12.5,
+        intent_fallback_to_rules=False,
+        analysis_type="comparison",
+        sub_query_count=2,
+        retrieval_branch_count=3,
+        requested_comprehensive_postprocess_profile="quality_first_v1",
+        effective_comprehensive_postprocess_profile="quality_first_v1",
+        budget_strategy_id="priority_weighted_v1",
+        branch_retrieval_diagnostics=[{"branch_id": "baseline", "candidate_count": 4}],
+        branch_diagnostics=[{"branch_id": "baseline", "used_pair_budget": 3}],
+        allocated_pair_budget=8,
+        used_pair_budget=6,
+        rerank_pair_count=6,
+        baseline_hit=True,
+        baseline_selected=True,
+        query_plan_enabled=True,
+        scope_filter_applied=True,
+        strict_scope_filter=True,
     )
 
     payload = trace.model_dump()
@@ -60,3 +82,14 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert payload["auto_merge_skipped"] is True
     assert payload["auto_merge_error"] == "recovered"
     assert payload["stage_errors"][0]["stage"] == "auto_merge"
+    assert payload["intent"] == "comprehensive_analysis"
+    assert payload["retrieval_branch_count"] == 3
+    assert payload["branch_retrieval_diagnostics"][0]["branch_id"] == "baseline"
+    assert payload["rerank_pair_count"] == 6
+    assert payload["strict_scope_filter"] is True
+
+    response = ChatResponse.model_validate({"response": "ok", "rag_trace": payload})
+    response_trace = response.model_dump()["rag_trace"]
+    assert response_trace["intent"] == "comprehensive_analysis"
+    assert response_trace["budget_strategy_id"] == "priority_weighted_v1"
+    assert response_trace["branch_diagnostics"][0]["used_pair_budget"] == 3
