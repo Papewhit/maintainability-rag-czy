@@ -306,14 +306,14 @@ last_verified_date: 2026-07-15
 - Kind: behavior_defect
 - Primary scope: rag.postprocess.merge_failure_provenance
 - Evidence status: confirmed
-- Observation: The multi-query merge failure fallback preserved raw branch candidates but omitted `matched_branch_ids`, `per_branch_local_rank`, and `baseline_matched`, although each candidate's source branch and rank remained known.
-- Inference: Branch-aware selection and comprehensive confidence could falsely report successful generated branches as unrepresented after a recoverable merger failure.
-- Decision: Annotate every retained branch-union candidate with its known branch/rank/rerank provenance, baseline flag, best local rank, and generated coverage count before shared postprocess continues.
+- Observation: The multi-query merge failure fallback initially preserved raw branch candidates but omitted provenance. Its first repair annotated only each physical copy's immediate source; when duplicate identities came from multiple branches, selector identity dedupe could still discard the other copies' branch coverage.
+- Inference: Branch-aware selection and comprehensive confidence could falsely report successful generated branches as unrepresented after a recoverable merger failure, even when the selected evidence identity was returned by those branches.
+- Decision: Aggregate branch ids, best per-branch ranks/scores, baseline state, and generated coverage by candidate identity, then annotate every retained branch-union copy with that complete known provenance before shared postprocess continues.
 - Residual risk: none
-- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/rag/pipeline/test_comprehensive_graph.py` verifies provenance fields and runs the degraded union through branch-aware shared postprocess without a false missing-branch signal.
+- Evidence: `@codex` reviews on 2026-07-15; `tests/unit/backend/rag/pipeline/test_comprehensive_graph.py` covers the initial missing fields and duplicate identities shared across baseline plus two generated branches, then runs the degraded union through branch-aware shared postprocess without a false missing-branch signal.
 - Disposition: closed_in_place
 - Disposition target: null
-- Resolution evidence: `merge_failure_fallback` now preserves branch provenance while retaining the undeduplicated branch union and complete degradation telemetry.
+- Resolution evidence: `merge_failure_fallback` now preserves identity-unioned branch provenance on every retained copy while keeping the undeduplicated branch union and complete degradation telemetry.
 
 ## RAG-INTENT-F023
 

@@ -317,25 +317,53 @@ def merge_failure_fallback(
     error: Exception,
 ) -> tuple[list[dict], dict[str, Any]]:
     """Preserve branch candidates and all knowable counts after merge failure."""
-    merged = []
+    provenance_by_identity: dict[str, dict[str, Any]] = {}
     for result in branch_results:
         branch_id = result.branch.branch_id
         for local_rank, source in enumerate(result.candidates, 1):
+            identity = candidate_identity(source)
+            provenance = provenance_by_identity.setdefault(
+                identity,
+                {"branch_ids": set(), "ranks": {}, "scores": {}, "baseline_matched": False},
+            )
+            provenance["branch_ids"].update(source.get("matched_branch_ids") or [])
+            provenance["branch_ids"].add(branch_id)
+            source_scores = dict(source.get("per_branch_rerank_score") or {})
+            for source_branch_id, source_rank in dict(
+                source.get("per_branch_local_rank") or {}
+            ).items():
+                rank = int(source_rank)
+                previous_rank = provenance["ranks"].get(source_branch_id)
+                if previous_rank is None or rank < previous_rank:
+                    provenance["ranks"][source_branch_id] = rank
+                    if source_branch_id in source_scores:
+                        provenance["scores"][source_branch_id] = float(
+                            source_scores[source_branch_id]
+                        )
+            previous_rank = provenance["ranks"].get(branch_id)
+            if previous_rank is None or local_rank < previous_rank:
+                provenance["ranks"][branch_id] = local_rank
+                if source.get("rerank_score") is not None:
+                    provenance["scores"][branch_id] = float(source["rerank_score"])
+            provenance["baseline_matched"] = (
+                provenance["baseline_matched"]
+                or bool(source.get("baseline_matched"))
+                or result.branch.branch_kind == "baseline"
+            )
+
+    merged = []
+    for result in branch_results:
+        for source in result.candidates:
             item = dict(source)
-            branch_ids = set(item.get("matched_branch_ids") or [])
-            branch_ids.add(branch_id)
-            ranks = dict(item.get("per_branch_local_rank") or {})
-            ranks[branch_id] = min(local_rank, int(ranks.get(branch_id, local_rank)))
-            scores = dict(item.get("per_branch_rerank_score") or {})
-            if source.get("rerank_score") is not None:
-                scores[branch_id] = float(source["rerank_score"])
+            provenance = provenance_by_identity[candidate_identity(source)]
+            branch_ids = sorted(provenance["branch_ids"])
+            ranks = dict(provenance["ranks"])
             item.update({
-                "matched_branch_ids": sorted(branch_ids),
+                "matched_branch_ids": branch_ids,
                 "per_branch_local_rank": ranks,
-                "per_branch_rerank_score": scores,
+                "per_branch_rerank_score": dict(provenance["scores"]),
                 "best_local_rank": min(ranks.values()),
-                "baseline_matched": bool(item.get("baseline_matched"))
-                or result.branch.branch_kind == "baseline",
+                "baseline_matched": bool(provenance["baseline_matched"]),
                 "coverage_count": sum(1 for item_id in branch_ids if item_id != "baseline"),
             })
             merged.append(item)

@@ -460,7 +460,11 @@ def test_multi_query_merge_failure_preserves_candidates_and_complete_trace():
             ),
             {},
         ),
-        BranchRetrievalResult(branches[2], (), {}, "branch unavailable"),
+        BranchRetrievalResult(
+            branches[2],
+            ({"chunk_id": "shared", "text": "generated second shared"},),
+            {},
+        ),
     ]
 
     result = rag_pipeline.merge_sub_query_results(
@@ -475,12 +479,12 @@ def test_multi_query_merge_failure_preserves_candidates_and_complete_trace():
         }
     )
 
-    assert len(result["merged_candidates"]) == 4
+    assert len(result["merged_candidates"]) == 5
     trace = result["rag_trace"]
     assert trace["multi_query_merge_skipped"] is True
     assert trace["multi_query_merge_error"] == "merge exploded"
-    assert trace["branch_candidate_count"] == 4
-    assert trace["merged_candidate_count"] == 4
+    assert trace["branch_candidate_count"] == 5
+    assert trace["merged_candidate_count"] == 5
     assert trace["merged_unique_candidate_count"] == 3
     assert trace["deduplicated_candidate_count"] == 0
     assert trace["stage_errors"][-1] == {
@@ -489,12 +493,16 @@ def test_multi_query_merge_failure_preserves_candidates_and_complete_trace():
         "fallback_to": "branch_union",
     }
     by_text = {doc["text"]: doc for doc in result["merged_candidates"]}
-    assert by_text["baseline shared"]["matched_branch_ids"] == ["baseline"]
-    assert by_text["baseline shared"]["per_branch_local_rank"] == {"baseline": 1}
+    expected_shared_branches = ["baseline", "sub_query_0", "sub_query_1"]
+    expected_shared_ranks = {"baseline": 1, "sub_query_0": 1, "sub_query_1": 1}
+    assert by_text["baseline shared"]["matched_branch_ids"] == expected_shared_branches
+    assert by_text["baseline shared"]["per_branch_local_rank"] == expected_shared_ranks
     assert by_text["baseline shared"]["baseline_matched"] is True
-    assert by_text["generated shared"]["matched_branch_ids"] == ["sub_query_0"]
-    assert by_text["generated shared"]["per_branch_local_rank"] == {"sub_query_0": 1}
-    assert by_text["generated shared"]["baseline_matched"] is False
+    assert by_text["generated shared"]["matched_branch_ids"] == expected_shared_branches
+    assert by_text["generated shared"]["per_branch_local_rank"] == expected_shared_ranks
+    assert by_text["generated shared"]["baseline_matched"] is True
+    assert by_text["generated second shared"]["matched_branch_ids"] == expected_shared_branches
+    assert by_text["generated second shared"]["coverage_count"] == 2
 
     pass_stage = lambda docs, top_k: (docs, {})
     with (
@@ -518,11 +526,14 @@ def test_multi_query_merge_failure_preserves_candidates_and_complete_trace():
         )
 
     assert postprocessed["docs"]
-    assert postprocessed["rag_trace"]["represented_generated_branch_ids"] == ["sub_query_0"]
+    assert postprocessed["rag_trace"]["represented_generated_branch_ids"] == [
+        "sub_query_0",
+        "sub_query_1",
+    ]
     assert postprocessed["rag_trace"]["comprehensive_confidence_inputs"]["missing_generated_branch_ids"] == []
     assert postprocessed["rag_trace"]["stage_errors"][-1]["fallback_to"] == "branch_union"
 
     payload = ChatResponse(response="ok", rag_trace=trace).model_dump()["rag_trace"]
     assert payload["multi_query_merge_skipped"] is True
     assert payload["multi_query_merge_error"] == "merge exploded"
-    assert payload["merged_candidate_count"] == 4
+    assert payload["merged_candidate_count"] == 5
