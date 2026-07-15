@@ -454,3 +454,17 @@ last_verified_date: 2026-07-15
 - Disposition: validation
 - Disposition target: docs/validation/rag-intent-routing-evaluation.md
 - Resolution evidence: `backend/rag/runtime_config.py` bounds the setting; `decompose_and_fanout()` truncates before executor submission and reports requested/executed/truncated fields.
+
+## RAG-INTENT-F033
+
+- Kind: behavior_defect
+- Primary scope: rag.retrieval.query_plan_activation
+- Evidence status: confirmed
+- Observation: Precise HyDE/step-back fallback derives a new plan by replacing `semantic_query`. Candidate preparation inferred plan activation from that difference, so a default-off compatibility plan could report `query_plan_enabled=true` and query-plan layers during expanded retrieval even though the initial retrieval correctly reported false.
+- Inference: Default-off requests could change telemetry semantics during fallback and make rollout evidence falsely attribute legacy-compatible retrieval to QueryPlan behavior.
+- Decision: Treat the initial retrieval's boolean `query_plan_enabled` trace as authoritative for all full and candidate-only expanded retrieval calls. Preserve legacy inference only when that trace field is absent.
+- Residual risk: none
+- Evidence: `@codex` review 4701746410 on 2026-07-15; `tests/unit/backend/rag/pipeline/test_rag_pipeline.py` reproduces both full and candidate-only drift before the fix and verifies explicit inactive propagation afterward.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/rag/pipeline.py::_expanded_query_plan_active()` forwards the initial activation state independently of rewritten query text; the focused fallback regression suite passes.

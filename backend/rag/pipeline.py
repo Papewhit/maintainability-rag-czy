@@ -990,6 +990,12 @@ def _expanded_query_plan(state: RAGState, query: str) -> PreciseQueryPlan | None
     return replace(plan, semantic_query=query)
 
 
+def _expanded_query_plan_active(state: RAGState) -> bool | None:
+    """Preserve the initial retrieval's authoritative QueryPlan activation state."""
+    value = (state.get("rag_trace") or {}).get("query_plan_enabled")
+    return value if isinstance(value, bool) else None
+
+
 def _strict_scope_filter_for_plan(plan: PreciseQueryPlan | None) -> bool:
     return isinstance(plan, PreciseQueryPlan) and plan.scope_mode == "filter"
 
@@ -999,6 +1005,7 @@ def _candidate_retrieval_job(
     context_files: list[str],
     candidate_k: int,
     query_plan: PreciseQueryPlan | None,
+    query_plan_active: bool | None,
 ) -> dict:
     return retrieve_candidate_pool(
         query,
@@ -1006,6 +1013,7 @@ def _candidate_retrieval_job(
         context_files=context_files,
         candidate_k=candidate_k,
         query_plan=query_plan,
+        query_plan_active=query_plan_active,
         strict_scope_filter=_strict_scope_filter_for_plan(query_plan),
     )
 
@@ -1021,11 +1029,18 @@ def _collect_candidate_only_retrievals(
 ) -> tuple[list[dict], dict[str, float], list[dict], list[str]] | None:
     keys = ["hyde", "step_back"] if strategy == "complex" else [strategy]
     jobs = {}
+    query_plan_active = _expanded_query_plan_active(state)
     for key in keys:
         query = _candidate_query_for_strategy(state, key)
         query_plan = _expanded_query_plan(state, query)
         jobs[key] = _submit_with_context(
-            lambda q=query, plan=query_plan: _candidate_retrieval_job(q, context_files, candidate_k, plan)
+            lambda q=query, plan=query_plan: _candidate_retrieval_job(
+                q,
+                context_files,
+                candidate_k,
+                plan,
+                query_plan_active,
+            )
         )
 
     candidates: list[dict] = []
@@ -1146,6 +1161,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
     strategy = state.get("expansion_type") or "step_back"
     context_files = state.get("context_files") or []
     rag_trace = state.get("rag_trace", {}) or {}
+    query_plan_active = _expanded_query_plan_active(state)
     fallback_deadline = float(state.get("fallback_deadline") or _fallback_deadline(expanded_start, config))
     if strategy == "timeout" or rag_trace.get("fallback_timed_out"):
         return _fallback_to_initial_retrieval(state, rag_trace, expanded_start)
@@ -1194,6 +1210,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
                     top_k=5,
                     context_files=context_files,
                     query_plan=_expanded_query_plan(state, hypothetical_doc),
+                    query_plan_active=query_plan_active,
                     strict_scope_filter=_strict_scope_filter_for_plan(state.get("query_plan")),
                 )
             ),
@@ -1203,6 +1220,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
                     top_k=5,
                     context_files=context_files,
                     query_plan=_expanded_query_plan(state, expanded_query),
+                    query_plan_active=query_plan_active,
                     strict_scope_filter=_strict_scope_filter_for_plan(state.get("query_plan")),
                 )
             ),
@@ -1224,6 +1242,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
                     top_k=5,
                     context_files=context_files,
                     query_plan=_expanded_query_plan(state, hypothetical_doc),
+                    query_plan_active=query_plan_active,
                     strict_scope_filter=_strict_scope_filter_for_plan(state.get("query_plan")),
                 )
             )
@@ -1275,6 +1294,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
                     top_k=5,
                     context_files=context_files,
                     query_plan=_expanded_query_plan(state, expanded_query),
+                    query_plan_active=query_plan_active,
                     strict_scope_filter=_strict_scope_filter_for_plan(state.get("query_plan")),
                 )
             )

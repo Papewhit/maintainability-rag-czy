@@ -21,7 +21,7 @@ RAG 管线 SHALL 在执行检索之前先做意图分类，将查询归入 `prec
 
 #### Scenario: 默认关闭行为兼容
 - **WHEN** intent classifier 和现有 QueryPlan 均保持默认关闭
-- **THEN** semantic query、检索 filters、query route 和最终检索结果必须与引入 intent-routing 前一致；兼容性测试必须比较这些行为输出，而不只验证请求成功
+- **THEN** semantic query、检索 filters、query route 和最终检索结果必须与引入 intent-routing 前一致；HyDE/step-back 扩展检索必须继承首次检索的 `query_plan_enabled=false` 状态，不能因替换 semantic_query 而启用兼容性 plan；兼容性测试必须比较这些行为输出，而不只验证请求成功
 
 ### Requirement: 双 QueryPlan 数据结构
 `PreciseQueryPlan` 和 `ComprehensiveQueryPlan` MUST 是两个独立的 frozen dataclass。RAGState 中 SHALL 通过 union type 表达，下游节点 MUST 用 isinstance 或 match 语句分支。两种结构 MUST NOT 包含 `EntityMatch` 或 `entities` 字段。

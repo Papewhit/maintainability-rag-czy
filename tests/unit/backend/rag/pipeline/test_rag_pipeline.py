@@ -44,6 +44,16 @@ class RagPipelinePromptTests(unittest.TestCase):
             route="scoped_hybrid",
         )
 
+    @staticmethod
+    def _default_off_plan() -> PreciseQueryPlan:
+        return PreciseQueryPlan(
+            raw_query="q",
+            semantic_query="q",
+            clean_query="q",
+            scope_mode="none",
+            route="global_hybrid",
+        )
+
     def test_grade_prompt_keeps_json_example_literal(self):
         grader = FakeGrader()
         runtime_config = replace(load_runtime_config({}), fallback_enabled=True)
@@ -102,6 +112,7 @@ class RagPipelinePromptTests(unittest.TestCase):
             "hypothetical_doc": "hyde query",
             "query_plan": scoped_plan,
             "rag_trace": {
+                "query_plan_enabled": True,
                 "term_matches": [{"entity_type": "component", "canonical": "initial-only"}],
             },
             "fallback_deadline": time.perf_counter() + 5,
@@ -140,9 +151,41 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertTrue(all(plan.scope_mode == "filter" for plan in fallback_plans))
         self.assertTrue(all(plan.matched_files == scoped_plan.matched_files for plan in fallback_plans))
         self.assertTrue(all(plan.anchors == scoped_plan.anchors for plan in fallback_plans))
+        self.assertTrue(all(kwargs["query_plan_active"] is True for kwargs in retrieval_kwargs))
         self.assertTrue(all(kwargs["strict_scope_filter"] is True for kwargs in retrieval_kwargs))
         self.assertFalse(result["rag_trace"].get("fallback_timed_out", False))
         self.assertEqual(result["rag_trace"]["retrieval_stage"], "expanded")
+
+    def test_retrieve_expanded_preserves_default_off_query_plan_telemetry(self):
+        state = {
+            "question": "q",
+            "docs": [],
+            "context": "",
+            "context_files": [],
+            "expansion_type": "step_back",
+            "expanded_query": "expanded q",
+            "query_plan": self._default_off_plan(),
+            "rag_trace": {"query_plan_enabled": False},
+            "fallback_deadline": time.perf_counter() + 5,
+        }
+        retrieval_result = {
+            "docs": [{"text": "expanded", "filename": "b.pdf", "chunk_id": "c2"}],
+            "meta": {
+                "timings": {"total_retrieve_ms": 1.0},
+                "stage_errors": [],
+                "rerank_enabled": False,
+                "rerank_applied": False,
+                "retrieval_mode": "hybrid",
+                "candidate_k": 5,
+            },
+        }
+
+        with patch("backend.rag.pipeline.retrieve_documents", return_value=retrieval_result) as retrieve:
+            result = rag_pipeline.retrieve_expanded(state)
+
+        self.assertIs(retrieve.call_args.kwargs["query_plan_active"], False)
+        self.assertEqual(retrieve.call_args.kwargs["query_plan"].semantic_query, "expanded q")
+        self.assertIs(result["rag_trace"]["query_plan_enabled"], False)
 
     def test_retrieve_expanded_candidate_only_skips_full_second_retrieval(self):
         runtime_config = replace(
@@ -160,6 +203,7 @@ class RagPipelinePromptTests(unittest.TestCase):
             "expanded_query": "expanded q",
             "query_plan": scoped_plan,
             "rag_trace": {
+                "query_plan_enabled": True,
                 "timings": {"initial_retrieve_ms": 7.0},
                 "stage_errors": [{"stage": "initial_warning", "error": "kept"}],
                 "term_matches": [{"entity_type": "component", "canonical": "pump"}],
@@ -204,6 +248,7 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertEqual(fallback_plan.scope_mode, "filter")
         self.assertEqual(fallback_plan.matched_files, scoped_plan.matched_files)
         self.assertEqual(fallback_plan.anchors, scoped_plan.anchors)
+        self.assertIs(pool.call_args.kwargs["query_plan_active"], True)
         self.assertTrue(pool.call_args.kwargs["strict_scope_filter"])
         finish.assert_called_once()
         self.assertEqual(
@@ -227,6 +272,41 @@ class RagPipelinePromptTests(unittest.TestCase):
             ["initial_warning", "final_warning"],
         )
 
+    def test_candidate_only_retrieval_preserves_default_off_query_plan_telemetry(self):
+        runtime_config = replace(load_runtime_config({}), fallback_candidate_only_enabled=True)
+        state = {
+            "question": "q",
+            "docs": [{"text": "initial", "filename": "a.pdf", "chunk_id": "c1"}],
+            "context": "initial context",
+            "context_files": [],
+            "expansion_type": "step_back",
+            "expanded_query": "expanded q",
+            "query_plan": self._default_off_plan(),
+            "rag_trace": {"query_plan_enabled": False},
+            "fallback_deadline": time.perf_counter() + 5,
+        }
+        candidate_result = {
+            "candidates": [{"text": "expanded", "filename": "b.pdf", "chunk_id": "c2"}],
+            "meta": {
+                "retrieval_mode": "hybrid",
+                "timings": {"total_retrieve_ms": 1.0},
+                "stage_errors": [],
+            },
+        }
+
+        with (
+            patch("backend.rag.pipeline.load_runtime_config", return_value=runtime_config),
+            patch("backend.rag.pipeline.retrieve_candidate_pool", return_value=candidate_result) as pool,
+            patch(
+                "backend.rag.pipeline.finish_retrieval_pipeline",
+                return_value={"docs": [], "meta": {"timings": {}, "stage_errors": []}},
+            ),
+        ):
+            rag_pipeline.retrieve_expanded(state)
+
+        self.assertIs(pool.call_args.kwargs["query_plan_active"], False)
+        self.assertEqual(pool.call_args.kwargs["query_plan"].semantic_query, "expanded q")
+
     def test_retrieve_expanded_candidate_only_complex_runs_candidate_queries_in_parallel(self):
         runtime_config = replace(load_runtime_config({}), fallback_candidate_only_enabled=True)
         scoped_plan = self._scoped_plan()
@@ -240,7 +320,7 @@ class RagPipelinePromptTests(unittest.TestCase):
             "expanded_query": "step query",
             "hypothetical_doc": "hyde query",
             "query_plan": scoped_plan,
-            "rag_trace": {},
+            "rag_trace": {"query_plan_enabled": True},
             "fallback_deadline": time.perf_counter() + 5,
         }
 
@@ -288,6 +368,7 @@ class RagPipelinePromptTests(unittest.TestCase):
         self.assertTrue(all(plan.raw_query == scoped_plan.raw_query for plan in fallback_plans))
         self.assertTrue(all(plan.scope_mode == "filter" for plan in fallback_plans))
         self.assertTrue(all(plan.matched_files == scoped_plan.matched_files for plan in fallback_plans))
+        self.assertTrue(all(kwargs["query_plan_active"] is True for kwargs in retrieval_kwargs))
         self.assertTrue(all(kwargs["strict_scope_filter"] is True for kwargs in retrieval_kwargs))
         self.assertEqual(result["rag_trace"]["fallback_second_pass_mode"], "candidate_only")
         self.assertEqual(result["rag_trace"]["candidate_only_pass_rerank_execution_mode"], "skipped_candidate_only")
