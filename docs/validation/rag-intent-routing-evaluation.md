@@ -6,7 +6,7 @@ scope: evaluation.rag.intent_routing
 source_commit: a7dd803a21112f96e3b3824228c94d62ed35c200
 source_fingerprint: sha256:7e78770fa28c3395ddd97a894635b076f8195e5e11c6d64f74e4abee9792aa07
 executed_at: 2026-07-15T05:24:10Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027]
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028]
 supersedes: []
 ---
 
@@ -16,7 +16,7 @@ supersedes: []
 
 This report validates the repeatable evaluation contracts for intent classification, comprehensive parallel retrieval cost/quality comparison, terminology-to-rerank boundaries, and rollout observability. It does not claim that the current FAST_MODEL or production retrieval infrastructure meets an activation threshold.
 
-The bound source fingerprint normalizes line endings to LF and covers the public API trace schema, intent/query-plan implementation, graph and postprocess policies, rerank boundary, runtime configuration, evaluation/observability code, OpenSpec design/spec, and both annotated intent datasets. `source_commit` is the committed implementation anchor at the time of this working-tree validation; the fingerprint is the stronger binding for the reviewed source set and must be regenerated after any covered file changes.
+The version 2 source fingerprint normalizes line endings to LF and hashes a deterministic sorted manifest covering all Python files under `backend/rag`, `backend/infra`, and `backend/shared`, plus runtime config, the public API trace schema, evaluation implementation/runner/tests, OpenSpec design/spec, and both annotated intent datasets. This broad boundary intentionally includes transitive trace identity, terminology preflight, embedding, and vector-store dependencies. `source_commit` is the committed implementation anchor at the time of this working-tree validation; the fingerprint is the stronger binding for the reviewed source set and must be regenerated after any covered file changes.
 
 ## Method
 

@@ -230,6 +230,10 @@ Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERA
 - **WHEN** 评测完成后查看输出 JSON
 - **THEN** 各项指标达到预设基线时视为达标；不达标时配置项 `RAG_INTENT_CLASSIFIER_ENABLED` 默认保持 false。具体阈值在标注完成后根据初评结果设定，不在此处硬编码
 
+#### Scenario: paired A/B 绑定完整运行时源码
+- **WHEN** comprehensive quality/cost runner 生成 quality-first 与消融 profile 的 paired report
+- **THEN** source fingerprint 必须绑定版本化、排序后的 source file list，至少覆盖全部 `backend/rag/**/*.py`、检索相关 `backend/infra/**/*.py`、共享 normalization/utilities、公共 trace schema、评测实现、runner、spec 和数据集；任一被覆盖运行时依赖变化都必须改变 fingerprint，禁止仅绑定直接入口文件
+
 ### Requirement: 与 plan_rag_turn 的职责边界
 `plan_rag_turn()` SHALL 保留既有 session 级 RAG 触发行为：context_files 和通用文档检索关键词 MAY 用于选择 FORCED_PRELOAD、OPTIONAL_TOOL 或 NO_RAG。该触发判断 MUST NOT 分类 `precise_lookup` / `comprehensive_analysis`，MUST NOT 构造 QueryPlan、生成 sub-query 或选择后处理策略；这些 intent-routing 动作 MUST 全部由 RAG graph 内部的 `intent_parse` 节点承担。
 

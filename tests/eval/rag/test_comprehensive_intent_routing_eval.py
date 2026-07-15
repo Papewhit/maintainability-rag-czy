@@ -143,10 +143,14 @@ def test_routing_source_fingerprint_binds_implementation_spec_and_dataset():
 
     fingerprint = routing_source_fingerprint(repo_root)
 
-    assert fingerprint["version"] == 1
+    assert fingerprint["version"] == 2
     assert fingerprint["normalization"] == "lf"
     assert len(fingerprint["sha256"]) == 64
     assert "backend/rag/comprehensive_postprocess.py" in fingerprint["source_files"]
+    assert "backend/rag/trace.py" in fingerprint["source_files"]
+    assert "backend/rag/terminology/table.py" in fingerprint["source_files"]
+    assert "backend/infra/embedding.py" in fingerprint["source_files"]
+    assert "backend/infra/vector_store/milvus_client.py" in fingerprint["source_files"]
     assert "backend/evaluation/answer_eval.py" in fingerprint["source_files"]
     assert "tests/eval/data/intent_routing/precise_lookup.jsonl" in fingerprint["source_files"]
     assert "tests/eval/data/intent_routing/filename_registry.json" in fingerprint["source_files"]

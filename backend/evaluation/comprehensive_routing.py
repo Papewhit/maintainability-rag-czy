@@ -13,18 +13,11 @@ from typing import Any, Callable, Iterable
 
 
 _ROUTING_SOURCE_FILES = (
+    "backend/config.py",
     "backend/contracts/schemas.py",
     "backend/evaluation/answer_eval.py",
     "backend/evaluation/comprehensive_routing.py",
     "backend/evaluation/intent_routing.py",
-    "backend/rag/comprehensive_postprocess.py",
-    "backend/rag/intent.py",
-    "backend/rag/observability.py",
-    "backend/rag/pipeline.py",
-    "backend/rag/query_plan.py",
-    "backend/rag/rerank.py",
-    "backend/rag/runtime_config.py",
-    "backend/rag/utils.py",
     "openspec/changes/rag-intent-routing/design.md",
     "openspec/changes/rag-intent-routing/specs/rag-intent-routing/spec.md",
     "tests/eval/data/intent_routing/comprehensive_analysis.jsonl",
@@ -35,6 +28,12 @@ _ROUTING_SOURCE_FILES = (
     "tests/eval/rag/test_intent_classifier_eval.py",
 )
 
+_ROUTING_SOURCE_GLOBS = (
+    "backend/infra/**/*.py",
+    "backend/rag/**/*.py",
+    "backend/shared/**/*.py",
+)
+
 
 def config_fingerprint(config: dict[str, Any]) -> str:
     encoded = json.dumps(config, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
@@ -42,8 +41,16 @@ def config_fingerprint(config: dict[str, Any]) -> str:
 
 
 def routing_source_fingerprint(repo_root: Path) -> dict[str, Any]:
+    source_files = set(_ROUTING_SOURCE_FILES)
+    for pattern in _ROUTING_SOURCE_GLOBS:
+        source_files.update(
+            path.relative_to(repo_root).as_posix()
+            for path in repo_root.glob(pattern)
+            if path.is_file()
+        )
+    ordered_source_files = tuple(sorted(source_files))
     digest = hashlib.sha256()
-    for relative in _ROUTING_SOURCE_FILES:
+    for relative in ordered_source_files:
         path = repo_root / relative
         content = path.read_bytes().replace(b"\r\n", b"\n")
         digest.update(relative.replace("\\", "/").encode("utf-8"))
@@ -51,9 +58,9 @@ def routing_source_fingerprint(repo_root: Path) -> dict[str, Any]:
         digest.update(content)
         digest.update(b"\0")
     return {
-        "version": 1,
+        "version": 2,
         "normalization": "lf",
-        "source_files": list(_ROUTING_SOURCE_FILES),
+        "source_files": list(ordered_source_files),
         "sha256": digest.hexdigest(),
     }
 

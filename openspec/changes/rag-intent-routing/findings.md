@@ -384,3 +384,17 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `backend/rag/pipeline.py` propagates hard-filter semantics consistently across the precise path; four focused red/green tests pass.
+
+## RAG-INTENT-F028
+
+- Kind: evidence_gap
+- Primary scope: evaluation.rag.source_binding
+- Evidence status: confirmed
+- Observation: The comprehensive paired-evaluation fingerprint listed selected direct routing files but omitted transitive runtime dependencies including `backend/rag/trace.py` (`candidate_identity`) and terminology preflight modules. Those dependencies can change merge/selection or dense/BM25 inputs without changing the fingerprint.
+- Inference: A release report could claim paired runs used identical source even though effective retrieval behavior differed, weakening the A/B activation gate.
+- Decision: Introduce source fingerprint version 2 with a deterministic sorted manifest that includes all Python files under `backend/rag`, `backend/infra`, and `backend/shared`, plus config, public schema, evaluation implementation/runner/tests, OpenSpec design/spec, and datasets.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; evaluation and unit fingerprint tests now require version 2 and explicitly cover trace, terminology table, embedding, Milvus client, public schema, spec, and dataset paths.
+- Disposition: validation
+- Disposition target: docs/validation/rag-intent-routing-evaluation.md
+- Resolution evidence: `routing_source_fingerprint()` expands and sorts the governed runtime globs before hashing; the validation report records the version 2 coverage boundary and bound digest.

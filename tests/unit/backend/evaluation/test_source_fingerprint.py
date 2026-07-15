@@ -28,3 +28,5 @@ def test_intent_routing_fingerprint_covers_public_trace_schema():
     fingerprint = routing_source_fingerprint(repo_root)
 
     assert "backend/contracts/schemas.py" in fingerprint["source_files"]
+    assert "backend/rag/trace.py" in fingerprint["source_files"]
+    assert "backend/rag/terminology/table.py" in fingerprint["source_files"]
