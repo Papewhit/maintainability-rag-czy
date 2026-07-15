@@ -504,7 +504,7 @@ last_verified_date: 2026-07-15
 - Evidence status: confirmed
 - Observation: The existing RAG E2E exercised the private shared-postprocess completion function with mocked graph inputs. It did not execute the compiled intent-routing graph from classifier output through plan construction, comprehensive fan-out, retrieval boundaries, merge, shared postprocess, and public trace serialization.
 - Inference: Unit and integration coverage could verify individual contracts while still missing a graph wiring regression across those boundaries.
-- Decision: Add a deterministic compiled-graph E2E that keeps the graph, classifier wrapper, QueryPlan construction, branch orchestration, merge, shared postprocess, and public schema real while replacing only external LLM, embedding, and Milvus boundaries with controlled substitutes.
+- Decision: Add a deterministic compiled-graph E2E that keeps the graph, classifier wrapper, QueryPlan construction, branch orchestration, merge, shared postprocess, and public schema real while replacing only external LLM, embedding, reranker, and Milvus boundaries with controlled substitutes.
 - Residual risk: none
 - Evidence: `tests/e2e/rag/test_intent_routing_graph_e2e.py`; `tests/e2e/rag/test_postprocess_evidence_e2e.py`.
 - Disposition: validation

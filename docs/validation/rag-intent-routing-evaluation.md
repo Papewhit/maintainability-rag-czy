@@ -76,7 +76,7 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 `tests/e2e/rag/test_intent_routing_graph_e2e.py` invokes the compiled graph entry through `run_rag_graph()` and keeps graph routing, the `IntentClassifier` structured-output wrapper, deterministic QueryPlan construction, baseline/generated-branch fan-out, query-local terminology preparation, merge, one shared postprocess pass, and public `ChatResponse.rag_trace` serialization in scope. The test asserts three independent dense and BM25 inputs, a shared context-file hard filter, branch provenance, merge output, one shared postprocess execution, and public fan-out/search/rerank telemetry.
 
-The LLM response, embedding vectors, and Milvus candidate responses are deterministic substitutes. This E2E therefore closes the graph-wiring evidence gap but is not real-model, real-index, retrieval-quality, latency, resource-cost, or release-readiness evidence. The existing `test_postprocess_evidence_e2e.py` remains a narrower shared-postprocess evidence test; task 5B.3 remains the real FAST_MODEL and release-Milvus paired A/B gate.
+The LLM response, embedding vectors, reranker scores, and Milvus candidate responses are deterministic substitutes. This E2E therefore closes the graph-wiring evidence gap but is not real-model, real-index, retrieval-quality, latency, resource-cost, or release-readiness evidence. The existing `test_postprocess_evidence_e2e.py` remains a narrower shared-postprocess evidence test; task 5B.3 remains the real FAST_MODEL and release-Milvus paired A/B gate.
 
 ## Inputs
 
@@ -126,7 +126,7 @@ Multi-turn retrieval is not part of this rollout. Any future multi-turn enhancem
 ## Limitations
 
 - No model or retrieval production-capacity evidence was available in this environment.
-- The compiled-graph E2E substitutes the LLM, embedding, and Milvus boundaries and cannot establish intent accuracy, corpus recall, answer quality, latency, or resource cost.
+- The compiled-graph E2E substitutes the LLM, embedding, reranker, and Milvus boundaries and cannot establish intent accuracy, corpus recall, answer quality, latency, or resource cost.
 - CPU RSS sampling is process-level; concurrent unrelated work must be controlled during release runs.
 - CUDA peak memory is reported only when CUDA is available.
 - Citation validity measures consistency with retrieved evidence, not recall against human citation qrels; answer quality remains unavailable if the configured answer or judge model does not run.

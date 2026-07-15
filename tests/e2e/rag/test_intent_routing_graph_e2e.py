@@ -153,8 +153,6 @@ def test_comprehensive_intent_routing_runs_through_the_compiled_graph():
         patch("backend.rag.pipeline.IntentClassifier", return_value=classifier) as classifier_factory,
         patch("backend.rag.pipeline.load_query_filename_registry", return_value=[]),
         patch("backend.rag.pipeline._rerank_documents", side_effect=rerank),
-        patch("backend.rag.pipeline._rerank_device_tier", return_value="cpu"),
-        patch("backend.rag.pipeline.emit_rag_step"),
         patch("backend.rag.utils.terminology_preflight", side_effect=terminology_preflight),
         patch("backend.rag.utils.embed_search_query", side_effect=embed_search_query),
         patch("backend.rag.utils.retrieve_global_candidates", side_effect=retrieve_candidates),
