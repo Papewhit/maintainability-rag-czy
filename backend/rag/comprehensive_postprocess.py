@@ -189,6 +189,8 @@ class CrossEncoderLocalReranker:
             if remaining_output:
                 unpaired_tail = local_rank_candidates[len(pair_docs):]
                 reranked.extend(unpaired_tail[:remaining_output])
+            soft_error = rerank_meta.get("rerank_error")
+            branch_error = result.error or (str(soft_error) if soft_error else None)
             meta = {
                 **result.meta,
                 **rerank_meta,
@@ -198,7 +200,7 @@ class CrossEncoderLocalReranker:
                 "used_output_budget": len(reranked),
                 "used_pair_budget": int(rerank_meta.get("rerank_input_count") or 0),
             }
-            return BranchRetrievalResult(result.branch, tuple(reranked), meta, result.error)
+            return BranchRetrievalResult(result.branch, tuple(reranked), meta, branch_error)
         except Exception as exc:
             meta = {
                 **result.meta,

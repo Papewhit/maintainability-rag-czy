@@ -213,7 +213,7 @@ Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERA
 
 #### Scenario: API 响应保留 intent-routing trace
 - **WHEN** graph 的 rag_trace 经 `ChatResponse` 或历史消息响应 schema 序列化
-- **THEN** intent、query-plan、comprehensive profile、branch diagnostics、budget/cost、scope telemetry，以及 terminology preflight 的 `semantic_query`、`term_matches`、`normalized_query`、`sparse_expansion`、`protected_tokens` 必须保留，不得因响应模型未声明字段而被静默过滤；term match offset 以同一响应中的 semantic_query 为坐标空间
+- **THEN** intent、query-plan、comprehensive profile、branch diagnostics、budget/cost、scope telemetry，以及 terminology preflight 的 `semantic_query`、`term_matches`、`normalized_query`、`sparse_expansion`、`protected_tokens` 必须保留，不得因响应模型未声明字段而被静默过滤；term match offset 以同一响应中的 semantic_query 为坐标空间；`retrieved_chunks` 中的 branch ids、per-branch ranks/scores、baseline 标记和 coverage provenance 同样必须通过 API/history schema 保留
 
 ### Requirement: 评测集与阈值
 `tests/eval/data/intent_routing/` 下 MUST 存在意图分类评测集，包含至少 100 条标注样本（70% precise + 30% comprehensive），覆盖结构限域、目标粒度和所有 analysis_type。评测脚本 MUST 可重复运行，输出指标 MUST 达到既定阈值才允许将 `RAG_INTENT_CLASSIFIER_ENABLED` 默认值改为 true。

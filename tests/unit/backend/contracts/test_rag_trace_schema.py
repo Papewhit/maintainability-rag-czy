@@ -19,6 +19,17 @@ def test_rag_trace_schema_preserves_postprocess_fields():
         normalized_query="主减速齿轮箱 拆卸怎么做",
         sparse_expansion="MRG 主减速齿轮箱 拆卸 分解 怎么做",
         protected_tokens=["MRG"],
+        retrieved_chunks=[{
+            "filename": "manual.pdf",
+            "text": "evidence",
+            "matched_branch_ids": ["baseline", "sub_query_0"],
+            "per_branch_local_rank": {"baseline": 2, "sub_query_0": 1},
+            "per_branch_rerank_score": {"sub_query_0": 0.9},
+            "best_local_rank": 1,
+            "baseline_matched": True,
+            "coverage_count": 1,
+            "multi_query_rrf_score": 0.42,
+        }],
         term_matches=[{
             "entity_type": "component",
             "canonical": "主减速齿轮箱",
@@ -88,6 +99,12 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert payload["normalized_query"] == "主减速齿轮箱 拆卸怎么做"
     assert payload["sparse_expansion"] == "MRG 主减速齿轮箱 拆卸 分解 怎么做"
     assert payload["protected_tokens"] == ["MRG"]
+    assert payload["retrieved_chunks"][0]["matched_branch_ids"] == ["baseline", "sub_query_0"]
+    assert payload["retrieved_chunks"][0]["per_branch_local_rank"] == {
+        "baseline": 2,
+        "sub_query_0": 1,
+    }
+    assert payload["retrieved_chunks"][0]["baseline_matched"] is True
     assert payload["term_matches"][0]["canonical"] == "主减速齿轮箱"
     assert payload["step_chain_repaired_groups"] == ["g1"]
     assert payload["entity_type_coverage"] == 1.0
@@ -109,6 +126,11 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert response_trace["normalized_query"] == "主减速齿轮箱 拆卸怎么做"
     assert response_trace["sparse_expansion"] == "MRG 主减速齿轮箱 拆卸 分解 怎么做"
     assert response_trace["protected_tokens"] == ["MRG"]
+    assert response_trace["retrieved_chunks"][0]["matched_branch_ids"] == [
+        "baseline",
+        "sub_query_0",
+    ]
+    assert response_trace["retrieved_chunks"][0]["coverage_count"] == 1
     assert response_trace["term_matches"][0]["start"] == 0
     assert response_trace["budget_strategy_id"] == "priority_weighted_v1"
     assert response_trace["branch_diagnostics"][0]["used_pair_budget"] == 3

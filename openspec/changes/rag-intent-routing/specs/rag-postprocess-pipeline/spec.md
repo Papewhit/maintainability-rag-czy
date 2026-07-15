@@ -13,7 +13,7 @@ Precise 路径 MUST 保持 `rerank → auto_merge → step_chain_check → struc
 
 #### Scenario: comprehensive 分支失败
 - **WHEN** 一个分支的 retrieve 或 local rerank 失败
-- **THEN** 记录 branch-scoped stage error；保留其他分支及该分支失败前仍可用的候选；不得因单分支失败清空 global candidate pool
+- **THEN** 记录 branch-scoped error；保留其他分支及该分支失败前仍可用的候选；不得因单分支失败清空 global candidate pool；local rerank 通过 meta 返回 error 而非抛异常时也必须进入相同的分支降级诊断
 
 #### Scenario: precise 完整管线执行
 - **WHEN** precise 检索返回 candidate_k 个候选 chunk

@@ -40,6 +40,13 @@ class RetrievedChunk(BaseModel):
     score: Optional[float] = None
     rrf_rank: Optional[int] = None
     rerank_score: Optional[float] = None
+    matched_branch_ids: Optional[List[str]] = None
+    per_branch_local_rank: Optional[Dict[str, int]] = None
+    per_branch_rerank_score: Optional[Dict[str, float]] = None
+    best_local_rank: Optional[int] = None
+    baseline_matched: Optional[bool] = None
+    coverage_count: Optional[int] = None
+    multi_query_rrf_score: Optional[float] = None
 
 
 class RagTrace(BaseModel):

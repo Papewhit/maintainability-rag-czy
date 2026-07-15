@@ -64,6 +64,40 @@ def test_branch_rerank_uses_branch_query_terms_and_partial_failure_keeps_local_c
     assert trace["branch_errors"][0]["branch_kind"] == "sub_query"
 
 
+def test_branch_rerank_soft_error_marks_branch_degraded_without_losing_candidates():
+    branch = build_retrieval_branches(_plan())[0]
+    inputs = [
+        BranchRetrievalResult(
+            branch=branch,
+            candidates=({"chunk_id": "base"},),
+        )
+    ]
+
+    def degraded_rerank(**kwargs):
+        return kwargs["docs"], {
+            "rerank_applied": False,
+            "rerank_error": "crossencoder unavailable",
+            "rerank_input_count": len(kwargs["docs"]),
+        }
+
+    results, trace = run_branch_rerank(
+        resolve_comprehensive_postprocess_policy("quality_first_v1").policy,
+        inputs,
+        output_candidate_budget=1,
+        pair_budget=1,
+        rerank_fn=degraded_rerank,
+    )
+
+    assert results[0].candidates[0]["chunk_id"] == "base"
+    assert results[0].error == "crossencoder unavailable"
+    assert trace["branch_errors"] == [{
+        "branch_id": "baseline",
+        "branch_kind": "baseline",
+        "error": "crossencoder unavailable",
+    }]
+    assert trace["branch_diagnostics"][0]["error"] == "crossencoder unavailable"
+
+
 def test_branch_rerank_caps_output_when_reranker_expands_requested_top_k():
     branch = build_retrieval_branches(_plan())[0]
     inputs = [

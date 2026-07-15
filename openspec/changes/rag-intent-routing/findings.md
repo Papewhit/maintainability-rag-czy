@@ -328,3 +328,31 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `backend/contracts/schemas.py` and `backend/rag/types.py` declare the full preflight trace contract; the focused red/green API test passes.
+
+## RAG-INTENT-F024
+
+- Kind: behavior_defect
+- Primary scope: rag.postprocess.branch_rerank_diagnostics
+- Evidence status: confirmed
+- Observation: `_rerank_documents` may return usable Milvus-ranked candidates plus `rerank_meta["rerank_error"]` when CrossEncoder loading or prediction fails. The comprehensive reranker copied the meta but left `BranchRetrievalResult.error` empty because no exception was raised.
+- Inference: Branch diagnostics, rollout error metrics, and fallback inputs reported a clean local rerank despite an actual quality degradation.
+- Decision: Promote a non-empty soft rerank error into the branch error path while retaining the returned candidates and all usage telemetry.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/rag/postprocess/test_comprehensive_shared_pipeline.py` reproduces the metadata-only failure and now verifies retained evidence plus branch error/diagnostic propagation.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `CrossEncoderLocalReranker` sets the branch error from rerank metadata when no earlier branch error exists; the focused red/green test passes.
+
+## RAG-INTENT-F025
+
+- Kind: behavior_defect
+- Primary scope: rag.api.candidate_provenance
+- Evidence status: confirmed
+- Observation: Internal comprehensive candidates carried branch provenance, but `RagTrace.retrieved_chunks` validated them through a `RetrievedChunk` schema that omitted all branch fields, so Pydantic removed the provenance from chat and history responses.
+- Inference: API consumers could see aggregate merge degradation yet could not inspect which final evidence represented the baseline or each generated branch.
+- Decision: Add the complete comprehensive branch provenance set to the public retrieved-chunk contract instead of weakening the schema to arbitrary dictionaries.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/contracts/test_rag_trace_schema.py` reproduces the dropped fields and now round-trips branch ids, ranks/scores, baseline state, coverage, and RRF score through `ChatResponse`.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/contracts/schemas.py::RetrievedChunk` now explicitly retains the comprehensive candidate provenance fields; the focused red/green API test passes.
