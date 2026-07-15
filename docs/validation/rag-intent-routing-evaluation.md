@@ -3,9 +3,9 @@ document_type: validation_report
 validation_id: VAL-RAG-INTENT-001
 status: partial
 scope: evaluation.rag.intent_routing
-source_commit: 3fcf876069d22a54ca654a49d7b9ae5ef2941591
-source_fingerprint: sha256:35747dc2ca23f58a10cc14c294618d202daf80027f82382dedac595f14dccae3
-executed_at: 2026-07-15T01:01:03Z
+source_commit: 5a639ccef78a4425f48e5c74f0707f4c7d04544e
+source_fingerprint: sha256:cd3b284e4d4daf1a2aa1fb041dace6deb230e317d993753a6aaaef82eece7f32
+executed_at: 2026-07-15T01:22:05Z
 source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016]
 supersedes: []
 ---
@@ -68,8 +68,8 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 ## Inputs
 
-- Source commit anchor: `3fcf876069d22a54ca654a49d7b9ae5ef2941591`
-- Source fingerprint: `sha256:35747dc2ca23f58a10cc14c294618d202daf80027f82382dedac595f14dccae3`
+- Source commit anchor: `5a639ccef78a4425f48e5c74f0707f4c7d04544e`
+- Source fingerprint: `sha256:cd3b284e4d4daf1a2aa1fb041dace6deb230e317d993753a6aaaef82eece7f32`
 - Dataset: 100 annotated intent samples (70 precise / 30 comprehensive)
 - Profiles: `quality_first_v1` and `eval_no_crossencoder_v1`
 - Environment: Windows, Python 3.12; no FAST_MODEL credentials, Milvus release corpus, or answer/judge model were configured for this run
