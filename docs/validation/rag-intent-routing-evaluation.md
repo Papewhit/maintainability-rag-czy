@@ -3,9 +3,9 @@ document_type: validation_report
 validation_id: VAL-RAG-INTENT-001
 status: partial
 scope: evaluation.rag.intent_routing
-source_commit: ba5947c4ed8c4e38f31ffa6834e70e561f1f0a41
-source_fingerprint: sha256:2120b7a2943338f5ecef3f6aa306207c480f4183805585339a9e42fc22db77b2
-executed_at: 2026-07-15T03:41:16Z
+source_commit: f6caf1119a29a9cae2838e86cfd64ce6deb8a4b0
+source_fingerprint: sha256:2a94318004843284b13587e7c19d4c7b88d079f5e64a82afc4e2ad198815ed18
+executed_at: 2026-07-15T03:55:39Z
 source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025]
 supersedes: []
 ---
@@ -68,8 +68,8 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 ## Inputs
 
-- Source commit anchor: `ba5947c4ed8c4e38f31ffa6834e70e561f1f0a41`
-- Source fingerprint: `sha256:2120b7a2943338f5ecef3f6aa306207c480f4183805585339a9e42fc22db77b2`
+- Source commit anchor: `f6caf1119a29a9cae2838e86cfd64ce6deb8a4b0`
+- Source fingerprint: `sha256:2a94318004843284b13587e7c19d4c7b88d079f5e64a82afc4e2ad198815ed18`
 - Dataset: 100 annotated intent samples (70 precise / 30 comprehensive)
 - Profiles: `quality_first_v1` and `eval_no_crossencoder_v1`
 - Environment: Windows, Python 3.12; no FAST_MODEL credentials, Milvus release corpus, or answer/judge model were configured for this run
