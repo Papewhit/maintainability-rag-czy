@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, replace
@@ -14,11 +15,62 @@ from backend.rag.query_plan import (
     ComprehensiveQueryPlan,
     IntentQueryPlan,
     PreciseQueryPlan,
+    RetrievalScope,
     SubQuery,
     build_compatible_precise_plan,
     parse_query_plan,
     precise_plan_from_legacy,
 )
+
+
+_EXPLICIT_CLOSED_SCOPE_PATTERNS = (
+    re.compile(r"(?:仅限|只限|仅|只)(?:在|于|从|基于|依据|参考)?(?=\s*《)"),
+    re.compile(r"(?:检索|分析|资料|文档)?范围\s*(?:限定|限制|仅限|只限)(?:为|在|于)?(?=\s*《)"),
+)
+
+_NEGATED_CLOSED_SCOPE_PREFIX = re.compile(
+    r"(?:并非|并不(?:是)?|不(?:是|应当|应该|应|要|能|必|再)?|非|无需|无须|不限于|不局限于)\s*$"
+)
+
+
+def _explicit_closed_scope_spans(raw_query: str) -> tuple[tuple[int, int], ...]:
+    matches: list[tuple[int, int]] = []
+    for pattern in _EXPLICIT_CLOSED_SCOPE_PATTERNS:
+        for match in pattern.finditer(raw_query):
+            prefix = raw_query[max(0, match.start() - 6) : match.start()]
+            if not _NEGATED_CLOSED_SCOPE_PREFIX.search(prefix):
+                matches.append(match.span())
+    selected: list[tuple[int, int]] = []
+    for start, end in sorted(matches, key=lambda span: (span[0], -(span[1] - span[0]))):
+        if any(start < kept_end and end > kept_start for kept_start, kept_end in selected):
+            continue
+        selected.append((start, end))
+    return tuple(sorted(selected))
+
+
+def _remove_query_spans(raw_query: str, spans: tuple[tuple[int, int], ...]) -> str:
+    text = raw_query
+    for start, end in reversed(spans):
+        text = f"{text[:start]}{text[end:]}"
+    return text
+
+
+def _closed_scope_spans_for_consumed_documents(
+    raw_query: str,
+    spans: tuple[tuple[int, int], ...],
+    consumed_spans: list[Any],
+) -> tuple[tuple[int, int], ...]:
+    consumed_document_starts = {
+        span.start
+        for span in consumed_spans
+        if span.kind == "document" and span.owner == "scope"
+    }
+    selected = []
+    for start, end in spans:
+        next_non_space = end + len(raw_query[end:]) - len(raw_query[end:].lstrip())
+        if next_non_space in consumed_document_starts:
+            selected.append((start, end))
+    return tuple(selected)
 
 
 INTENT_SYSTEM_PROMPT = """你是 RAG graph 内部的意图解析器。一次调用只完成意图分类和计划提示。
@@ -164,24 +216,75 @@ def _comprehensive_plan_from_decision(
     context_files: list[str] | None,
     postprocess_profile: str,
 ) -> ComprehensiveQueryPlan:
+    requested_closed_scope_spans = _explicit_closed_scope_spans(raw_query)
+    explicit_closed_scope_requested = bool(requested_closed_scope_spans)
+    preferred_scope_mode: Literal["filter", "boost"] = (
+        "filter" if context_files or explicit_closed_scope_requested else "boost"
+    )
     structural = parse_query_plan(
         raw_query,
         filename_registry=filename_registry,
         context_files=context_files,
         fallback_empty_queries=False,
+        preferred_scope_mode=preferred_scope_mode,
     )
+    consumed_closed_scope_spans = _closed_scope_spans_for_consumed_documents(
+        raw_query,
+        requested_closed_scope_spans,
+        structural.consumed_spans,
+    )
+    if explicit_closed_scope_requested and not consumed_closed_scope_spans and not context_files:
+        structural = parse_query_plan(
+            raw_query,
+            filename_registry=filename_registry,
+            context_files=context_files,
+            fallback_empty_queries=False,
+            preferred_scope_mode="boost",
+        )
+    explicit_closed_scope = bool(consumed_closed_scope_spans)
     sub_queries = tuple(
         SubQuery(query=item.query, domain=item.domain, priority=item.priority)
         for item in decision.sub_queries
     )
     coverage_domains = tuple(dict.fromkeys(item.domain for item in sub_queries))
+    clean_query = structural.clean_query
+    if consumed_closed_scope_spans:
+        cleaned_structural = parse_query_plan(
+            _remove_query_spans(raw_query, consumed_closed_scope_spans),
+            filename_registry=filename_registry,
+            context_files=context_files,
+            fallback_empty_queries=False,
+            preferred_scope_mode="filter",
+        )
+        clean_query = cleaned_structural.clean_query
+    if context_files:
+        scope_source = "context_files"
+    elif structural.scope_mode == "filter":
+        scope_source = "explicit_closed_scope"
+    elif structural.scope_mode == "boost":
+        scope_source = "document_hints"
+    else:
+        scope_source = "none"
+    retrieval_scope = RetrievalScope(
+        scope_mode=structural.scope_mode,
+        matched_files=(
+            tuple(structural.matched_files)
+            if structural.scope_mode in {"filter", "boost"}
+            else ()
+        ),
+        doc_hints=tuple(structural.doc_hints),
+        anchors=tuple(structural.anchors),
+        heading_hint=clean_query if clean_query else None,
+        source=scope_source,
+    )
     return ComprehensiveQueryPlan(
         raw_query=raw_query,
-        clean_query=structural.clean_query,
+        clean_query=clean_query,
         analysis_type=decision.analysis_type or "general",
         sub_queries=sub_queries,
         coverage_domains=coverage_domains,
         postprocess_profile=postprocess_profile,
+        retrieval_scope=retrieval_scope,
     )
 
 

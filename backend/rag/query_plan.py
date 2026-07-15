@@ -106,6 +106,29 @@ class SubQuery:
 
 
 @dataclass(frozen=True)
+class RetrievalScope:
+    """Shared deterministic retrieval scope for every comprehensive branch."""
+
+    scope_mode: Literal["filter", "boost", "none"] = "none"
+    matched_files: tuple[tuple[str, float], ...] = ()
+    doc_hints: tuple[str, ...] = ()
+    anchors: tuple[str, ...] = ()
+    heading_hint: str | None = None
+    source: Literal[
+        "none",
+        "document_hints",
+        "explicit_closed_scope",
+        "context_files",
+    ] = "none"
+
+    def __post_init__(self) -> None:
+        if self.scope_mode in {"filter", "boost"} and not self.matched_files:
+            raise ValueError("active retrieval scope requires matched files")
+        if self.scope_mode == "none" and self.matched_files:
+            raise ValueError("matched files require an active retrieval scope")
+
+
+@dataclass(frozen=True)
 class PreciseQueryPlan:
     raw_query: str
     semantic_query: str
@@ -156,6 +179,7 @@ class ComprehensiveQueryPlan:
     sub_queries: tuple[SubQuery, ...]
     coverage_domains: tuple[str, ...]
     postprocess_profile: str = "quality_first_v1"
+    retrieval_scope: RetrievalScope = field(default_factory=RetrievalScope)
 
     def __post_init__(self) -> None:
         if not self.clean_query.strip():

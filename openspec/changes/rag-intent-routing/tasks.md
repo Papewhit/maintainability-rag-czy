@@ -1,6 +1,6 @@
 ## 1. Milestone M1：数据结构与降级路径骨架
 
-- [x] 1.1 定义 `SubQuery`、`ComprehensiveRetrievalBranch`、`PreciseQueryPlan`、`ComprehensiveQueryPlan` 数据类（`backend/rag/query_plan.py`）；两种新 plan 不包含 `EntityMatch` / `entities`，PreciseQueryPlan 必须保留现有 QueryPlan 的检索字段，ComprehensiveQueryPlan 携带确定性 `clean_query` 与运行时解析的 `postprocess_profile`，现有 QueryPlan 在迁移期间继续受支持
+- [x] 1.1 定义 `SubQuery`、`RetrievalScope`、`ComprehensiveRetrievalBranch`、`PreciseQueryPlan`、`ComprehensiveQueryPlan` 数据类（`backend/rag/query_plan.py`）；两种新 plan 不包含 `EntityMatch` / `entities`，PreciseQueryPlan 必须保留现有 QueryPlan 的检索字段，ComprehensiveQueryPlan 携带确定性 `clean_query`、共享 `retrieval_scope` 与运行时解析的 `postprocess_profile`，现有 QueryPlan 在迁移期间继续受支持
 - [x] 1.2 实现兼容适配器：`QUERY_PLAN_ENABLED=false` 时构造 raw query + global route 的 PreciseQueryPlan，启用时无损映射现有 `parse_query_plan()` 结果；兼容路径永远不输出 ComprehensiveQueryPlan
 - [x] 1.3 新增 `RAGState` 字段 `intent_result: IntentParseResult | None`、`query_plan_type: Literal["precise", "comprehensive"]`；删除现有不可达的 `intent_result.entities` / semantic `query_entities` 兼容读取，terminology term_matches 继续走独立 preflight 状态
 - [x] 1.4 单元测试覆盖：两种 `QUERY_PLAN_ENABLED` 状态的字段映射、关闭 classifier 时不启用新规则、兼容路径不产生 ComprehensiveQueryPlan、两种 plan 均拒绝 entities 字段
@@ -37,6 +37,7 @@
 - [x] 3A.4 修复 `backend/rag/utils.py` 的 query composition：dense 使用 normalized_query，BM25 使用 sparse_expansion；禁止 term_preflight 将 search_query 恢复为 raw query；保持既有 hybrid-to-dense failure degradation
 - [x] 3A.5 组合单测覆盖：成功文档限域、文档提示未匹配、anchor 消费、正文术语命中、无术语命中、terminology 未加载，以及 dense/BM25 的实际调用参数
 - [x] 3A.6 comprehensive 集成测试覆盖 baseline 与每个并行 sub-query 独立 terminology preflight、dense+BM25 输入和部分失败保留；断言 baseline 使用 clean_query 而非 raw_query
+- [x] 3A.7 comprehensive 成功消费文档提示时把 typed retrieval_scope 共享给 baseline 与全部 sub-query；普通文档提示默认 boost，明确封闭措辞/context_files 才 filter；branch 不在 intent-routing 内放宽 filter
 
 **验收**：任一检索请求的 dense 与 BM25 输入都从同一个结构处理后的 query 基底派生；成功消费的结构 span 不重复进入术语检索，未消费文本不丢失；加载术语表但无命中时不会恢复 raw query。
 
@@ -93,7 +94,7 @@
 - [x] 6.1 默认 `RAG_INTENT_CLASSIFIER_ENABLED=false`，开关由部署方控制
 - [x] 6.2 监控指标：intent classifier 调用 P50/P95 延迟、LLM 失败率、规则降级率、各 intent 占比，以及 comprehensive profile、sub_query_count、retrieval_branch_count、baseline hit/selected、embedding/hybrid calls、rerank pairs、budget exhaustion、merge/postprocess 和端到端 P50/P95
 - [x] 6.3 灰度策略文档：先 10% 流量启用，观察延迟和准确率，逐步全量
-- [x] 6.4 关闭开关时走兼容性 PreciseQueryPlan 路径；回归测试比较 semantic query、filters、route 和检索结果，证明默认行为不变；另以显式回归用例记录并修复 `QUERY_PLAN_ENABLED=true` 时 terminology raw query 覆盖 semantic query 的既有缺陷
+- [x] 6.4 关闭开关时走兼容性 PreciseQueryPlan 路径；回归测试比较 semantic query、filters、route、检索结果和 `query_plan_enabled=false` telemetry，证明默认行为不变；另以显式回归用例记录并修复 `QUERY_PLAN_ENABLED=true` 时 terminology raw query 覆盖 semantic query 的既有缺陷
 - [ ] 6.5 完成评测后将默认值改为 true，作为单独的小 change 上线
 
 **验收**：在 `RAG_INTENT_CLASSIFIER_ENABLED=false` 状态下，所有现有测试通过、行为与改造前一致；监控字段在 rag_trace 中齐全。

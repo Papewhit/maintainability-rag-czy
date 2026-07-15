@@ -96,11 +96,14 @@ class ComprehensiveQueryPlan:
     sub_queries: list[SubQuery]
     coverage_domains: list[str]
     postprocess_profile: str = "quality_first_v1"
+    retrieval_scope: RetrievalScope
 ```
 
 两者通过 union type `QueryPlan = PreciseQueryPlan | ComprehensiveQueryPlan` 在 RAGState 中表达。
 
 `ComprehensiveQueryPlan.clean_query` 由运行时 query preparation 确定性写入，不属于 LLM structured output。它是 comprehensive baseline branch 的源文本；该 branch 后续仍独立完成 semantic-query preparation 与 terminology preflight，不能把 `clean_query` 直接当作 normalization 结果。
+
+`RetrievalScope` 是运行时确定性结构解析结果，不属于 LLM schema。它携带 `scope_mode`、`matched_files`、`doc_hints`、`anchors`、`heading_hint` 和来源，并由 baseline 与全部生成 sub-query 共享。共享的是 scope 语义而不是无条件硬过滤：普通 `《文档名》` 在 comprehensive 查询中默认解析为 boost，允许每个 branch 继续检索全局语料；只有“仅在/仅限/检索范围限定为”等明确封闭措辞或显式 `context_files` 才解析为 filter。Intent-routing 不根据局部召回动态放宽 filter；放宽属于 `rag-multilevel-fallback` Level 2。
 
 这两个 plan 只表达检索编排，不承载 query semantic entities。现有 terminology preflight 在 graph 的独立状态中提供规范化和 sparse expansion；`entity_types` / `term_match_count` 仍是 terminology 产生的 chunk metadata，不是 QueryPlan 字段。
 
@@ -124,6 +127,7 @@ classifier 关闭不是运行时失败：trace 记录 classifier disabled 和 co
 2. 未匹配到文件的 `《...》` 文档提示、未被结构解析器消费的文本和其中术语必须保留，不能因为外观像结构提示就丢弃。
 3. `semantic_query` 是进入 terminology 前的最终检索基底；它可在 `clean_query` 基础上继续删除已经成功转成 scope 的型号等冗余 token，但不得删除没有对应结构约束的内容。
 4. intent LLM 只给出 intent、结构提示和目标粒度，不生成 terminology canonical 值，不负责 query normalization。
+5. comprehensive 成功解析文档提示后，消费 span 的同时必须把 scope 保存到 `ComprehensiveQueryPlan.retrieval_scope`；不得只删除文档名而丢弃约束。普通文档提示默认 boost，明确封闭措辞或 context_files 才 filter。
 
 terminology preflight 在结构解析之后执行，输入必须是 `semantic_query`；comprehensive 路径由 `clean_query` 构造的 baseline branch 与每个实际 sub-query 都必须独立执行相同 preflight。其输出按固定职责消费：
 
@@ -149,7 +153,7 @@ semantic_query / sub_query.query
 
 ### 决策 7：综合分析只采用 graph 内并行检索
 
-ComprehensiveQueryPlan 在运行时固定构造一个 `branch_id="baseline"`、`branch_kind="baseline"` 的检索分支，其源文本是确定性 `clean_query`；它与全部 LLM sub-query 在同一次 `run_rag_graph()` 调用内并行检索，并由 effective `ComprehensivePostprocessPolicy` 完成 branch rerank、merge 和共享后处理。baseline 不是 LLM 输出、不是 coverage domain，也不写回 `sub_queries`。`sub_query_count` 只统计 LLM 生成项，真实执行量另记为 `retrieval_branch_count = sub_query_count + 1`。Chat Agent 只接收 graph 的最终检索结果，不读取 QueryPlan、不逐个调用 branch，也不参与检索决策。现有 `search_knowledge_base(query)` 单次工具接口和每轮一次调用限制保持不变。
+ComprehensiveQueryPlan 在运行时固定构造一个 `branch_id="baseline"`、`branch_kind="baseline"` 的检索分支，其源文本是确定性 `clean_query`；它与全部 LLM sub-query 在同一次 `run_rag_graph()` 调用内并行检索。每个 branch 使用自己的 query 文本执行 terminology preflight，同时继承 plan 的同一 `retrieval_scope`，不得自行放宽 filter。随后由 effective `ComprehensivePostprocessPolicy` 完成 branch rerank、merge 和共享后处理。baseline 不是 LLM 输出、不是 coverage domain，也不写回 `sub_queries`。`sub_query_count` 只统计 LLM 生成项，真实执行量另记为 `retrieval_branch_count = sub_query_count + 1`。Chat Agent 只接收 graph 的最终检索结果，不读取 QueryPlan、不逐个调用 branch，也不参与检索决策。现有 `search_knowledge_base(query)` 单次工具接口和每轮一次调用限制保持不变。
 
 本 change 不提供 `multi_turn` / `parallel` 模式开关，也不设计根据中间检索结果动态增加、删除或调整 sub-query 的循环。结果驱动的 multi-turn 检索仅作为候选 enhancement 记录；若未来计划上线，必须通过独立 OpenSpec change 明确状态、预算和停止条件，并以 A/B 实验验证质量收益相对于延迟与成本的影响。
 
@@ -306,5 +310,5 @@ baseline 与每个 sub-query 都需要 dense/BM25 embedding、Milvus hybrid sear
 ## 依赖与衔接
 
 - **与 `rag-terminology-module` 顺序衔接**：intent/结构解析先确定 semantic query，terminology preflight 再提供术语规范化、sparse expansion 和术语 metadata；intent classifier 不读取或输出 entities，QueryPlan 不拥有 terminology 字段。当前 `term_match_count` 与 `entity_types` 的可选 rerank fusion 行为保持不变。
-- **被 `rag-multilevel-fallback` 依赖**：fallback 的 Level 1 rewrite router 需要 ComprehensiveQueryPlan 作为输入；Level 2 scope relax 需要 PreciseQueryPlan 的 scope_mode 字段。
+- **被 `rag-multilevel-fallback` 依赖**：fallback 的 Level 1 rewrite router 需要 ComprehensiveQueryPlan 作为输入；Level 2 scope relax 需要读取 PreciseQueryPlan.scope_mode 或 ComprehensiveQueryPlan.retrieval_scope.scope_mode。intent-routing 内部不执行该放宽。
 - **修改 `rag-postprocess-pipeline`**：precise 保持 shared-postprocess-v1；comprehensive 以 clean-query baseline + LLM sub-query 构成 retrieval branches，在 branch-local rerank 后插入 multi-query merge，再复用一次 auto-merge / step-chain / structure-rerank / top-k / confidence，并增加全局预算与 branch provenance 契约。

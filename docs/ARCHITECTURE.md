@@ -124,6 +124,8 @@ intent_parse
 
 `backend/rag/comprehensive_postprocess.py` resolves a frozen, versioned strategy composition. `quality_first_v1` is the production profile and `eval_no_crossencoder_v1` is evaluation-only. Unknown profiles atomically fall back to `quality_first_v1`. The Chat Agent still invokes `search_knowledge_base(query)` once; it never receives or iterates sub-queries, and this capability has no multi-turn mode. Sub-query rewrite remains outside this change as fallback Level 1 work.
 
+`ComprehensiveQueryPlan.retrieval_scope` carries one deterministic document-scope meaning across the baseline and every generated branch. Ordinary resolved `《document》` hints are shared boosts, so branches may still search the global corpus. Explicitly closed wording and `context_files` produce a shared hard filter. Branches never relax that filter inside intent routing; scope relaxation belongs to fallback Level 2.
+
 ## Shared Evidence Postprocess
 
 `finish_retrieval_pipeline()` in `backend/rag/utils.py` fixes this order:

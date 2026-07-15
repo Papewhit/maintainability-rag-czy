@@ -140,6 +140,174 @@ def test_comprehensive_decision_builds_runtime_clean_query_and_profile():
 
 
 @pytest.mark.unit
+def test_comprehensive_document_hints_default_to_shared_boost_scope():
+    decision = IntentDecision.model_validate(
+        {
+            "intent": "comprehensive_analysis",
+            "confidence": 0.88,
+            "analysis_type": "comparison",
+            "sub_queries": [
+                {"query": "部署方案", "domain": "deployment", "priority": 1},
+                {"query": "运维方案", "domain": "operations", "priority": 2},
+            ],
+        }
+    )
+    registry = [
+        {"raw": "部署手册.pdf", "normalized": "部署手册"},
+        {"raw": "运维手册.pdf", "normalized": "运维手册"},
+    ]
+
+    result = build_intent_parse_result(
+        "比较《部署手册》和《运维手册》的方案取舍",
+        decision=decision,
+        filename_registry=registry,
+    )
+
+    assert isinstance(result.query_plan, ComprehensiveQueryPlan)
+    assert result.query_plan.retrieval_scope.scope_mode == "boost"
+    assert {item[0] for item in result.query_plan.retrieval_scope.matched_files} == {
+        "部署手册.pdf",
+        "运维手册.pdf",
+    }
+    assert "部署手册" not in result.query_plan.clean_query
+    assert "运维手册" not in result.query_plan.clean_query
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "query",
+    [
+        "仅在《部署手册》中综合分析回滚与恢复策略",
+        "请仅在《部署手册》中综合分析回滚与恢复策略",
+        "综合分析时，仅在《部署手册》中取证",
+        "检索范围限定为《部署手册》，综合分析回滚与恢复策略",
+    ],
+)
+def test_comprehensive_explicit_closed_wording_creates_shared_filter_scope(query):
+    decision = IntentDecision.model_validate(
+        {
+            "intent": "comprehensive_analysis",
+            "confidence": 0.88,
+            "analysis_type": "general",
+            "sub_queries": [{"query": "回滚策略", "domain": "rollback", "priority": 1}],
+        }
+    )
+
+    result = build_intent_parse_result(query, decision=decision, filename_registry=REGISTRY)
+
+    assert isinstance(result.query_plan, ComprehensiveQueryPlan)
+    assert result.query_plan.retrieval_scope.scope_mode == "filter"
+    assert result.query_plan.retrieval_scope.source == "explicit_closed_scope"
+    assert "仅在" not in result.query_plan.clean_query
+    assert "范围限定" not in result.query_plan.clean_query
+    assert "部署手册" not in result.query_plan.clean_query
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "query",
+    [
+        "不仅在《部署手册》中，也从全局资料综合分析回滚策略",
+        "不只在《部署手册》中，也从全局资料综合分析回滚策略",
+        "并非仅在《部署手册》中，而要综合全局资料分析回滚策略",
+        "不是仅在《部署手册》中，而要检索全局资料",
+        "并不是只在《部署手册》中，而要检索全局资料",
+        "不应当仅在《部署手册》中，而要检索全局资料",
+        "不应该仅在《部署手册》中，而要检索全局资料",
+    ],
+)
+def test_comprehensive_negative_closed_wording_remains_shared_boost(query):
+    decision = IntentDecision.model_validate(
+        {
+            "intent": "comprehensive_analysis",
+            "confidence": 0.88,
+            "analysis_type": "general",
+            "sub_queries": [{"query": "回滚策略", "domain": "rollback", "priority": 1}],
+        }
+    )
+
+    result = build_intent_parse_result(
+        query,
+        decision=decision,
+        filename_registry=REGISTRY,
+    )
+
+    assert isinstance(result.query_plan, ComprehensiveQueryPlan)
+    assert result.query_plan.retrieval_scope.scope_mode == "boost"
+
+
+@pytest.mark.unit
+def test_closed_scope_cleanup_preserves_unrelated_restrictive_language():
+    decision = IntentDecision.model_validate(
+        {
+            "intent": "comprehensive_analysis",
+            "confidence": 0.88,
+            "analysis_type": "general",
+            "sub_queries": [{"query": "验证记录", "domain": "evidence", "priority": 1}],
+        }
+    )
+
+    result = build_intent_parse_result(
+        "仅在《部署手册》中说明，只参考已验证记录，不使用传闻",
+        decision=decision,
+        filename_registry=REGISTRY,
+    )
+
+    assert isinstance(result.query_plan, ComprehensiveQueryPlan)
+    assert result.query_plan.retrieval_scope.scope_mode == "filter"
+    assert "只参考已验证记录" in result.query_plan.clean_query
+
+
+@pytest.mark.unit
+def test_unresolved_closed_scope_stays_comprehensive_and_preserves_query_text():
+    decision = IntentDecision.model_validate(
+        {
+            "intent": "comprehensive_analysis",
+            "confidence": 0.88,
+            "analysis_type": "general",
+            "sub_queries": [{"query": "回滚策略", "domain": "rollback", "priority": 1}],
+        }
+    )
+    raw_query = "仅在《未知手册》中综合分析回滚策略"
+
+    result = build_intent_parse_result(
+        raw_query,
+        decision=decision,
+        filename_registry=REGISTRY,
+    )
+
+    assert isinstance(result.query_plan, ComprehensiveQueryPlan)
+    assert result.intent == "comprehensive_analysis"
+    assert result.query_plan.retrieval_scope.scope_mode == "none"
+    assert result.query_plan.retrieval_scope.matched_files == ()
+    assert result.query_plan.clean_query == raw_query
+    assert result.trace["intent_fallback_to_rules"] is False
+
+
+@pytest.mark.unit
+def test_comprehensive_context_files_create_shared_filter_scope():
+    decision = IntentDecision.model_validate(
+        {
+            "intent": "comprehensive_analysis",
+            "confidence": 0.88,
+            "analysis_type": "general",
+            "sub_queries": [{"query": "回滚策略", "domain": "rollback", "priority": 1}],
+        }
+    )
+
+    result = build_intent_parse_result(
+        "综合分析回滚与恢复策略",
+        decision=decision,
+        context_files=["部署手册.pdf"],
+    )
+
+    assert isinstance(result.query_plan, ComprehensiveQueryPlan)
+    assert result.query_plan.retrieval_scope.scope_mode == "filter"
+    assert result.query_plan.retrieval_scope.matched_files == (("部署手册.pdf", 1.0),)
+    assert result.query_plan.retrieval_scope.source == "context_files"
+
+
+@pytest.mark.unit
 def test_llm_cannot_supply_entities_semantic_query_or_postprocess_profile():
     payload = {
         "intent": "comprehensive_analysis",

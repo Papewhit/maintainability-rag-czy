@@ -1086,7 +1086,10 @@ def build_query_plan(
     )
 
 
-def build_retrieval_filters(query_plan: QueryPlan, context_files: list[str] | None = None) -> RetrievalFilters:
+def build_retrieval_filters(
+    query_plan: QueryPlan,
+    context_files: list[str] | None = None,
+) -> RetrievalFilters:
     base_filter = f"chunk_level == {LEAF_RETRIEVE_LEVEL}"
     filename_filter = _build_filename_filter(context_files)
     effective_filter = f"{base_filter} and {filename_filter}" if filename_filter else base_filter
@@ -1676,6 +1679,8 @@ def prepare_candidate_retrieval(
     *,
     candidate_k_override: int | None = None,
     query_plan: QueryPlan | PreciseQueryPlan | None = None,
+    query_plan_active: bool | None = None,
+    strict_scope_filter: bool = False,
 ) -> PreparedRetrieval:
     total_start = time.perf_counter()
     timings: Dict[str, float] = {}
@@ -1687,7 +1692,17 @@ def prepare_candidate_retrieval(
         stage_errors.append(_stage_error("candidate_strategy_config", warning, "standard_candidate_strategy"))
 
     effective_query_plan = query_plan or build_query_plan(request, timings, stage_errors)
-    query_plan_active = query_plan is not None or QUERY_PLAN_ENABLED
+    if query_plan_active is None:
+        query_plan_active = QUERY_PLAN_ENABLED or bool(
+            query_plan
+            and (
+                query_plan.intent_type is not None
+                or query_plan.scope_mode != "none"
+                or query_plan.matched_files
+                or query_plan.anchors
+                or query_plan.semantic_query != query_plan.raw_query
+            )
+        )
     search_query = effective_query_plan.semantic_query
     filters = build_retrieval_filters(effective_query_plan, request.context_files)
 
@@ -1704,14 +1719,57 @@ def prepare_candidate_retrieval(
 
     embeddings = embed_search_query(search_query, timings, stage_errors, sparse_query=sparse_query)
 
+    strict_filter_expr = (
+        filters.effective_filter if filters.filename_filter else filters.scoped_filter
+    )
+    use_strict_scope = bool(
+        strict_scope_filter
+        and query_plan_active
+        and effective_query_plan.scope_mode == "filter"
+        and strict_filter_expr
+    )
     use_scoped = (
-        query_plan_active
+        not use_strict_scope
+        and query_plan_active
         and effective_query_plan.scope_mode == "filter"
         and bool(filters.matched_files)
         and not filters.filename_filter
         and bool(filters.scoped_filter)
     )
-    if use_scoped:
+    if use_strict_scope:
+        trace_patch = _query_plan_trace(
+            effective_query_plan,
+            semantic_query=effective_query_plan.semantic_query,
+            v3_layers=["query_plan", "strict_scope_filter", "hybrid", "rerank", "structure_rerank"],
+            scope_filter_applied=True,
+            plan_enabled=query_plan_active,
+        )
+        trace_patch["strict_scope_filter"] = True
+        if use_layered:
+            result = retrieve_layered_candidate_pool(
+                embeddings,
+                candidate_k=candidate_k,
+                filter_expr=strict_filter_expr or filters.effective_filter,
+                query_plan=effective_query_plan,
+                scope_matched_files=filters.matched_files,
+                timings=timings,
+                trace_patch=trace_patch,
+                retrieval_mode="hybrid_scoped",
+            )
+        else:
+            result = retrieve_global_candidates(
+                embeddings,
+                candidate_k=candidate_k,
+                filter_expr=strict_filter_expr or filters.effective_filter,
+                timings=timings,
+                trace_patch=trace_patch,
+                candidate_strategy_detail=CandidateStrategyDetail.SCOPED_HYBRID,
+            )
+            if result.retrieval_mode == "hybrid":
+                result.retrieval_mode = "hybrid_scoped"
+            elif result.retrieval_mode == "dense_fallback":
+                result.retrieval_mode = "dense_fallback_scoped"
+    elif use_scoped:
         trace_patch = _query_plan_trace(
             effective_query_plan,
             semantic_query=effective_query_plan.semantic_query,
@@ -1746,6 +1804,7 @@ def prepare_candidate_retrieval(
             scope_filter_applied=False,
             plan_enabled=query_plan_active,
         )
+        trace_patch["strict_scope_filter"] = False
         if use_layered:
             result = retrieve_layered_candidate_pool(
                 embeddings,
@@ -1767,6 +1826,7 @@ def prepare_candidate_retrieval(
             )
 
     stage_errors.extend(result.stage_errors)
+    result.trace_patch.setdefault("query_plan_enabled", query_plan_active)
     retrieved, trace_patch = apply_candidate_adjustments(
         effective_query_plan,
         result.candidates,
@@ -1822,6 +1882,8 @@ def retrieve_candidate_pool(
     *,
     candidate_k: int | None = None,
     query_plan: QueryPlan | PreciseQueryPlan | None = None,
+    query_plan_active: bool | None = None,
+    strict_scope_filter: bool = False,
 ) -> Dict[str, Any]:
     prepared = prepare_candidate_retrieval(
         query,
@@ -1829,6 +1891,8 @@ def retrieve_candidate_pool(
         context_files=context_files,
         candidate_k_override=candidate_k,
         query_plan=query_plan,
+        query_plan_active=query_plan_active,
+        strict_scope_filter=strict_scope_filter,
     )
     prepared.timings["total_retrieve_ms"] = elapsed_ms(prepared.total_start)
     meta = build_retrieval_meta(
@@ -1930,12 +1994,16 @@ def retrieve_documents(
     query_term_matches: list[Any] | None = None,
     *,
     query_plan: QueryPlan | PreciseQueryPlan | None = None,
+    query_plan_active: bool | None = None,
+    strict_scope_filter: bool = False,
 ) -> Dict[str, Any]:
     prepared = prepare_candidate_retrieval(
         query,
         top_k=top_k,
         context_files=context_files,
         query_plan=query_plan,
+        query_plan_active=query_plan_active,
+        strict_scope_filter=strict_scope_filter,
     )
 
     if prepared.failed:

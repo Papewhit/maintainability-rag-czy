@@ -12,7 +12,7 @@
 引入 LLM 驱动的意图分类作为 RAG 管线的统一入口，并把 QueryPlan 拆成两种结构以适配两条管线：
 
 1. **Intent Parser**：一次 LLM 调用输出意图分类及对应的计划提示（精确查找的 scope_hint / anchors / target_granularity，综合分析的 sub_queries）；不提取或生成 semantic entities，不负责 terminology normalization，也不选择运行时后处理算法。
-2. **PreciseQueryPlan vs ComprehensiveQueryPlan**：两种数据结构对应两条管线；PreciseQueryPlan 保留现有 QueryPlan 的检索字段，支持无损兼容映射；ComprehensiveQueryPlan 额外保存确定性生成的 `clean_query`，用于构造非 LLM 的 baseline retrieval branch。两种 plan 都不携带 `EntityMatch` 或 `entities`。
+2. **PreciseQueryPlan vs ComprehensiveQueryPlan**：两种数据结构对应两条管线；PreciseQueryPlan 保留现有 QueryPlan 的检索字段，支持无损兼容映射；ComprehensiveQueryPlan 额外保存确定性生成的 `clean_query` 和 typed `retrieval_scope`。后者把已解析的 scope 语义共享给 baseline 与全部 sub-query：普通文档提示默认 boost，只有明确封闭措辞或 `context_files` 才 filter。两种 plan 都不携带 `EntityMatch` 或 `entities`。
 3. **确定性 Query Preparation**：先解析并确认结构 span 的消费归属，再生成 clean/semantic query；只有成功转成 scope 或 anchor 的 span 才可从检索文本移除。terminology 随后基于该检索文本生成 dense normalization 与 BM25 expansion，禁止再用 raw query 覆盖清洗结果。
 4. **Pipeline 分支**：`run_rag_graph` 的入口节点从 `retrieve_initial` 改为 `intent_parse`，按 intent 路由到 precise 子图或 comprehensive 子图；comprehensive 子图把 `clean_query` baseline 与全部 LLM sub-query 一起组成固定 fan-out，在单次 graph 调用内并行检索，先做 branch-local rerank，再合并候选并只执行一次共享结构后处理。baseline 是召回安全网，不新增 coverage domain，也不占用生成分支的最终保留席位。
 5. **兼容降级**：classifier 关闭或 LLM 调用失败时，按现有 `QUERY_PLAN_ENABLED` 语义构造兼容性 PreciseQueryPlan；关闭 QueryPlan 时保持 raw query + global route，启用时无损映射现有 `parse_query_plan()` 结果。Query preparation 修复只改变已启用 QueryPlan 与 terminology 组合时 raw query 覆盖 semantic query 的缺陷。
@@ -31,7 +31,7 @@
 ## Impact
 
 **代码影响：**
-- `backend/rag/query_plan.py`：拆分 QueryPlan 为 PreciseQueryPlan / ComprehensiveQueryPlan 两种结构；新增 SubQuery 与运行时 ComprehensiveRetrievalBranch 数据类，不新增 EntityMatch；ComprehensiveQueryPlan 保存确定性 `clean_query`，结构解析输出可验证的 consumed spans，未成功解析的文档提示不得从检索文本删除。
+- `backend/rag/query_plan.py`：拆分 QueryPlan 为 PreciseQueryPlan / ComprehensiveQueryPlan 两种结构；新增 SubQuery、RetrievalScope 与运行时 ComprehensiveRetrievalBranch 数据类，不新增 EntityMatch；ComprehensiveQueryPlan 保存确定性 `clean_query` 和共享 retrieval_scope，结构解析输出可验证的 consumed spans，未成功解析的文档提示不得从检索文本删除。
 - `backend/rag/pipeline.py`：在 `build_rag_graph` 入口前增加 `intent_parse` 节点；在结构解析后执行 query preparation；新增 graph 内并行 fan-out 的 `retrieve_comprehensive` 和确定性合并的 `merge_sub_query_results` 节点。
 - `backend/rag/utils.py`：`build_query_plan` 改为消费 intent 解析结果；dense 使用 terminology-normalized semantic query，BM25 使用基于同一 semantic query 的 sparse expansion，禁止 terminology preflight 用 raw query 覆盖 semantic query。
 - `backend/rag/comprehensive_postprocess.py`（新文件）：定义 typed strategy protocols、`ComprehensivePostprocessPolicy`、具名 profile registry、预算分配、priority-weighted RRF merge 和 branch-aware final selection；graph 节点不得散落 profile-specific 分支。

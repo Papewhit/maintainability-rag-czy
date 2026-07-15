@@ -188,3 +188,31 @@ last_verified_date: 2026-07-14
 - Disposition: change
 - Disposition target: openspec/changes/rag-intent-routing/
 - Resolution evidence: The real runners now carry registry/model/retrieval fingerprints and a constructible citation-validity metric; existing terminology trace names remain serialized; targeted evaluation and contract tests pass.
+
+## RAG-INTENT-F014
+
+- Kind: behavior_defect
+- Primary scope: rag.retrieval.comprehensive_scope
+- Evidence status: confirmed
+- Observation: Comprehensive intent parsing consumed a successfully resolved document hint into `clean_query`, but the six-field ComprehensiveQueryPlan did not retain matched_files/scope_mode and fan-out passed only each branch query plus context_files. A resolved document constraint could therefore disappear before retrieval.
+- Inference: Explicit document-oriented comprehensive requests could remove their strongest retrieval cue and search unrelated global evidence, while naively sharing every resolved document as a hard filter would over-constrain ordinary cross-source analysis.
+- Decision: Add typed `retrieval_scope` to ComprehensiveQueryPlan and share it across baseline and all generated branches. Ordinary resolved document hints default to boost; only explicit closed wording or context_files produce filter. No branch relaxes filter inside intent-routing; that remains fallback Level 2.
+- Residual risk: Closed-scope wording is recognized by a conservative deterministic phrase set. Unrecognized user phrasing remains boost rather than being incorrectly promoted to a hard filter; extending the phrase set requires examples and regression tests.
+- Evidence: `@codex` PR review on 2026-07-14 identified lost comprehensive scope; user decision on 2026-07-15 fixed boost/filter/Level-2 boundaries; intent, comprehensive graph, and retrieval preparation tests cover all three scope sources, branch propagation, negative wording, and strict filtered retrieval without a global reserve.
+- Disposition: change
+- Disposition target: openspec/changes/rag-intent-routing/
+- Resolution evidence: QueryPlan/spec/design now define shared RetrievalScope; graph fan-out constructs each branch retrieval plan from that immutable scope; explicit closed scope uses a strict filename-filtered retrieval path while ordinary document hints retain global boost behavior.
+
+## RAG-INTENT-F015
+
+- Kind: behavior_defect
+- Primary scope: rag.retrieval.telemetry
+- Evidence status: confirmed
+- Observation: `prepare_candidate_retrieval()` treated the mere presence of a compatibility PreciseQueryPlan as proof that QueryPlan rules were enabled. With both runtime switches false, default raw/global traffic was emitted as `query_plan_enabled=true`.
+- Inference: Rollout and evaluation telemetry could misclassify the default compatibility cohort even though retrieval output remained compatible.
+- Decision: Resolve request-level plan activation separately from plan object presence. A raw compatibility plan remains disabled; classifier/legacy/scoped plans remain active, and explicit callers may pass the activation state.
+- Residual risk: none
+- Evidence: `@codex` PR review on 2026-07-14; retrieval preparation tests compare legacy and routed default-off traces; output trace tests prove the field survives into final `rag_trace`.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: Both default-off paths emit `query_plan_enabled=false`, and `build_initial_rag_trace()` preserves that value for downstream observability consumers.

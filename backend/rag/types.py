@@ -94,6 +94,9 @@ class RetrievalMeta(TypedDict, total=False):
     entity_type_coverage: float
     entity_match_density: float
     term_matches: list[dict[str, Any]]
+    query_plan_enabled: bool
+    scope_filter_applied: bool
+    strict_scope_filter: bool
     confidence_gate_enabled: bool
     confidence_ms: float
     confidence_gate_skipped: bool
@@ -161,6 +164,9 @@ class RagTrace(TypedDict, total=False):
     entity_type_coverage: float
     entity_match_density: float
     term_matches: list[dict[str, Any]]
+    query_plan_enabled: bool
+    scope_filter_applied: bool
+    strict_scope_filter: bool
     confidence_gate_enabled: bool
     confidence_ms: float
     confidence_gate_skipped: bool

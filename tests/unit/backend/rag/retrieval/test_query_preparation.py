@@ -54,6 +54,7 @@ def test_terminology_consumes_semantic_query_and_routes_dense_and_sparse_inputs(
     assert embed.call_args.args[0] == term_result["normalized_query"]
     assert embed.call_args.kwargs["sparse_query"] == term_result["sparse_expansion"]
     assert prepared.trace_patch["term_matches"] == term_result["term_matches"]
+    assert prepared.trace_patch["query_plan_enabled"] is True
 
 
 def test_no_terminology_hit_keeps_semantic_query_in_both_embedding_paths():
@@ -156,3 +157,35 @@ def test_classifier_disabled_compatibility_plan_preserves_legacy_retrieval_contr
     assert routed.filters.base_filter == legacy.filters.base_filter
     assert routed.filters.effective_filter == legacy.filters.effective_filter
     assert routed.candidates == legacy.candidates
+    assert legacy.trace_patch["query_plan_enabled"] is False
+    assert routed.trace_patch["query_plan_enabled"] is False
+
+
+def test_strict_scope_filter_runs_one_filtered_hybrid_without_global_reserve():
+    plan = PreciseQueryPlan(
+        raw_query="综合分析",
+        clean_query="综合分析",
+        semantic_query="综合分析",
+        scope_mode="filter",
+        matched_files=(("部署手册.pdf", 1.0), ("猜测手册.pdf", 0.5)),
+        route="scoped_hybrid",
+        intent_type="comprehensive_analysis",
+    )
+    embeddings = rag_utils.QueryEmbeddings([0.1], {1: 1.0})
+
+    with (
+        patch("backend.rag.utils.terminology_preflight", return_value=None),
+        patch("backend.rag.utils.embed_search_query", return_value=embeddings),
+        patch.object(rag_utils._milvus_manager, "hybrid_retrieve", return_value=[]) as retrieve,
+    ):
+        prepared = rag_utils.prepare_candidate_retrieval(
+            plan.raw_query,
+            query_plan=plan,
+            query_plan_active=True,
+            strict_scope_filter=True,
+        )
+
+    retrieve.assert_called_once()
+    assert 'filename in ["部署手册.pdf"]' in retrieve.call_args.kwargs["filter_expr"]
+    assert "猜测手册.pdf" not in retrieve.call_args.kwargs["filter_expr"]
+    assert prepared.trace_patch["strict_scope_filter"] is True

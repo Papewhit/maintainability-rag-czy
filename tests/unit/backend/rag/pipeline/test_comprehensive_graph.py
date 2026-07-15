@@ -11,7 +11,7 @@ from backend.rag.comprehensive_postprocess import (
     resolve_comprehensive_postprocess_policy,
 )
 from backend.rag.intent import IntentParseResult
-from backend.rag.query_plan import ComprehensiveQueryPlan, SubQuery
+from backend.rag.query_plan import ComprehensiveQueryPlan, RetrievalScope, SubQuery
 from backend.rag.runtime_config import load_runtime_config
 
 
@@ -82,6 +82,54 @@ def test_fanout_uses_clean_query_baseline_and_each_branch_runs_independent_prefl
     assert result["rag_trace"]["embedding_call_count"] == 4
     assert result["rag_trace"]["hybrid_search_call_count"] == 2
     assert result["rag_trace"]["split_search_call_count"] == 2
+
+
+@pytest.mark.parametrize(
+    ("scope_mode", "source"),
+    [("boost", "document_hints"), ("filter", "explicit_closed_scope")],
+)
+def test_fanout_applies_one_shared_scope_plan_to_every_branch(scope_mode, source):
+    plan = replace(
+        _plan(),
+        retrieval_scope=RetrievalScope(
+            scope_mode=scope_mode,
+            matched_files=(("记录汇编.pdf", 1.0),),
+            doc_hints=("记录汇编",),
+            source=source,
+        ),
+    )
+    calls = []
+
+    def retrieve(query, **kwargs):
+        calls.append((query, kwargs))
+        return {"candidates": [], "meta": {"timings": {}, "stage_errors": []}}
+
+    with patch("backend.rag.pipeline.retrieve_candidate_pool", side_effect=retrieve):
+        result = rag_pipeline.decompose_and_fanout(
+            {
+                "question": plan.raw_query,
+                "context_files": [],
+                "query_plan": plan,
+                "query_plan_type": "comprehensive",
+                "rag_trace": {},
+            }
+        )
+
+    assert {query for query, _ in calls} == {"综合风险", "机械风险", "电气风险"}
+    assert all(kwargs["query_plan"].scope_mode == scope_mode for _, kwargs in calls)
+    assert all(kwargs["query_plan"].matched_files == (("记录汇编.pdf", 1.0),) for _, kwargs in calls)
+    assert all(kwargs["query_plan_active"] is True for _, kwargs in calls)
+    assert all(
+        kwargs["strict_scope_filter"] is (scope_mode == "filter")
+        for _, kwargs in calls
+    )
+    assert result["rag_trace"]["query_plan_enabled"] is True
+    assert result["rag_trace"]["scope_filter_applied"] is (scope_mode == "filter")
+    assert result["rag_trace"]["strict_scope_filter"] is (scope_mode == "filter")
+    assert all(
+        diagnostic["strict_scope_filter"] is (scope_mode == "filter")
+        for diagnostic in result["rag_trace"]["branch_retrieval_diagnostics"]
+    )
 
 
 def test_each_branch_independently_composes_dense_and_bm25_from_its_own_query():

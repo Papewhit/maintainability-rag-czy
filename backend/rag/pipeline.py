@@ -42,6 +42,7 @@ from backend.rag.query_plan import (
     ComprehensiveQueryPlan,
     IntentQueryPlan,
     PreciseQueryPlan,
+    RetrievalScope,
 )
 from backend.rag.retrieval import dedupe_docs
 from backend.rag.formatting import format_rag_documents
@@ -426,6 +427,20 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
     branches = build_retrieval_branches(plan)
     resolution = resolve_comprehensive_postprocess_policy(plan.postprocess_profile)
 
+    def branch_query_plan(query: str, scope: RetrievalScope) -> PreciseQueryPlan:
+        return PreciseQueryPlan(
+            raw_query=query,
+            clean_query=query,
+            semantic_query=query,
+            doc_hints=scope.doc_hints,
+            scope_mode=scope.scope_mode,
+            matched_files=scope.matched_files,
+            heading_hint=scope.heading_hint,
+            anchors=scope.anchors,
+            intent_type="comprehensive_analysis",
+            route="scoped_hybrid" if scope.scope_mode in {"filter", "boost"} else "global_hybrid",
+        )
+
     def retrieve_branch(branch) -> BranchRetrievalResult:
         branch_start = time.perf_counter()
         try:
@@ -433,6 +448,9 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
                 branch.query,
                 top_k=5,
                 context_files=context_files,
+                query_plan=branch_query_plan(branch.query, plan.retrieval_scope),
+                query_plan_active=True,
+                strict_scope_filter=plan.retrieval_scope.scope_mode == "filter",
             )
             meta = dict(payload.get("meta") or {})
             meta["branch_retrieve_ms"] = elapsed_ms(branch_start)
@@ -503,6 +521,9 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         "split_search_call_count": split_search_call_count,
         "baseline_candidate_count": len(baseline.candidates),
         "baseline_hit": bool(baseline.candidates),
+        "query_plan_enabled": True,
+        "scope_filter_applied": plan.retrieval_scope.scope_mode == "filter",
+        "strict_scope_filter": plan.retrieval_scope.scope_mode == "filter",
         "branch_retrieval_diagnostics": [
             {
                 "branch_id": result.branch.branch_id,
@@ -520,6 +541,15 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
                 "sparse_expansion": result.meta.get("sparse_expansion"),
                 "term_matches": list(result.meta.get("term_matches") or []),
                 "retrieval_mode": result.meta.get("retrieval_mode"),
+                "query_plan_enabled": result.meta.get("query_plan_enabled", True),
+                "scope_filter_applied": result.meta.get(
+                    "scope_filter_applied",
+                    plan.retrieval_scope.scope_mode == "filter",
+                ),
+                "strict_scope_filter": result.meta.get(
+                    "strict_scope_filter",
+                    plan.retrieval_scope.scope_mode == "filter",
+                ),
                 "dense_embedding_call_count": int(
                     result.meta.get("dense_embedding_call_count") or 0
                 ),

@@ -32,7 +32,7 @@ RAG 管线 SHALL 在执行检索之前先做意图分类，将查询归入 `prec
 
 #### Scenario: ComprehensiveQueryPlan 字段完整性
 - **WHEN** 意图分类产出 ComprehensiveQueryPlan
-- **THEN** 该实例必须包含 raw_query、clean_query、analysis_type、sub_queries (至少 1 个)、coverage_domains、postprocess_profile 共 6 个字段；clean_query 由确定性 query preparation 写入，sub_queries 为空时视为非法状态（应降级到 PreciseQueryPlan）；postprocess_profile 由运行时 policy resolver 写入；clean_query 与 postprocess_profile 均不接受 LLM 自由生成
+- **THEN** 该实例必须包含 raw_query、clean_query、analysis_type、sub_queries (至少 1 个)、coverage_domains、postprocess_profile、retrieval_scope 共 7 个字段；clean_query 与 retrieval_scope 由确定性 query preparation 写入，sub_queries 为空时视为非法状态（应降级到 PreciseQueryPlan）；postprocess_profile 由运行时 policy resolver 写入；clean_query、retrieval_scope 与 postprocess_profile 均不接受 LLM 自由生成
 
 #### Scenario: terminology 与 QueryPlan 隔离
 - **WHEN** terminology preflight 命中术语并输出 term_matches、normalized_query、sparse_expansion 或 protected_tokens
@@ -60,6 +60,25 @@ RAG graph MUST 在检索前以确定性顺序执行结构解析、query cleaning
 #### Scenario: comprehensive sub-query 独立执行 preflight
 - **WHEN** ComprehensiveQueryPlan 生成多个 sub-query 并进入并行 fan-out
 - **THEN** runtime 先从 clean_query 构造 baseline branch；baseline 与每个实际 sub-query 在检索前独立执行 terminology preflight，并分别产出 dense normalized query 与 BM25 sparse expansion；LLM 生成值不得被当作 terminology canonicalization 结果
+
+### Requirement: comprehensive 共享 retrieval scope
+ComprehensiveQueryPlan MUST 携带运行时确定性生成的 typed `retrieval_scope`。成功消费的文档提示对应的 `matched_files`、scope mode 与结构提示 MUST 保存在该 scope 中，并由 baseline 与全部生成 sub-query 共享；不得在删除文档名后把 branch 降为无约束全局检索。共享 scope MUST 区分 boost 与 filter，MUST NOT 把普通文档提示无条件升级为硬过滤。
+
+#### Scenario: 普通文档提示默认 boost
+- **WHEN** comprehensive query 普通提及一个或多个可解析的 `《文档名》`，且没有明确封闭范围措辞，也没有 context_files
+- **THEN** 文档 span 成功消费并写入 `retrieval_scope`，scope_mode 为 `boost`；baseline 与全部 sub-query 继续检索全局语料，并对匹配文档候选应用同一 boost
+
+#### Scenario: 明确封闭范围使用 filter
+- **WHEN** comprehensive query 使用“仅在”“仅限”“检索范围限定为”等明确封闭措辞指向可解析文档
+- **THEN** `retrieval_scope.scope_mode=filter`；baseline 与全部 sub-query 使用同一文件 filter，不得由某个 branch 自行放宽
+
+#### Scenario: context_files 始终硬过滤
+- **WHEN** comprehensive 请求携带 context_files
+- **THEN** `retrieval_scope` 来源为 context_files、scope_mode 为 filter、matched_files 精确等于 context_files；所有 branch 共享该硬约束
+
+#### Scenario: scope 放宽不属于 intent-routing
+- **WHEN** shared filter 下某个 branch 召回不足
+- **THEN** intent-routing 只保留结果与诊断，不动态改成 boost/global；scope relax 由独立 fallback Level 2 处理
 
 ### Requirement: comprehensive clean-query baseline branch
 每个合法 ComprehensiveQueryPlan MUST 固定执行一个由运行时构造的 clean-query baseline branch。该 branch MUST 使用稳定 id `baseline` 与 kind `baseline`，MUST NOT 写入 LLM `sub_queries` 或 `coverage_domains`，并 MUST 与生成 sub-query 在同一 fan-out、共享预算和 merge 管线中执行。
@@ -202,7 +221,7 @@ Comprehensive 路径的 `RERANK_CANDIDATE_POOL_SIZE` MUST 是 baseline 与全部
 
 #### Scenario: FORCED_PRELOAD 仍然走意图解析
 - **WHEN** 请求带 context_files，`plan_rag_turn` 判定为 FORCED_PRELOAD
-- **THEN** 进入 run_rag_graph 后仍先执行 intent_parse 节点；context_files 作为 PreciseQueryPlan 的硬约束（scope_mode=filter, matched_files 来自 context_files）
+- **THEN** 进入 run_rag_graph 后仍先执行 intent_parse 节点；precise intent 将 context_files 写入 PreciseQueryPlan，comprehensive intent 将其写入 ComprehensiveQueryPlan.retrieval_scope；两条路径均使用 `scope_mode=filter` 且 matched_files 来自 context_files
 
 #### Scenario: OPTIONAL_TOOL 经工具调用进入
 - **WHEN** Agent 调用 search_knowledge_base 工具
