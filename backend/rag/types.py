@@ -131,6 +131,11 @@ class RagTrace(TypedDict, total=False):
     analysis_type: str
     sub_query_count: int
     retrieval_branch_count: int
+    requested_sub_query_count: int
+    sub_query_fanout_limit: int
+    sub_query_truncated_count: int
+    sub_queries_truncated: bool
+    truncated_sub_queries: list[dict[str, Any]]
     requested_comprehensive_postprocess_profile: str
     effective_comprehensive_postprocess_profile: str
     comprehensive_postprocess_profile_warning: str

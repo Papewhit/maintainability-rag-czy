@@ -55,6 +55,7 @@
 - [x] 4.10 保持 `search_knowledge_base(query)` 单次调用接口及现有每轮一次调用限制，不增加 multi-turn 参数或模式开关
 - [x] 4.11 trace 增加 profile、各策略 id、sub_query_count、retrieval_branch_count、baseline diagnostics/matched/selected、各 branch results、allocated/used rerank budget、rerank pairs、merge counts、生成分支 representation 和 branch-scoped errors
 - [x] 4.12 单元/集成测试覆盖 baseline 固定加入且不进入 coverage/reservation、空 clean_query 降级而非 raw/empty 回填、profile registry、非法组合拒绝、预算分配、local rerank、weighted RRF、去重/provenance、共享后处理只执行一次、top-k reservation、部分失败保留，以及 graph 不包含 profile-specific if/else
+- [x] 4.13 在 embedding/Milvus fanout 前按 priority 截断生成 sub-query：默认 4、配置范围 1-8，同 priority 保持原顺序；effective plan 与公共 trace 记录实际执行及丢弃项
 
 **验收**：comprehensive 查询在一次 graph 调用内完成 branch-local relevance、跨 query merge 和一次共享后处理；策略通过 profile 组合且 graph 不感知具体算法；成本预算不会随 sub-query 数复制；部分失败不清空可用结果；无 Chat Agent multi-turn 调用路径。
 

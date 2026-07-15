@@ -426,12 +426,49 @@ def _merge_comprehensive_trace(state: RAGState, patch: dict[str, Any]) -> dict[s
     return trace
 
 
+def _bounded_comprehensive_plan(
+    plan: ComprehensiveQueryPlan,
+    limit: int,
+) -> tuple[ComprehensiveQueryPlan, list[dict[str, Any]]]:
+    indexed = list(enumerate(plan.sub_queries))
+    ranked = sorted(indexed, key=lambda item: (item[1].priority, item[0]))
+    selected = ranked[: max(1, int(limit))]
+    selected_indexes = {index for index, _ in selected}
+    dropped = [
+        {
+            "original_index": index,
+            "query": sub_query.query,
+            "domain": sub_query.domain,
+            "priority": sub_query.priority,
+        }
+        for index, sub_query in indexed
+        if index not in selected_indexes
+    ]
+    if not dropped:
+        return plan, []
+    selected_sub_queries = tuple(sub_query for _, sub_query in selected)
+    coverage_domains = tuple(
+        dict.fromkeys(sub_query.domain for sub_query in selected_sub_queries)
+    )
+    return replace(
+        plan,
+        sub_queries=selected_sub_queries,
+        coverage_domains=coverage_domains,
+    ), dropped
+
+
 def decompose_and_fanout(state: RAGState) -> RAGState:
     plan = state.get("query_plan")
     if not isinstance(plan, ComprehensiveQueryPlan):
         raise TypeError("decompose_and_fanout requires ComprehensiveQueryPlan")
     started = time.perf_counter()
     context_files = list(state.get("context_files") or [])
+    requested_sub_query_count = len(plan.sub_queries)
+    fanout_limit = _runtime_config().comprehensive_max_sub_queries
+    plan, truncated_sub_queries = _bounded_comprehensive_plan(
+        plan,
+        fanout_limit,
+    )
     branches = build_retrieval_branches(plan)
     resolution = resolve_comprehensive_postprocess_policy(plan.postprocess_profile)
     scope_trace = {
@@ -545,6 +582,11 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         "final_selection_strategy_id": resolution.policy.final_selection_strategy_id,
         "sub_query_count": len(plan.sub_queries),
         "retrieval_branch_count": len(branches),
+        "requested_sub_query_count": requested_sub_query_count,
+        "sub_query_fanout_limit": fanout_limit,
+        "sub_query_truncated_count": len(truncated_sub_queries),
+        "sub_queries_truncated": bool(truncated_sub_queries),
+        "truncated_sub_queries": truncated_sub_queries,
         "dense_embedding_call_count": dense_embedding_call_count,
         "sparse_embedding_call_count": sparse_embedding_call_count,
         "embedding_call_count": dense_embedding_call_count + sparse_embedding_call_count,
@@ -606,6 +648,7 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         "stage_errors": branch_errors,
     }
     return {
+        "query_plan": plan,
         "comprehensive_policy_resolution": resolution,
         "branch_retrieval_results": results,
         "rag_trace": _merge_comprehensive_trace(state, patch),

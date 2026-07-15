@@ -440,3 +440,17 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `_inherit_parent_provenance()` now restores the multi-query score together with branch ids, ranks, baseline state, and coverage.
+
+## RAG-INTENT-F032
+
+- Kind: behavior_defect
+- Primary scope: rag.comprehensive.fanout_budget
+- Evidence status: confirmed
+- Observation: A schema-valid classifier response could contain an arbitrarily large sub_queries list, and every item was submitted for embedding plus Milvus retrieval before shared rerank budgets applied.
+- Inference: One overlong LLM response could trigger dozens or hundreds of retrieval branches despite bounded postprocess cost.
+- Decision: Bound generated fanout inside the RAG graph before retrieval. Default to 4 generated sub-queries, allow operator configuration from 1 through a hard maximum of 8, retain lower numeric priority first with stable original order for ties, and write the effective truncated plan back to graph state. Baseline remains additional.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; user accepted default 4 plus priority-first truncation; runtime config, graph fanout, and public schema red/green tests cover bounds, selected order, retrieval call count, effective plan, and dropped-item telemetry.
+- Disposition: validation
+- Disposition target: docs/validation/rag-intent-routing-evaluation.md
+- Resolution evidence: `backend/rag/runtime_config.py` bounds the setting; `decompose_and_fanout()` truncates before executor submission and reports requested/executed/truncated fields.

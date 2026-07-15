@@ -233,10 +233,29 @@ def summarize_comprehensive_runs(runs: Iterable[dict[str, Any]]) -> dict[str, An
         or any(bool(value) for key, value in trace.items() if key.endswith("_skipped"))
         for trace in traces
     )
+    requested_sub_query_counts = [
+        int(
+            trace.get("requested_sub_query_count")
+            if trace.get("requested_sub_query_count") is not None
+            else trace.get("sub_query_count") or 0
+        )
+        for trace in traces
+    ]
+    truncated_sub_query_counts = [
+        int(trace.get("sub_query_truncated_count") or 0) for trace in traces
+    ]
     return {
         "case_count": len(items),
         "sub_query_count_buckets": dict(
             sorted(Counter(str(int(trace.get("sub_query_count") or 0)) for trace in traces).items())
+        ),
+        "requested_sub_query_count_buckets": dict(
+            sorted(Counter(str(count) for count in requested_sub_query_counts).items())
+        ),
+        "sub_query_truncated_count_total": sum(truncated_sub_query_counts),
+        "sub_query_truncation_rate": _rate(
+            sum(count > 0 for count in truncated_sub_query_counts),
+            len(traces),
         ),
         "retrieval_branch_count_buckets": dict(
             sorted(

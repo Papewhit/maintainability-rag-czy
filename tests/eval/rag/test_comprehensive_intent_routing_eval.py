@@ -29,6 +29,8 @@ def _run(case_id: str, profile: str, *, total_ms: float, answer_quality: float) 
         "answer_quality": answer_quality,
         "rag_trace": {
             "sub_query_count": 2,
+            "requested_sub_query_count": 2,
+            "sub_query_truncated_count": 0,
             "retrieval_branch_count": 3,
             "baseline_hit": True,
             "baseline_selected": case_id == "case-a",
@@ -63,6 +65,9 @@ def test_comprehensive_eval_aggregates_cost_quality_buckets_and_percentiles():
 
     assert summary["case_count"] == 2
     assert summary["sub_query_count_buckets"] == {"2": 2}
+    assert summary["requested_sub_query_count_buckets"] == {"2": 2}
+    assert summary["sub_query_truncated_count_total"] == 0
+    assert summary["sub_query_truncation_rate"] == 0.0
     assert summary["retrieval_branch_count_buckets"] == {"3": 2}
     assert summary["baseline_hit_rate"] == 1.0
     assert summary["baseline_selected_rate"] == 0.5
@@ -77,6 +82,23 @@ def test_comprehensive_eval_aggregates_cost_quality_buckets_and_percentiles():
     assert summary["degradation_rate"] == 0.0
     assert summary["citation_validity_mean"] == 1.0
     assert summary["answer_quality_mean"] == 0.85
+
+
+def test_comprehensive_eval_reports_requested_executed_and_truncated_fanout():
+    run = _run("case-a", "quality_first_v1", total_ms=100.0, answer_quality=0.9)
+    run["rag_trace"].update({
+        "requested_sub_query_count": 6,
+        "sub_query_count": 4,
+        "sub_query_truncated_count": 2,
+        "retrieval_branch_count": 5,
+    })
+
+    summary = summarize_comprehensive_runs([run])
+
+    assert summary["requested_sub_query_count_buckets"] == {"6": 1}
+    assert summary["sub_query_count_buckets"] == {"4": 1}
+    assert summary["sub_query_truncated_count_total"] == 2
+    assert summary["sub_query_truncation_rate"] == 1.0
 
 
 @pytest.mark.parametrize(

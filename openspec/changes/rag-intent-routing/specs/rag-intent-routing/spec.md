@@ -92,8 +92,12 @@ ComprehensiveQueryPlan MUST 携带运行时确定性生成的 typed `retrieval_s
 每个合法 ComprehensiveQueryPlan MUST 固定执行一个由运行时构造的 clean-query baseline branch。该 branch MUST 使用稳定 id `baseline` 与 kind `baseline`，MUST NOT 写入 LLM `sub_queries` 或 `coverage_domains`，并 MUST 与生成 sub-query 在同一 fan-out、共享预算和 merge 管线中执行。
 
 #### Scenario: baseline 固定加入 fan-out
-- **WHEN** ComprehensiveQueryPlan 包含 N 个 LLM sub-query
-- **THEN** graph 执行 N+1 个 retrieval branch；`sub_query_count=N`，`retrieval_branch_count=N+1`；baseline 的源文本为 plan.clean_query，且仍经过 branch query preparation 与 terminology preflight
+- **WHEN** ComprehensiveQueryPlan 包含 N 个 LLM sub-query 且 N 不超过 effective fanout limit
+- **THEN** graph 执行 N+1 个 retrieval branch；`requested_sub_query_count=N`、`sub_query_count=N`、`retrieval_branch_count=N+1`；baseline 的源文本为 plan.clean_query，且仍经过 branch query preparation 与 terminology preflight
+
+#### Scenario: 超量 sub-query 在检索前按优先级截断
+- **WHEN** LLM 返回的 sub-query 数量超过 `RAG_COMPREHENSIVE_MAX_SUB_QUERIES`（默认 4，配置有效范围 1-8）
+- **THEN** graph MUST 在 embedding 和 Milvus retrieval 前按 priority 数字升序保留至上限，同 priority 保持原始顺序；baseline 不计入该上限；effective QueryPlan MUST 只包含被保留项；trace MUST 记录 requested/executed/truncated 数量、effective limit、截断状态和被丢弃项，且 `retrieval_branch_count=sub_query_count+1`
 
 #### Scenario: 空 clean_query 不创建空检索
 - **WHEN** 确定性 query preparation 产生空白 clean_query
@@ -201,7 +205,7 @@ Comprehensive 与 precise MUST 复用同一 effective rerank pool 规则：`RERA
 
 #### Scenario: 解析成功 trace
 - **WHEN** 意图分类正常完成
-- **THEN** rag_trace 包含 `intent`（精确或综合）、`intent_confidence`（0-1）、`query_plan_type`（precise/comprehensive）、`intent_llm_model`、`intent_llm_ms`、`intent_fallback_to_rules=false`、（comprehensive 时）`sub_query_count`、`retrieval_branch_count=sub_query_count+1`、`analysis_type`
+- **THEN** rag_trace 包含 `intent`（精确或综合）、`intent_confidence`（0-1）、`query_plan_type`（precise/comprehensive）、`intent_llm_model`、`intent_llm_ms`、`intent_fallback_to_rules=false`、（comprehensive 时）requested/executed/truncated sub-query telemetry、`retrieval_branch_count=sub_query_count+1`、`analysis_type`
 
 #### Scenario: comprehensive 后处理与成本 trace
 - **WHEN** comprehensive 路径完成或局部降级后返回

@@ -64,6 +64,11 @@ class RagTrace(BaseModel):
     analysis_type: Optional[str] = None
     sub_query_count: Optional[int] = None
     retrieval_branch_count: Optional[int] = None
+    requested_sub_query_count: Optional[int] = None
+    sub_query_fanout_limit: Optional[int] = None
+    sub_query_truncated_count: Optional[int] = None
+    sub_queries_truncated: Optional[bool] = None
+    truncated_sub_queries: Optional[List[Dict[str, Any]]] = None
     requested_comprehensive_postprocess_profile: Optional[str] = None
     effective_comprehensive_postprocess_profile: Optional[str] = None
     comprehensive_postprocess_profile_warning: Optional[str] = None

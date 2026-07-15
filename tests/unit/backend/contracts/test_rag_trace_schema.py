@@ -76,6 +76,16 @@ def test_rag_trace_schema_preserves_postprocess_fields():
         analysis_type="comparison",
         sub_query_count=2,
         retrieval_branch_count=3,
+        requested_sub_query_count=6,
+        sub_query_fanout_limit=4,
+        sub_query_truncated_count=2,
+        sub_queries_truncated=True,
+        truncated_sub_queries=[{
+            "original_index": 4,
+            "query": "低优先级风险",
+            "domain": "low-priority",
+            "priority": 3,
+        }],
         requested_comprehensive_postprocess_profile="quality_first_v1",
         effective_comprehensive_postprocess_profile="quality_first_v1",
         budget_strategy_id="priority_weighted_v1",
@@ -120,6 +130,8 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert payload["stage_errors"][0]["stage"] == "auto_merge"
     assert payload["intent"] == "comprehensive_analysis"
     assert payload["retrieval_branch_count"] == 3
+    assert payload["requested_sub_query_count"] == 6
+    assert payload["sub_query_truncated_count"] == 2
     assert payload["branch_retrieval_diagnostics"][0]["branch_id"] == "baseline"
     assert payload["rerank_pair_count"] == 6
     assert payload["strict_scope_filter"] is True
@@ -140,6 +152,7 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert response_trace["term_matches"][0]["start"] == 0
     assert response_trace["budget_strategy_id"] == "priority_weighted_v1"
     assert response_trace["branch_diagnostics"][0]["used_pair_budget"] == 3
+    assert response_trace["truncated_sub_queries"][0]["domain"] == "low-priority"
     assert response_trace["retrieval_scope"]["matched_files"] == [
         {"filename": "manual.pdf", "score": 0.9}
     ]

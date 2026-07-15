@@ -155,7 +155,7 @@ Precise 路径进入既有 HyDE/step-back fallback 时，只替换该次检索�
 
 ### 决策 7：综合分析只采用 graph 内并行检索
 
-ComprehensiveQueryPlan 在运行时固定构造一个 `branch_id="baseline"`、`branch_kind="baseline"` 的检索分支，其源文本是确定性 `clean_query`；它与全部 LLM sub-query 在同一次 `run_rag_graph()` 调用内并行检索。每个 branch 使用自己的 query 文本执行 terminology preflight，同时继承 plan 的同一 `retrieval_scope`，不得自行放宽 filter。随后由 effective `ComprehensivePostprocessPolicy` 完成 branch rerank、merge 和共享后处理。baseline 不是 LLM 输出、不是 coverage domain，也不写回 `sub_queries`。`sub_query_count` 只统计 LLM 生成项，真实执行量另记为 `retrieval_branch_count = sub_query_count + 1`。Chat Agent 只接收 graph 的最终检索结果，不读取 QueryPlan、不逐个调用 branch，也不参与检索决策。现有 `search_knowledge_base(query)` 单次工具接口和每轮一次调用限制保持不变。
+ComprehensiveQueryPlan 在运行时固定构造一个 `branch_id="baseline"`、`branch_kind="baseline"` 的检索分支，其源文本是确定性 `clean_query`；它与受 fanout 上限约束的 LLM sub-query 在同一次 `run_rag_graph()` 调用内并行检索。graph 在 embedding/Milvus 调用前按 priority 数字升序保留 sub-query，同 priority 保持 LLM 原始顺序；默认最多保留 4 个，可由 `RAG_COMPREHENSIVE_MAX_SUB_QUERIES` 调整，但运行时硬上限为 8。截断后的 effective QueryPlan 写回 graph state，使 rerank、merge、reservation 和 confidence 只消费实际执行分支。每个 branch 使用自己的 query 文本执行 terminology preflight，同时继承 plan 的同一 `retrieval_scope`，不得自行放宽 filter。随后由 effective `ComprehensivePostprocessPolicy` 完成 branch rerank、merge 和共享后处理。baseline 不是 LLM 输出、不是 coverage domain，也不写回 `sub_queries`。`requested_sub_query_count` 记录 LLM 请求项总数，`sub_query_count` 只统计实际执行的生成项，真实执行量记为 `retrieval_branch_count = sub_query_count + 1`。Chat Agent 只接收 graph 的最终检索结果，不读取 QueryPlan、不逐个调用 branch，也不参与检索决策。现有 `search_knowledge_base(query)` 单次工具接口和每轮一次调用限制保持不变。
 
 本 change 不提供 `multi_turn` / `parallel` 模式开关，也不设计根据中间检索结果动态增加、删除或调整 sub-query 的循环。结果驱动的 multi-turn 检索仅作为候选 enhancement 记录；若未来计划上线，必须通过独立 OpenSpec change 明确状态、预算和停止条件，并以 A/B 实验验证质量收益相对于延迟与成本的影响。
 
@@ -222,7 +222,7 @@ quality_first_v1
 
 ### 决策 10：综合后处理成本必须评测后才能上线
 
-`quality_first_v1` 明确是质量优先基线，不假定其成本可接受。上线评测必须至少记录：LLM sub-query count、包含 baseline 的 retrieval branch count、baseline 独立命中/最终入选率、dense/sparse embedding 调用数、hybrid search 调用数、rerank pair 总量、各分支与合并候选数、merge/postprocess 耗时、端到端 P50/P95、CPU/GPU 峰值与错误/降级率，并绑定质量指标（生成分支代表率、引用有效性、回答质量）。错误/降级率同时消费顶层 stage_errors、branch_errors 与 branch diagnostics 的 error，避免保留候选的 branch-local rerank 降级被误报为成功。paired run 使用 version 2 source fingerprint：对排序后的固定证据文件以及全部 `backend/rag/**/*.py`、`backend/infra/**/*.py`、`backend/shared/**/*.py` 求哈希，确保 trace identity、terminology preflight、embedding/vector retrieval 等传递依赖变化都会使对照失配，而不是只绑定 graph 入口文件。
+`quality_first_v1` 明确是质量优先基线，不假定其成本可接受。上线评测必须至少记录：LLM requested/executed/truncated sub-query count、包含 baseline 的 retrieval branch count、baseline 独立命中/最终入选率、dense/sparse embedding 调用数、hybrid search 调用数、rerank pair 总量、各分支与合并候选数、merge/postprocess 耗时、端到端 P50/P95、CPU/GPU 峰值与错误/降级率，并绑定质量指标（生成分支代表率、引用有效性、回答质量）。错误/降级率同时消费顶层 stage_errors、branch_errors 与 branch diagnostics 的 error，避免保留候选的 branch-local rerank 降级被误报为成功。paired run 使用 version 2 source fingerprint：对排序后的固定证据文件以及全部 `backend/rag/**/*.py`、`backend/infra/**/*.py`、`backend/shared/**/*.py` 求哈希，确保 trace identity、terminology preflight、embedding/vector retrieval 等传递依赖变化都会使对照失配，而不是只绑定 graph 入口文件。
 
 评测必须包含至少一个消融对照：保留相同 parallel retrieval 和 weighted-RRF merge，但关闭 branch CrossEncoder，只使用 Milvus local rank。该对照可作为 eval-only profile，不得在没有独立质量证据时成为生产默认。默认开启 intent classifier/comprehensive 路径前，必须形成质量增益相对于延迟和资源成本的评测结论；阈值在基线运行后确定，不在设计中伪造固定数值。
 

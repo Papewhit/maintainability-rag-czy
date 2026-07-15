@@ -6,7 +6,7 @@ scope: evaluation.rag.intent_routing
 source_commit: 3176dddf3aff7344b77bda02ebe0f05a56c1b714
 source_fingerprint: sha256:2d2714561a29bc7933b7771529e464b043af7d173abf350a94a344e8876f384c
 executed_at: 2026-07-15T06:18:06Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030]
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032]
 supersedes: []
 ---
 
@@ -17,6 +17,8 @@ supersedes: []
 This report validates the repeatable evaluation contracts for intent classification, comprehensive parallel retrieval cost/quality comparison, terminology-to-rerank boundaries, and rollout observability. It does not claim that the current FAST_MODEL or production retrieval infrastructure meets an activation threshold.
 
 Comprehensive error and degradation rates treat top-level stage failures, branch_errors, and errors exposed by branch retrieval/rerank diagnostics as case-level failures. Candidate-preserving branch rerank degradation therefore remains visible to the activation gate instead of being reported as a successful case.
+
+Generated comprehensive fanout is bounded before embedding/search: the default executes at most four generated sub-queries plus baseline, the operator setting is hard-bounded to 1-8, and trace separates requested, executed, and truncated items. Real paired evaluation must still measure the coverage/cost trade-off before default enablement.
 
 The version 2 source fingerprint normalizes line endings to LF and hashes a deterministic sorted manifest covering all Python files under `backend/rag`, `backend/infra`, and `backend/shared`, plus runtime config, the public API trace schema, evaluation implementation/runner/tests, OpenSpec design/spec, and both annotated intent datasets. This broad boundary intentionally includes transitive trace identity, terminology preflight, embedding, and vector-store dependencies. `source_commit` is the committed implementation anchor at the time of this working-tree validation; the fingerprint is the stronger binding for the reviewed source set and must be regenerated after any covered file changes.
 

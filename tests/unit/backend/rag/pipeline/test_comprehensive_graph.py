@@ -79,11 +79,69 @@ def test_fanout_uses_clean_query_baseline_and_each_branch_runs_independent_prefl
     assert failed.error == "electrical unavailable"
     assert result["rag_trace"]["retrieval_branch_count"] == 3
     assert result["rag_trace"]["sub_query_count"] == 2
+    assert result["rag_trace"]["requested_sub_query_count"] == 2
+    assert result["rag_trace"]["sub_query_fanout_limit"] == 4
+    assert result["rag_trace"]["sub_query_truncated_count"] == 0
+    assert result["rag_trace"]["sub_queries_truncated"] is False
+    assert result["rag_trace"]["truncated_sub_queries"] == []
     assert result["rag_trace"]["dense_embedding_call_count"] == 2
     assert result["rag_trace"]["sparse_embedding_call_count"] == 2
     assert result["rag_trace"]["embedding_call_count"] == 4
     assert result["rag_trace"]["hybrid_search_call_count"] == 2
     assert result["rag_trace"]["split_search_call_count"] == 2
+
+
+def test_fanout_caps_generated_sub_queries_by_priority_and_traces_dropped_items():
+    plan = ComprehensiveQueryPlan(
+        raw_query="综合风险",
+        clean_query="综合风险",
+        analysis_type="general",
+        sub_queries=tuple(
+            SubQuery(query=f"q{index}", domain=f"d{index}", priority=priority)
+            for index, priority in enumerate((3, 1, 2, 1, 3, 2))
+        ),
+        coverage_domains=tuple(f"d{index}" for index in range(6)),
+    )
+    config = replace(load_runtime_config({}), comprehensive_max_sub_queries=4)
+    calls = []
+
+    def retrieve(query, **kwargs):
+        calls.append(query)
+        return {"candidates": [], "meta": {"timings": {}, "stage_errors": []}}
+
+    with (
+        patch("backend.rag.pipeline.load_runtime_config", return_value=config),
+        patch("backend.rag.pipeline.retrieve_candidate_pool", side_effect=retrieve),
+    ):
+        result = rag_pipeline.decompose_and_fanout(
+            {
+                "question": plan.raw_query,
+                "context_files": [],
+                "query_plan": plan,
+                "query_plan_type": "comprehensive",
+                "rag_trace": {"sub_query_count": 6, "retrieval_branch_count": 7},
+            }
+        )
+
+    assert len(calls) == 5
+    assert set(calls) == {"综合风险", "q1", "q3", "q2", "q5"}
+    assert [item.query for item in result["query_plan"].sub_queries] == [
+        "q1",
+        "q3",
+        "q2",
+        "q5",
+    ]
+    assert result["query_plan"].coverage_domains == ("d1", "d3", "d2", "d5")
+    assert result["rag_trace"]["requested_sub_query_count"] == 6
+    assert result["rag_trace"]["sub_query_count"] == 4
+    assert result["rag_trace"]["retrieval_branch_count"] == 5
+    assert result["rag_trace"]["sub_query_fanout_limit"] == 4
+    assert result["rag_trace"]["sub_query_truncated_count"] == 2
+    assert result["rag_trace"]["sub_queries_truncated"] is True
+    assert result["rag_trace"]["truncated_sub_queries"] == [
+        {"original_index": 0, "query": "q0", "domain": "d0", "priority": 3},
+        {"original_index": 4, "query": "q4", "domain": "d4", "priority": 3},
+    ]
 
 
 def test_fanout_marks_non_throwing_failed_retrieval_for_comprehensive_confidence():
