@@ -3,10 +3,10 @@ document_type: validation_report
 validation_id: VAL-RAG-INTENT-001
 status: partial
 scope: evaluation.rag.intent_routing
-source_commit: 1c7a78291d9a01d9acaa445c517706f4b9ec32a5
-source_fingerprint: sha256:7c8680f4f4ce2901752a3fea744676b13a57ede90b635d63ed45b21d31b020f1
-executed_at: 2026-07-15T06:56:03Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032]
+source_commit: bd92b03fe6037317d72dbf3e3f5953f131ad99a9
+source_fingerprint: sha256:6dd3bad03f7d0598ac422693676373d1e1a22a8dcf5f09a3f821176ccabe5025
+executed_at: 2026-07-15T07:22:57Z
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032, RAG-INTENT-F033]
 supersedes: []
 ---
 
@@ -72,8 +72,8 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 ## Inputs
 
-- Source commit anchor: `1c7a78291d9a01d9acaa445c517706f4b9ec32a5`
-- Source fingerprint: `sha256:7c8680f4f4ce2901752a3fea744676b13a57ede90b635d63ed45b21d31b020f1`
+- Source commit anchor: `bd92b03fe6037317d72dbf3e3f5953f131ad99a9`
+- Source fingerprint: `sha256:6dd3bad03f7d0598ac422693676373d1e1a22a8dcf5f09a3f821176ccabe5025`
 - Dataset: 100 annotated intent samples (70 precise / 30 comprehensive)
 - Profiles: `quality_first_v1` and `eval_no_crossencoder_v1`
 - Environment: Windows, Python 3.12; no FAST_MODEL credentials, Milvus release corpus, or answer/judge model were configured for this run
@@ -82,9 +82,10 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 | Evidence | Result | Interpretation |
 | --- | --- | --- |
-| RAG evaluation suite | 63 passed, 1 real-model test skipped, 10 parameterized subtests passed | Harness, schema, pairing, aggregation, report path, resource/config binding, and historical-evidence checks work; no real-model quality claim |
+| RAG evaluation suite | 66 passed, 1 real-model test skipped, 10 parameterized subtests passed | Harness, schema, pairing, aggregation, report path, resource/config binding, and historical-evidence checks work; no real-model quality claim |
 | Terminology boundary and related postprocess tests | 77 passed | Terminology signals remain consumed; semantic entity compatibility input is removed |
-| RAG + API + evaluation unit suites | 385 passed | Default-disabled compatibility and terminology-compatible trace contracts have no unit regression |
+| RAG + API + evaluation unit suites | 420 passed | Default-disabled compatibility and terminology-compatible trace contracts have no unit regression |
+| Repository non-slow/non-e2e matrix | 713 passed, 2 skipped, 6 deselected, 10 parameterized subtests passed | Full default test matrix has no regression at the bound implementation commit |
 | Real FAST_MODEL intent baseline | Not executed | Credentials were unavailable |
 | Paired real retrieval profile comparison | Not executed | Model credentials and release retrieval infrastructure were unavailable |
 

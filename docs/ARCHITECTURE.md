@@ -1,7 +1,7 @@
 ---
 document_type: current_architecture
 status: current
-verified_commit: 1c7a78291d9a01d9acaa445c517706f4b9ec32a5
+verified_commit: bd92b03fe6037317d72dbf3e3f5953f131ad99a9
 last_verified_date: 2026-07-15
 authority: current-system-overview
 ---
@@ -12,7 +12,7 @@ authority: current-system-overview
 
 This is the single current-system overview for Ragtenance. Stable contracts live in `openspec/specs/`; rationale, known issues, enhancements, and reproducible evidence live in the governed locations defined by [Evidence Governance](evidence-governance.md).
 
-Current facts were verified against commit `8babe339cda636936c6c0af3c95a99e7c77c2f19` on 2026-07-12 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
+Current facts were verified against commit `bd92b03fe6037317d72dbf3e3f5953f131ad99a9` on 2026-07-15 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
 
 ## System Context and Components
 
