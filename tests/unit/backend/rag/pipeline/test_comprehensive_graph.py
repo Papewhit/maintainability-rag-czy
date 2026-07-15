@@ -9,6 +9,7 @@ from backend.rag.comprehensive_postprocess import (
     BranchRetrievalResult,
     build_retrieval_branches,
     resolve_comprehensive_postprocess_policy,
+    run_shared_postprocess,
 )
 from backend.rag.intent import IntentParseResult
 from backend.rag.query_plan import ComprehensiveQueryPlan, RetrievalScope, SubQuery
@@ -83,6 +84,69 @@ def test_fanout_uses_clean_query_baseline_and_each_branch_runs_independent_prefl
     assert result["rag_trace"]["embedding_call_count"] == 4
     assert result["rag_trace"]["hybrid_search_call_count"] == 2
     assert result["rag_trace"]["split_search_call_count"] == 2
+
+
+def test_fanout_marks_non_throwing_failed_retrieval_for_comprehensive_confidence():
+    plan = _plan()
+
+    def retrieve(query, **kwargs):
+        if query == "机械风险":
+            return {
+                "candidates": [],
+                "meta": {
+                    "retrieval_mode": "failed",
+                    "stage_errors": [{"stage": "dense_retrieve", "error": "dense down"}],
+                    "timings": {},
+                },
+            }
+        return {
+            "candidates": [{"chunk_id": query, "filename": "manual.pdf", "text": query}],
+            "meta": {"retrieval_mode": "hybrid", "stage_errors": [], "timings": {}},
+        }
+
+    with patch("backend.rag.pipeline.retrieve_candidate_pool", side_effect=retrieve):
+        fanout = rag_pipeline.decompose_and_fanout(
+            {
+                "question": plan.raw_query,
+                "context_files": [],
+                "query_plan": plan,
+                "query_plan_type": "comprehensive",
+                "rag_trace": {},
+            }
+        )
+
+    failed = next(
+        item
+        for item in fanout["branch_retrieval_results"]
+        if item.branch.branch_id == "sub_query_0"
+    )
+    assert failed.error == "dense down"
+    diagnostics = {
+        item["branch_id"]: item
+        for item in fanout["rag_trace"]["branch_retrieval_diagnostics"]
+    }
+    assert diagnostics["sub_query_0"]["error"] == "dense down"
+
+    pass_stage = lambda docs, top_k: (docs, {})
+    _, trace = run_shared_postprocess(
+        fanout["comprehensive_policy_resolution"].policy,
+        plan,
+        fanout["branch_retrieval_results"],
+        top_k=5,
+        auto_merge_fn=pass_stage,
+        step_chain_fn=pass_stage,
+        structure_rerank_fn=pass_stage,
+        confidence_fn=lambda query, docs: {
+            "confidence_gate_enabled": True,
+            "fallback_required": False,
+        },
+    )
+
+    assert trace["comprehensive_confidence_inputs"]["failed_generated_branch_ids"] == [
+        "sub_query_0"
+    ]
+    assert trace["fallback_required"] is True
+    assert "generated_branch_failure" in trace["confidence_reasons"]
 
 
 @pytest.mark.parametrize(

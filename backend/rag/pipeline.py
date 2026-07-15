@@ -461,10 +461,25 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
             )
             meta = dict(payload.get("meta") or {})
             meta["branch_retrieve_ms"] = elapsed_ms(branch_start)
+            candidates = tuple(payload.get("candidates") or [])
+            branch_error = None
+            if meta.get("retrieval_mode") == "failed":
+                for item in reversed(list(meta.get("stage_errors") or [])):
+                    if item.get("error"):
+                        branch_error = str(item["error"])
+                        break
+                if branch_error is None:
+                    branch_error = str(
+                        meta.get("dense_error")
+                        or meta.get("hybrid_error")
+                        or meta.get("rerank_error")
+                        or "branch retrieval failed"
+                    )
             return BranchRetrievalResult(
                 branch=branch,
-                candidates=tuple(payload.get("candidates") or []),
+                candidates=candidates,
                 meta=meta,
+                error=branch_error,
             )
         except Exception as exc:
             return BranchRetrievalResult(

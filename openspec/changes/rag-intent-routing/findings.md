@@ -356,3 +356,17 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `backend/contracts/schemas.py::RetrievedChunk` now explicitly retains the comprehensive candidate provenance fields; the focused red/green API test passes.
+
+## RAG-INTENT-F026
+
+- Kind: behavior_defect
+- Primary scope: rag.retrieval.branch_failure_diagnostics
+- Evidence status: confirmed
+- Observation: Candidate retrieval reports total embedding/Milvus failure as a normal payload with `retrieval_mode="failed"` and stage errors. Comprehensive fan-out treated any returned payload as a successful `BranchRetrievalResult`, leaving its error empty.
+- Inference: An empty generated branch could be absent from `failed_generated_branch_ids`, so comprehensive confidence would not add `generated_branch_failure` or request fallback despite a real retrieval failure.
+- Decision: Convert a returned failed retrieval mode into a branch error using the most specific stage or retrieval error while retaining its meta, timings, and any candidates.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/rag/pipeline/test_comprehensive_graph.py` reproduces a non-throwing failed branch and now verifies diagnostics plus comprehensive confidence/fallback propagation.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `decompose_and_fanout` recognizes `retrieval_mode="failed"` and populates `BranchRetrievalResult.error`; the focused red/green graph test passes.
