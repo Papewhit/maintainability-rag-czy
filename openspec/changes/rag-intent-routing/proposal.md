@@ -18,6 +18,7 @@
 5. **兼容降级**：classifier 关闭或 LLM 调用失败时，按现有 `QUERY_PLAN_ENABLED` 语义构造兼容性 PreciseQueryPlan；关闭 QueryPlan 时保持 raw query + global route，启用时无损映射现有 `parse_query_plan()` 结果。Query preparation 修复只改变已启用 QueryPlan 与 terminology 组合时 raw query 覆盖 semantic query 的缺陷。
 6. **意图分类评测集**：人工标注 100-200 条样本，建立 intent accuracy / plan validity / sub-query quality 指标，无需微调，目标使用现有 FAST_MODEL 直接达标。
 7. **可组合后处理策略与成本 gate**：综合路径通过一个具名、版本化的 postprocess profile 组合 branch rerank、跨 query fusion、最终选择和共享预算策略；v1 采用质量优先组合。上线前必须评测随 sub-query 数增长的 embedding、hybrid search、rerank pair、延迟和资源成本，并与更便宜的消融方案比较。
+8. **Anchor 工作流验证配置**：提供独立 validation-only env 示例，成组开启 intent routing / QueryPlan、heading lexical、confidence anchor gate 与现有 fallback；不修改默认值、不把 anchor 留在 semantic query，也不把该组合称为生产推荐。多开关缺少统一 capability 约束、各阶段 extraction mismatch 与 fallback contract gap 进入已知问题治理。
 
 ## Capabilities
 
@@ -37,6 +38,7 @@
 - `backend/rag/comprehensive_postprocess.py`（新文件）：定义 typed strategy protocols、`ComprehensivePostprocessPolicy`、具名 profile registry、预算分配、priority-weighted RRF merge 和 branch-aware final selection；graph 节点不得散落 profile-specific 分支。
 - `backend/chat/rag_execution.py`：`plan_rag_turn` 保留既有 session 级 RAG 触发规则（context_files 与通用文档检索关键词，用于 FORCED_PRELOAD vs OPTIONAL_TOOL），但不得执行 precise/comprehensive 分类、QueryPlan 构造或 sub-query 编排；这些 intent-routing 动作全部下沉到 RAG graph。
 - `backend/rag/runtime_config.py`：新增 intent classifier 的模型、超时、启用配置、`RAG_COMPREHENSIVE_POSTPROCESS_PROFILE` 和 graph fanout 安全上限 `RAG_COMPREHENSIVE_MAX_SUB_QUERIES`；本 change 不增加 multi-turn 模式配置，也不为 profile 组件增加独立自由组合开关。
+- `.env.rag-intent-routing-workflow.example`：工作流验证专用配置，显式成组开启 anchor 相关消费者；它不是默认配置或生产推荐，不能替代 A/B、成本与 fallback 行为验证。
 - `tests/unit/backend/rag/` 与 `tests/eval/rag/`：分别验证 LLM 调用、规则降级、策略组合契约、并行后处理和意图/成本评测指标。
 
 **接口影响：**
@@ -50,4 +52,5 @@
 **明确排除：**
 - Chat Agent 多次调用知识库工具、根据中间结果动态调整后续 sub-query 的 multi-turn 检索不在本 change 内。它作为候选 enhancement 单独记录，未来如计划上线，必须通过独立 change 设计并进行 A/B 验证。
 - 已生成 sub-query 的 rewrite / replace / decompose 属于 `rag-multilevel-fallback` 的 Level 1 策略，不由 intent-routing 实现。
+- 多个独立 anchor 相关开关的统一 capability configuration、query/confidence/chunk 的统一 anchor grammar/normalization，以及完整 comprehensive/Level 2 fallback anchor contract 不在本 change 重构；现有缺口由 `docs/known-issues/anchor-capability-configuration.md` 跟踪。
 - 面向知识图谱预留的 product / equipment / component / action / parameter 等通用实体元数据，以及从 query 抽取对应 semantic entities 的能力，不在当前目标或未来愿景内。

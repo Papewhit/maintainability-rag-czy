@@ -114,6 +114,8 @@ Before graph entry, `plan_rag_turn()` retains the existing session-level RAG tri
 
 When explicitly enabled, the classifier produces either a precise plan or a comprehensive plan. It does not produce semantic entities, terminology normalization, `semantic_query`, or postprocess strategy choices. Deterministic query preparation owns structural span consumption; terminology preflight then consumes the resulting retrieval text and independently supplies `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens`.
 
+Successfully parsed anchors follow the same structural ownership rule as other consumed spans: they are removed from semantic retrieval text and carried in the typed plan. Anchor consumption is currently distributed across independently configured capabilities. Heading lexical scoring reranks existing candidates, the confidence anchor gate checks agreement, and precise fallback may react to `anchor_mismatch`; no single switch establishes the complete workflow. `.env.rag-intent-routing-workflow.example` group-enables these capabilities only for controlled workflow validation and is explicitly not a production recommendation. Runtime defaults remain unchanged.
+
 ```text
 intent_parse
   |-- precise --> retrieve_initial --> confidence/fallback path
@@ -129,6 +131,8 @@ intent_parse
 `ComprehensiveQueryPlan.retrieval_scope` carries one deterministic document-scope meaning across the baseline and every generated branch. Ordinary resolved `《document》` hints are shared boosts, so branches may still search the global corpus. Explicitly closed wording and `context_files` produce a shared hard filter. Branches never relax that filter inside intent routing; scope relaxation belongs to fallback Level 2.
 
 On the precise path, HyDE and step-back fallback retrievals replace only the plan's semantic retrieval text. They retain the original raw query and deterministic file/scope/anchor constraints, so Level 1 query expansion cannot silently become scope relaxation; expanded text performs its own terminology preflight. Expanded retrieval also inherits the initial retrieval's authoritative `query_plan_enabled` state, so replacing `semantic_query` cannot activate a default-off compatibility plan (`RAG-INTENT-F033`). A precise `scope_mode="filter"` is passed as a strict filter for initial, full expanded, and candidate-only expanded retrieval, while `boost` alone permits an unfiltered global reserve (`RAG-INTENT-F027`).
+
+This is not yet a unified anchor/fallback contract. Query preparation, confidence, and chunk normalization use different anchor grammars and surface normalization; precise confidence re-extracts from raw query; rewrite can reinsert anchor text into semantic retrieval; and the planned Level 2 scope relaxation has no verified anchor-consumer invariant. Comprehensive confidence can set `fallback_required`, but the comprehensive graph currently terminates after shared postprocess instead of entering the precise grade/rewrite path. These configuration, extraction, and fallback gaps are governed by [KI-RAG-0006](known-issues/anchor-capability-configuration.md) (`RAG-INTENT-F034`, `RAG-INTENT-F035`).
 
 ## Shared Evidence Postprocess
 
@@ -201,6 +205,7 @@ Degradation rules include hybrid-to-dense fallback, candidate preservation when 
 | Unified execution/fallback scaffolding | Implemented, default disabled | both runtime flags false |
 | Citation verification | Implemented, default disabled | citation flag false |
 | Intent routing | Implemented, default disabled | `RAG_INTENT_CLASSIFIER_ENABLED=false` |
+| Anchor workflow validation bundle | Validation-only | `.env.rag-intent-routing-workflow.example`; not production guidance |
 | Comprehensive parallel retrieval | Implemented, gated by intent routing | `quality_first_v1`; classifier default disabled |
 | No-CrossEncoder comprehensive ablation | Evaluation-only | `eval_no_crossencoder_v1` |
 | Multilevel fallback | Planned, not implemented | `openspec/changes/rag-multilevel-fallback/` |
@@ -217,6 +222,7 @@ Planned changes are excluded from active diagrams and do not override current de
 - Terminology rescan currently violates the parent-only store contract and has unreliable parent rollback.
 - `.doc` is registered but lacks a legacy-DOC conversion/parser path.
 - Index profiles do not automatically isolate BM25 state.
+- Anchor routing lacks an atomic capability configuration, shared extraction/normalization contract, and complete comprehensive fallback path; the grouped env example is validation-only.
 
 See [Evidence Governance](evidence-governance.md), [ADRs](architecture/decisions/), [known issues](known-issues/), [enhancements](enhancements/), [validation](validation/), [postprocess pipeline](rag-postprocess-evidence/pipeline.md), [OpenSpec changes](../openspec/changes/), and [stable specs](../openspec/specs/).
 

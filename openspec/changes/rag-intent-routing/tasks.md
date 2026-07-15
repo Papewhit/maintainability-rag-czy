@@ -97,6 +97,7 @@
 - [x] 6.3 灰度策略文档：先 10% 流量启用，观察延迟和准确率，逐步全量
 - [x] 6.4 关闭开关时走兼容性 PreciseQueryPlan 路径；回归测试比较 semantic query、filters、route、检索结果和 `query_plan_enabled=false` telemetry，证明默认行为不变；另以显式回归用例记录并修复 `QUERY_PLAN_ENABLED=true` 时 terminology raw query 覆盖 semantic query 的既有缺陷
 - [ ] 6.5 完成评测后将默认值改为 true，作为单独的小 change 上线
+- [x] 6.6 提供 `.env.rag-intent-routing-workflow.example`，仅为工作流验证成组开启 intent routing / QueryPlan、heading lexical、confidence anchor gate 与 fallback；契约测试验证完整组合和非生产警示；将多开关冲突、anchor extraction mismatch 与 fallback contract gap 记录到 governed known issue，不改变 anchor span 消费规范
 
 **验收**：在 `RAG_INTENT_CLASSIFIER_ENABLED=false` 状态下，所有现有测试通过、行为与改造前一致；监控字段在 rag_trace 中齐全。
 

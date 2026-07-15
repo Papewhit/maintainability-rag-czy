@@ -69,6 +69,21 @@ RAG graph MUST 在检索前以确定性顺序执行结构解析、query cleaning
 - **WHEN** PreciseQueryPlan 由 context_files 或明确封闭语义形成 `scope_mode="filter"`
 - **THEN** candidate preparation 只执行 scoped filtered retrieval，不合并 unfiltered global reserve；只有 fallback Level 2 可以显式放宽该 filter
 
+### Requirement: anchor 工作流验证配置边界
+系统 SHALL 提供一份独立于默认配置的 workflow-validation 示例配置，成组开启 intent classifier、QueryPlan、heading lexical、confidence gate、confidence anchor gate 与现有 fallback。该配置 MUST 明确标注为工作流验证用途而非生产推荐；它 MUST NOT 改变各运行时开关的默认值，也 MUST NOT 取代真实模型、release index 下的 A/B 和 fallback 行为验证。成功解析并写入 structured anchors 的 span 仍 MUST 从 semantic query 移除，不得因任一消费者默认关闭而保留文本作为召回补偿。
+
+#### Scenario: validation-only 配置成组开启消费者
+- **WHEN** 维护者加载 `.env.rag-intent-routing-workflow.example`
+- **THEN** `RAG_INTENT_CLASSIFIER_ENABLED`、`QUERY_PLAN_ENABLED`、`HEADING_LEXICAL_ENABLED`、`CONFIDENCE_GATE_ENABLED`、`ENABLE_ANCHOR_GATE` 与 `RAG_FALLBACK_ENABLED` 均为 true；文件同时声明 `WORKFLOW VALIDATION ONLY` 与 `NOT A PRODUCTION RECOMMENDATION`
+
+#### Scenario: 默认配置与结构清洗规则保持不变
+- **WHEN** 没有显式加载 workflow-validation 示例配置
+- **THEN** intent classifier、QueryPlan、heading lexical、confidence gate 与 fallback 继续使用各自当前默认值；已成功识别的 anchor 仍由 structured QueryPlan 消费并从 semantic query 删除，不以重复检索文本弥补开关组合缺口
+
+#### Scenario: 多开关根因不在本 change 重构
+- **WHEN** heading lexical、confidence anchor gate 或 fallback 只有部分启用，或各阶段对 anchor 类型/规范化结果产生分歧
+- **THEN** 系统将其视为已知 capability-configuration / anchor-contract 限制并通过 trace、测试和已知问题跟踪；intent-routing 不在本 change 内引入新的统一开关、隐式启用规则或 semantic-query 保留策略
+
 ### Requirement: comprehensive 共享 retrieval scope
 ComprehensiveQueryPlan MUST 携带运行时确定性生成的 typed `retrieval_scope`。成功消费的文档提示对应的 `matched_files`、scope mode 与结构提示 MUST 保存在该 scope 中，并由 baseline 与全部生成 sub-query 共享；不得在删除文档名后把 branch 降为无约束全局检索。共享 scope MUST 区分 boost 与 filter，MUST NOT 把普通文档提示无条件升级为硬过滤。
 

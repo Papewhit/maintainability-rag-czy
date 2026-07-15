@@ -242,6 +242,30 @@ quality_first_v1
 
 具体数值在标注完成后根据模型初评结果设定。不达标时，升级模型而非微调。
 
+### 决策 12：以 validation-only 配置验证 anchor 工作流，不改变结构清洗规则
+
+成功解析的 anchor 已从自由文本转换为结构化约束，因此继续按决策 5 从 semantic query 移除。不能仅依据 `HEADING_LEXICAL_ENABLED` 的状态推断 anchor 是否在整条链路被消费：heading lexical 直接以 anchor 重排已有候选，confidence anchor gate 用它判断结果匹配，现有 fallback 又可能根据 `anchor_mismatch` 发起补偿检索。反过来，任何单个开关启用也不能证明整条能力完整。
+
+本 change 增加 `.env.rag-intent-routing-workflow.example`，仅供受控工作流验证时成组开启：
+
+```text
+RAG_INTENT_CLASSIFIER_ENABLED=true
+QUERY_PLAN_ENABLED=true
+HEADING_LEXICAL_ENABLED=true
+CONFIDENCE_GATE_ENABLED=true
+ENABLE_ANCHOR_GATE=true
+RAG_FALLBACK_ENABLED=true
+```
+
+该文件不改变运行时默认值，不是生产推荐配置。只有在真实 FAST_MODEL / release Milvus 上完成 paired A/B、成本评测及 fallback 行为验证后，才可通过单独 enablement change 讨论升级。多个独立开关缺少统一 capability configuration 约束是根因，但统一 profile、启动时约束或隐式联动均不在本 change 重新设计；由 `docs/known-issues/anchor-capability-configuration.md` 持续治理。
+
+验证期间还必须区分两个已确认问题面：
+
+- extraction mismatch：query preparation、confidence 与 chunk heading normalizer 支持的 anchor 类型和规范化规则并不一致，且 LLM additional anchors 可引入前两者未共享的 surface form。
+- fallback contract gap：当前 precise confidence 会从 raw query 重提取 anchor，rewrite 输出可能把已消费 anchor 写回 semantic query；未来 Level 2 放宽 scope 后尚无不变量保证仍有 anchor 消费者；comprehensive shared postprocess 虽可产出 fallback 信号，但 graph 尚未接入 precise 的 grade/rewrite fallback 子图。
+
+这两类发现不通过“把 anchor 留在 semantic query”绕过，而作为统一 capability/anchor contract 的退出条件记录。
+
 ## Risks / Trade-offs
 
 **风险 1：LLM 输出不稳定**

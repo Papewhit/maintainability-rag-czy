@@ -468,3 +468,31 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `backend/rag/pipeline.py::_expanded_query_plan_active()` forwards the initial activation state independently of rewritten query text; the focused fallback regression suite passes.
+
+## RAG-INTENT-F034
+
+- Kind: system_limitation
+- Primary scope: rag.anchor.extraction_contract
+- Evidence status: confirmed
+- Observation: Query preparation, confidence evaluation, and chunk heading normalization do not recognize or normalize the same anchor types. Query preparation has a chapter/appendix regex and may accept arbitrary model-supplied exact spans, while confidence and chunk normalization use a broader but separately defined grammar and compare surface strings without one shared canonical form.
+- Inference: A successfully parsed structured anchor can disagree with confidence or stored chunk metadata even when they describe the same location, so enabling all downstream consumers does not by itself guarantee consistent matching.
+- Decision: Preserve the existing spec rule that successfully parsed anchors are removed from semantic query. Do not retain the anchor as a recall workaround and do not redesign the shared grammar in this change; govern the mismatch as a root-cause issue.
+- Residual risk: Anchor match, rerank, and fallback signals remain sensitive to extractor and normalization differences.
+- Evidence: `backend/rag/query_plan.py:39,478-501,594`; `backend/rag/utils.py:126,918-935`; `backend/rag/confidence.py:7-13,76-81`; `backend/documents/normalizer/heading_normalizer.py:22,70`.
+- Disposition: known_issue
+- Disposition target: docs/known-issues/anchor-capability-configuration.md
+- Resolution evidence: The known issue defines a shared grammar/canonicalization exit criterion; `.env.rag-intent-routing-workflow.example` is explicitly only a validation workaround, not a semantic-query change.
+
+## RAG-INTENT-F035
+
+- Kind: system_limitation
+- Primary scope: rag.fallback.anchor_contract
+- Evidence status: confirmed
+- Observation: Existing precise fallback starts rewrite from the raw question, permits rewritten text to replace semantic query, and independently re-extracts raw-query anchors during confidence. The current comprehensive graph can produce fallback-required confidence but ends after shared postprocess instead of entering grade/rewrite. The planned, not implemented, Level 2 scope relaxation does not yet specify an invariant that retains a structured anchor consumer after scope is widened.
+- Inference: Fallback can reintroduce a consumed anchor into retrieval text, reason over a different extracted value, or fail to consume the signal at all on comprehensive/scope-relaxed paths. It cannot currently be treated as a complete compensation mechanism for anchor recall.
+- Decision: Group-enable existing fallback with QueryPlan, heading lexical, and confidence anchor gates only in a workflow-validation configuration. Record raw re-extraction, rewrite reinsertion, future scope-relax consumer loss, and incomplete comprehensive wiring as one governed fallback contract gap; do not redesign multilevel fallback in intent-routing.
+- Residual risk: Validation may expose path-dependent anchor behavior; production enablement remains blocked on fallback-specific tests and paired A/B evidence.
+- Evidence: `backend/rag/pipeline.py:904-969,985-993,1437-1451`; `backend/rag/confidence.py:7-13,76-81`; `openspec/changes/rag-multilevel-fallback/`.
+- Disposition: known_issue
+- Disposition target: docs/known-issues/anchor-capability-configuration.md
+- Resolution evidence: The known issue records current/future boundaries and requires structured-anchor preservation plus comprehensive fallback validation before production rollout.
