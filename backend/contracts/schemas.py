@@ -108,6 +108,9 @@ class RagTrace(BaseModel):
     strict_scope_filter: Optional[bool] = None
     query: Optional[str] = None
     semantic_query: Optional[str] = None
+    normalized_query: Optional[str] = None
+    sparse_expansion: Optional[str] = None
+    protected_tokens: Optional[List[str]] = None
     expanded_query: Optional[str] = None
     step_back_question: Optional[str] = None
     step_back_answer: Optional[str] = None

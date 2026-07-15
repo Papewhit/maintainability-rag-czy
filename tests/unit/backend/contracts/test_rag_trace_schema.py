@@ -16,6 +16,9 @@ def test_rag_trace_schema_preserves_postprocess_fields():
         candidate_count_after_structure_rerank=18,
         final_top_k_count=5,
         semantic_query="MRG 拆卸怎么做",
+        normalized_query="主减速齿轮箱 拆卸怎么做",
+        sparse_expansion="MRG 主减速齿轮箱 拆卸 分解 怎么做",
+        protected_tokens=["MRG"],
         term_matches=[{
             "entity_type": "component",
             "canonical": "主减速齿轮箱",
@@ -82,6 +85,9 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert payload["candidate_count_before_rerank"] == 30
     assert payload["final_top_k_count"] == 5
     assert payload["semantic_query"] == "MRG 拆卸怎么做"
+    assert payload["normalized_query"] == "主减速齿轮箱 拆卸怎么做"
+    assert payload["sparse_expansion"] == "MRG 主减速齿轮箱 拆卸 分解 怎么做"
+    assert payload["protected_tokens"] == ["MRG"]
     assert payload["term_matches"][0]["canonical"] == "主减速齿轮箱"
     assert payload["step_chain_repaired_groups"] == ["g1"]
     assert payload["entity_type_coverage"] == 1.0
@@ -100,6 +106,9 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     response_trace = response.model_dump()["rag_trace"]
     assert response_trace["intent"] == "comprehensive_analysis"
     assert response_trace["semantic_query"] == "MRG 拆卸怎么做"
+    assert response_trace["normalized_query"] == "主减速齿轮箱 拆卸怎么做"
+    assert response_trace["sparse_expansion"] == "MRG 主减速齿轮箱 拆卸 分解 怎么做"
+    assert response_trace["protected_tokens"] == ["MRG"]
     assert response_trace["term_matches"][0]["start"] == 0
     assert response_trace["budget_strategy_id"] == "priority_weighted_v1"
     assert response_trace["branch_diagnostics"][0]["used_pair_budget"] == 3

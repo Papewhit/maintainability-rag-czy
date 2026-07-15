@@ -93,6 +93,10 @@ class RetrievalMeta(TypedDict, total=False):
     entity_metadata_score_applied: bool
     entity_type_coverage: float
     entity_match_density: float
+    semantic_query: str
+    normalized_query: str
+    sparse_expansion: str
+    protected_tokens: list[str]
     term_matches: list[dict[str, Any]]
     confidence_gate_enabled: bool
     confidence_ms: float
@@ -178,6 +182,9 @@ class RagTrace(TypedDict, total=False):
     strict_scope_filter: bool
     query: str
     semantic_query: str
+    normalized_query: str
+    sparse_expansion: str
+    protected_tokens: list[str]
     expanded_query: str
     retrieved_chunks: list[dict[str, Any]]
     initial_retrieved_chunks: list[dict[str, Any]]

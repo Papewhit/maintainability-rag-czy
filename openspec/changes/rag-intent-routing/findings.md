@@ -314,3 +314,17 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `merge_failure_fallback` now preserves branch provenance while retaining the undeduplicated branch union and complete degradation telemetry.
+
+## RAG-INTENT-F023
+
+- Kind: behavior_defect
+- Primary scope: rag.api.terminology_trace
+- Evidence status: confirmed
+- Observation: Public RagTrace retained `semantic_query` and `term_matches` but still omitted the companion terminology preflight outputs `normalized_query`, `sparse_expansion`, and `protected_tokens` that retrieval had already placed in the internal trace.
+- Inference: API and history consumers could identify the match-offset coordinate query but could not inspect the actual dense/BM25 query composition or protected-token context used by retrieval and evaluation.
+- Decision: Type and serialize the complete terminology preflight trace context in both internal RagTrace and the public response schema.
+- Residual risk: none
+- Evidence: `@codex` review on 2026-07-15; `tests/unit/backend/contracts/test_rag_trace_schema.py` reproduced the three dropped fields and now round-trips all preflight inputs through `ChatResponse`.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `backend/contracts/schemas.py` and `backend/rag/types.py` declare the full preflight trace contract; the focused red/green API test passes.
