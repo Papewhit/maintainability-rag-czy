@@ -3,9 +3,9 @@ document_type: validation_report
 validation_id: VAL-RAG-INTENT-001
 status: partial
 scope: evaluation.rag.intent_routing
-source_commit: 86cc52aa5bb7b410278b71f320ad591edb81cc4e
-source_fingerprint: sha256:afcbfe6ba913f56c05aadfd10e7c59aabd3d3604d3f71677b44c9627ec42ba8f
-executed_at: 2026-07-15T10:58:05Z
+source_commit: de4e68182a833b778147ff135d7d2f6b2b70cfb8
+source_fingerprint: sha256:1b1dbc0050dee1c13f19ce052aa2e137e9d30964773bda4066fd0ccd42abdac3
+executed_at: 2026-07-15T11:39:50Z
 source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032, RAG-INTENT-F033, RAG-INTENT-F034, RAG-INTENT-F035, RAG-INTENT-F036]
 supersedes: []
 ---
@@ -80,8 +80,8 @@ The LLM response, embedding vectors, reranker scores, and Milvus candidate respo
 
 ## Inputs
 
-- Source commit anchor: `86cc52aa5bb7b410278b71f320ad591edb81cc4e`
-- Source fingerprint: `sha256:afcbfe6ba913f56c05aadfd10e7c59aabd3d3604d3f71677b44c9627ec42ba8f`
+- Source commit anchor: `de4e68182a833b778147ff135d7d2f6b2b70cfb8`
+- Source fingerprint: `sha256:1b1dbc0050dee1c13f19ce052aa2e137e9d30964773bda4066fd0ccd42abdac3`
 - Dataset: 100 annotated intent samples (70 precise / 30 comprehensive)
 - Profiles: `quality_first_v1` and `eval_no_crossencoder_v1`
 - Environment: Windows, Python 3.12; no FAST_MODEL credentials, Milvus release corpus, or answer/judge model were configured for this run
