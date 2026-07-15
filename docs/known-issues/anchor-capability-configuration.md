@@ -5,7 +5,7 @@ status: open
 scope: rag.anchor-routing
 severity: high
 first_confirmed: 2026-07-15
-last_verified_commit: a621fbb308bcae5fb68e3b06dfb17545bb932e58
+last_verified_commit: c915b535c6270dd7824e2ff2cfad1716ec628d59
 last_verified_date: 2026-07-15
 source_findings:
   - RAG-INTENT-F034

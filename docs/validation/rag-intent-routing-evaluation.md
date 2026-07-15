@@ -3,10 +3,10 @@ document_type: validation_report
 validation_id: VAL-RAG-INTENT-001
 status: partial
 scope: evaluation.rag.intent_routing
-source_commit: bd92b03fe6037317d72dbf3e3f5953f131ad99a9
-source_fingerprint: sha256:6dd3bad03f7d0598ac422693676373d1e1a22a8dcf5f09a3f821176ccabe5025
-executed_at: 2026-07-15T07:22:57Z
-source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032, RAG-INTENT-F033]
+source_commit: c915b535c6270dd7824e2ff2cfad1716ec628d59
+source_fingerprint: sha256:dc1f27166e4057358ce635a0f35dc0b118331c0ed6041d2249a484dc44f2f99f
+executed_at: 2026-07-15T09:22:00Z
+source_findings: [RAG-INTENT-F012, RAG-INTENT-F013, RAG-INTENT-F014, RAG-INTENT-F015, RAG-INTENT-F016, RAG-INTENT-F017, RAG-INTENT-F019, RAG-INTENT-F020, RAG-INTENT-F021, RAG-INTENT-F022, RAG-INTENT-F023, RAG-INTENT-F024, RAG-INTENT-F025, RAG-INTENT-F026, RAG-INTENT-F027, RAG-INTENT-F028, RAG-INTENT-F030, RAG-INTENT-F032, RAG-INTENT-F033, RAG-INTENT-F034, RAG-INTENT-F035]
 supersedes: []
 ---
 
@@ -19,6 +19,8 @@ This report validates the repeatable evaluation contracts for intent classificat
 Comprehensive error and degradation rates treat top-level stage failures, branch_errors, and errors exposed by branch retrieval/rerank diagnostics as case-level failures. Candidate-preserving branch rerank degradation therefore remains visible to the activation gate instead of being reported as a successful case.
 
 Generated comprehensive fanout is bounded before embedding/search: the default executes at most four generated sub-queries plus baseline, the operator setting is hard-bounded to 1-8, and trace separates requested, executed, and truncated items. Real paired evaluation must still measure the coverage/cost trade-off before default enablement.
+
+`.env.rag-intent-routing-workflow.example` is a validation-only switch bundle. It enables intent routing/QueryPlan, heading lexical scoring, confidence plus its anchor gate, and existing fallback together so the present workflow can be exercised without changing defaults. It is not production guidance: anchor extraction/normalization differs across query, confidence, and chunk stages, while precise rewrite/raw-query re-extraction and the unconnected comprehensive fallback path remain governed limitations under `KI-RAG-0006`.
 
 The version 2 source fingerprint normalizes line endings to LF and hashes a deterministic sorted manifest covering all Python files under `backend/rag`, `backend/infra`, and `backend/shared`, plus runtime config, the public API trace schema, evaluation implementation/runner/tests, OpenSpec design/spec, and both annotated intent datasets. This broad boundary intentionally includes transitive trace identity, terminology preflight, embedding, and vector-store dependencies. `source_commit` is the committed implementation anchor at the time of this working-tree validation; the fingerprint is the stronger binding for the reviewed source set and must be regenerated after any covered file changes.
 
@@ -72,8 +74,8 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 ## Inputs
 
-- Source commit anchor: `bd92b03fe6037317d72dbf3e3f5953f131ad99a9`
-- Source fingerprint: `sha256:6dd3bad03f7d0598ac422693676373d1e1a22a8dcf5f09a3f821176ccabe5025`
+- Source commit anchor: `c915b535c6270dd7824e2ff2cfad1716ec628d59`
+- Source fingerprint: `sha256:dc1f27166e4057358ce635a0f35dc0b118331c0ed6041d2249a484dc44f2f99f`
 - Dataset: 100 annotated intent samples (70 precise / 30 comprehensive)
 - Profiles: `quality_first_v1` and `eval_no_crossencoder_v1`
 - Environment: Windows, Python 3.12; no FAST_MODEL credentials, Milvus release corpus, or answer/judge model were configured for this run
@@ -84,8 +86,8 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 | --- | --- | --- |
 | RAG evaluation suite | 66 passed, 1 real-model test skipped, 10 parameterized subtests passed | Harness, schema, pairing, aggregation, report path, resource/config binding, and historical-evidence checks work; no real-model quality claim |
 | Terminology boundary and related postprocess tests | 77 passed | Terminology signals remain consumed; semantic entity compatibility input is removed |
-| RAG + API + evaluation unit suites | 420 passed | Default-disabled compatibility and terminology-compatible trace contracts have no unit regression |
-| Repository non-slow/non-e2e matrix | 713 passed, 2 skipped, 6 deselected, 10 parameterized subtests passed | Full default test matrix has no regression at the bound implementation commit |
+| RAG + API + evaluation unit suites | 421 passed | Default-disabled compatibility, validation-only switch-bundle, and terminology-compatible trace contracts have no unit regression |
+| Repository non-slow/non-e2e matrix | 714 passed, 2 skipped, 6 deselected, 10 parameterized subtests passed | Full default test matrix has no regression at the bound implementation commit |
 | Real FAST_MODEL intent baseline | Not executed | Credentials were unavailable |
 | Paired real retrieval profile comparison | Not executed | Model credentials and release retrieval infrastructure were unavailable |
 
@@ -121,6 +123,7 @@ Multi-turn retrieval is not part of this rollout. Any future multi-turn enhancem
 - CUDA peak memory is reported only when CUDA is available.
 - Citation validity measures consistency with retrieved evidence, not recall against human citation qrels; answer quality remains unavailable if the configured answer or judge model does not run.
 - Thresholds and production-profile acceptance remain unresolved by design, so default enablement is blocked.
+- The grouped anchor workflow configuration is validation-only. Independent switch coordination, shared anchor grammar/normalization, and complete comprehensive/Level 2 fallback behavior remain unresolved under `KI-RAG-0006`.
 
 ## Findings
 
