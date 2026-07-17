@@ -802,7 +802,7 @@ def run_shared_postprocess(
     failed_generated = {
         result.branch.branch_id
         for result in branch_results
-        if result.branch.branch_kind == "sub_query" and result.error and not result.candidates
+        if result.branch.branch_kind == "sub_query" and not result.candidates
     }
     missing_generated = successful_generated - represented_generated
     confidence_started = time.perf_counter()

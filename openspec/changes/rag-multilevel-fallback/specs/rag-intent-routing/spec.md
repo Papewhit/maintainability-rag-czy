@@ -3,7 +3,7 @@
 ### Requirement: 确定性 query preparation 与 dense+BM25 输入
 RAG graph MUST 在检索前以确定性顺序执行结构解析、query cleaning、terminology preflight 和 hybrid query composition。`raw_query` MUST 保持不可变；只有已成功转成 scope 或 anchor 的结构 span MAY 从 `clean_query` / `semantic_query` 删除。terminology preflight MUST 消费结构处理后的 semantic query（comprehensive 时为 clean-query baseline 与每个实际 sub-query），MUST NOT 使用 raw query 覆盖该输入。正常检索 MUST 同时生成 dense embedding 与 BM25 sparse embedding，并执行 dense+sparse hybrid search；只有既有 sparse/hybrid failure degradation MAY 退化为 dense-only。
 
-精确 planner 输出的 `scope_mode` MUST 是下游权威行为契约：`filter` 表示用户硬范围，`boost` 表示文件软偏好，`none` 表示无文件范围。只有 `context_files`、确定性解析成功且未被否定的明确封闭范围措辞，以及确定性解析成功的精确文档范围引用（如“《A》中……”）MAY 产生 filter。文件名字符串匹配分数本身 MUST NOT 产生 filter。classifier 的 `scope_hint` MUST NOT 单独将 boost/none 提升为 filter，也 MUST NOT 降级确定性 filter。PreciseQueryPlan MUST NOT 为 fallback 新增 `scope_source`。
+精确 planner 输出的 `scope_mode` MUST 是下游权威行为契约：`filter` 表示用户硬范围，`boost` 表示文件软偏好，`none` 表示无文件范围。只有 `context_files`、确定性解析成功且未被否定并且每个文档提示唯一匹配一个文件的明确封闭范围措辞，以及确定性解析成功、每个文档提示唯一匹配一个文件的精确文档范围引用（如“《A》中……”）MAY 产生 filter。单个 hard-scope 提示匹配多个文件时最多产生 boost。文档提示后的“中心思想”“中文翻译”“中英文术语”“中外方案”“中长期/中短期计划”“中间章节”“中部结构”等常见词组 MUST NOT 把“中”解释为范围标记。文件名字符串匹配分数本身 MUST NOT 产生 filter。classifier 的 `scope_hint` MUST NOT 单独将 boost/none 提升为 filter，也 MUST NOT 降级确定性 filter。PreciseQueryPlan MUST NOT 为 fallback 新增 `scope_source`。
 
 #### Scenario: 成功限域的文档名只由 scope 消费
 - **WHEN** query 为 "《主减速齿轮箱维修手册》中，MRG 拆卸怎么做"，文档提示成功匹配到文件并形成 filter scope
@@ -42,8 +42,16 @@ RAG graph MUST 在检索前以确定性顺序执行结构解析、query cleaning
 - **THEN** scope_mode 为 filter；已确认归属 scope 的文档 span 从 semantic query 消费
 
 #### Scenario: 精确文档范围引用产生 filter
-- **WHEN** precise query 使用可被确定性解析为范围选择的“《A》中……”且 A 成功匹配文件
+- **WHEN** precise query 使用可被确定性解析为范围选择的“《A》中……”且 A 唯一匹配一个文件
 - **THEN** scope_mode 为 filter；匹配分数只确认 A 对应的文件，不独立承担 hard-scope 语义
+
+#### Scenario: hard-scope 文档提示未唯一解析
+- **WHEN** 单个明确封闭或精确范围文档提示同时匹配多个达到 routable threshold 的文件
+- **THEN** 该提示 MUST NOT 产生 filter，最多产生 boost；多个彼此独立且各自唯一解析的 hard-scope 提示 MAY 共同形成组合 filter
+
+#### Scenario: 文档名后的常见中词组保持普通提示
+- **WHEN** precise query 使用“《A》中心思想”“《A》中文翻译”“《A》中英文术语”“《A》中外方案”“《A》中长期计划”“《A》中短期计划”“《A》中间章节”或“《A》中部结构”等表达
+- **THEN** “中”不是精确范围标记，scope_mode MUST NOT 仅因此成为 filter；文档提示最多产生 boost，后续词组保留在 semantic query
 
 #### Scenario: 高字符串匹配分数本身最多产生 boost
 - **WHEN** 文档标题与文件名匹配分数大于等于 `DOC_SCOPE_MATCH_FILTER`，但 query 没有 context_files、明确封闭措辞或确定性精确范围引用

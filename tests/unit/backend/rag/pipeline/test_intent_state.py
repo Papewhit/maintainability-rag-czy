@@ -22,6 +22,8 @@ def test_rag_state_carries_typed_intent_plan_without_semantic_entities():
     assert "clean_query" in annotations
     assert "semantic_query" in annotations
     assert "term_matches" in annotations
+    assert "fallback_decisions" in annotations
+    assert "attempted_levels" in annotations
     assert "query_entities" not in annotations
     assert IntentParseResult.__name__ in str(annotations["intent_result"])
     assert IntentQueryPlan is not None
@@ -105,3 +107,49 @@ def test_retrieve_initial_consumes_precise_plan_and_preserves_intent_trace():
     assert result["sparse_expansion"] == "expanded query"
     assert result["protected_tokens"] == ["query"]
     assert result["rag_trace"]["semantic_query"] == "semantic query"
+
+
+def test_context_files_use_one_main_retrieval_without_attachment_supplement():
+    context_files = ["manual-a.pdf", "manual-b.pdf"]
+    plan = PreciseQueryPlan(
+        raw_query="安装步骤",
+        clean_query="安装步骤",
+        semantic_query="安装步骤",
+        scope_mode="filter",
+        matched_files=(("manual-a.pdf", 1.0), ("manual-b.pdf", 1.0)),
+        route="scoped_hybrid",
+    )
+    retrieve_result = {
+        "docs": [{"chunk_id": "main", "text": "main retrieval"}],
+        "meta": {
+            "timings": {},
+            "stage_errors": [],
+            "fallback_required": False,
+            "confidence_reasons": [],
+        },
+    }
+
+    with (
+        patch("backend.rag.pipeline.retrieve_documents", return_value=retrieve_result) as retrieve,
+        patch(
+            "backend.rag.pipeline.retrieve_context_documents",
+            side_effect=AssertionError("attachment supplement must not run"),
+            create=True,
+        ),
+        patch("backend.rag.pipeline.emit_rag_step"),
+    ):
+        result = rag_pipeline.retrieve_initial(
+            {
+                "question": "安装步骤",
+                "context_files": context_files,
+                "query_plan": plan,
+                "query_plan_type": "precise",
+            }
+        )
+
+    retrieve.assert_called_once()
+    assert retrieve.call_args.kwargs["context_files"] == context_files
+    assert retrieve.call_args.kwargs["query_plan"] is plan
+    assert retrieve.call_args.kwargs["strict_scope_filter"] is True
+    assert result["docs"] == retrieve_result["docs"]
+    assert result["rag_trace"].get("attached_context_chunks") in (None, [])

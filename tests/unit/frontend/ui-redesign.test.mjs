@@ -201,6 +201,29 @@ const checks = [
     },
   },
   {
+    name: "keeps structured RAG steps in a default-collapsed thinking process",
+    run() {
+      assert.match(index, /<details[^>]*class="thinking-process-details"/);
+      assert.doesNotMatch(index, /<details[^>]*class="thinking-process-details"[^>]*\sopen(?:\s|>|=)/);
+      assert.match(index, /思考过程/);
+      assert.match(index, /step\.level/);
+      assert.match(index, /step\.signal/);
+
+      const { vm } = createVm({
+        messages: [{ id: "bot", text: "answer", isUser: false, isThinking: false, ragSteps: [] }],
+      });
+      vm.scheduleScrollToBottom = () => {};
+      const type = vm.consumeSseEvent(
+        'data: {"type":"rag_step","step":{"icon":"✏️","label":"Level 1","detail":"rewrite","level":1,"signal":"anchor_mismatch"}}',
+        0,
+      );
+
+      assert.equal(type, "rag_step");
+      assert.equal(vm.messages[0].ragSteps[0].level, 1);
+      assert.equal(vm.messages[0].ragSteps[0].signal, "anchor_mismatch");
+    },
+  },
+  {
     name: "exposes history and knowledge as floating panels",
     run() {
       assert.match(index, /history-panel/);
@@ -399,7 +422,7 @@ const checks = [
     },
   },
   {
-    name: "threads attached context files through backend RAG filtering",
+    name: "threads attached context files through the main backend RAG filter",
     run() {
       assert.match(backendSchemas, /context_files:\s*Optional\[List\[str\]\]/);
       assert.match(backendRouterChat, /request\.context_files/);
@@ -408,12 +431,13 @@ const checks = [
       assert.match(backendTools, /run_rag_graph\(query,\s*context_files=/);
       assert.match(backendRagPipeline, /context_files/);
       assert.match(backendRagRetrieval, /filename in \[/);
-      assert.match(backendRagUtils, /retrieve_context_documents/);
-      assert.match(backendRagPipeline, /attached_context_chunks/);
+      assert.match(backendRagUtils, /retrieve_candidate_pool/);
+      assert.match(backendRagPipeline, /strict_scope_filter/);
+      assert.doesNotMatch(backendRagPipeline, /retrieve_context_documents\(/);
       assert.match(backendRagExecution, /_with_retrieved_context_instruction/);
       assert.match(backendRagExecution, /model_instance\.astream/);
       assert.match(backendRagPipeline, /JSON/i);
-      assert.match(backendRagPipeline, /grade_error/);
+      assert.match(backendRagPipeline, /fallback_router_node/);
     },
   },
 ];

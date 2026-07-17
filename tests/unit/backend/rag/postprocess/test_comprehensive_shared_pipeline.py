@@ -519,3 +519,33 @@ def test_comprehensive_confidence_uses_generated_failures_but_never_targets_base
     assert trace["fallback_required"] is True
     assert trace["confidence_reasons"] == ["generated_branch_failure"]
     assert "baseline" not in trace["confidence_reasons"]
+
+
+def test_comprehensive_confidence_treats_normal_empty_generated_recall_as_failure():
+    branches = build_retrieval_branches(_plan())
+    results = [
+        BranchRetrievalResult(branch=branches[0], candidates=({"chunk_id": "baseline"},)),
+        BranchRetrievalResult(branch=branches[1], candidates=(), error=None),
+    ]
+    pass_stage = lambda docs, top_k: (docs, {})
+
+    _, trace = run_shared_postprocess(
+        resolve_comprehensive_postprocess_policy("quality_first_v1").policy,
+        _plan(),
+        results,
+        top_k=5,
+        auto_merge_fn=pass_stage,
+        step_chain_fn=pass_stage,
+        structure_rerank_fn=pass_stage,
+        confidence_fn=lambda query, docs: {
+            "confidence_gate_enabled": True,
+            "fallback_required": False,
+            "confidence_reasons": [],
+        },
+    )
+
+    assert trace["comprehensive_confidence_inputs"]["failed_generated_branch_ids"] == [
+        "sub_query_0"
+    ]
+    assert trace["fallback_required"] is True
+    assert "generated_branch_failure" in trace["confidence_reasons"]

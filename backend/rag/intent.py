@@ -76,6 +76,9 @@ def _closed_scope_spans_for_consumed_documents(
 INTENT_SYSTEM_PROMPT = """你是 RAG graph 内部的意图解析器。一次调用只完成意图分类和计划提示。
 只输出 schema 允许的字段。禁止输出 semantic_query、terminology normalization、entities 或 postprocess profile。
 
+scope_hint 只表达非硬范围偏好：普通文档偏好可选 boost，无文档偏好可选 none。
+不得用 scope_hint=filter 创建硬范围；context_files、未被否定的明确封闭措辞和解析成功的“《A》中”范围引用由确定性 planner 独占判定。
+
 精确查找 precise_lookup：定位具体文档、章节、表格、步骤或图。
 综合分析 comprehensive_analysis：需要跨来源比较、归纳、复用或多维综合。
 
@@ -227,6 +230,7 @@ def _comprehensive_plan_from_decision(
         context_files=context_files,
         fallback_empty_queries=False,
         preferred_scope_mode=preferred_scope_mode,
+        exact_range_is_hard_scope=False,
     )
     consumed_closed_scope_spans = _closed_scope_spans_for_consumed_documents(
         raw_query,
@@ -240,6 +244,7 @@ def _comprehensive_plan_from_decision(
             context_files=context_files,
             fallback_empty_queries=False,
             preferred_scope_mode="boost",
+            exact_range_is_hard_scope=False,
         )
     explicit_closed_scope = bool(consumed_closed_scope_spans)
     sub_queries = tuple(
@@ -255,6 +260,7 @@ def _comprehensive_plan_from_decision(
             context_files=context_files,
             fallback_empty_queries=False,
             preferred_scope_mode="filter",
+            exact_range_is_hard_scope=False,
         )
         clean_query = cleaned_structural.clean_query
     if context_files:

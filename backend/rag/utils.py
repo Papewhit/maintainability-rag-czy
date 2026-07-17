@@ -303,6 +303,7 @@ def _finish_retrieval_pipeline(
     retrieval_mode: str = "hybrid",
     hybrid_error: str | None = None,
     query_term_matches: list[Any] | None = None,
+    same_root_cap_override: int | None = None,
 ) -> Dict[str, Any]:
     """Complete the retrieval evidence post-processing pipeline."""
     candidate_pool_size = _effective_rerank_output_size(top_k, len(retrieved))
@@ -395,10 +396,13 @@ def _finish_retrieval_pipeline(
 
     stage_start = time.perf_counter()
     try:
-        reranked_pool, structure_meta = _apply_structure_rerank(
-            docs=repaired_docs,
-            top_k=candidate_pool_size,
-        )
+        structure_kwargs: dict[str, Any] = {
+            "docs": repaired_docs,
+            "top_k": candidate_pool_size,
+        }
+        if same_root_cap_override is not None:
+            structure_kwargs["same_root_cap"] = same_root_cap_override
+        reranked_pool, structure_meta = _apply_structure_rerank(**structure_kwargs)
     except Exception as exc:
         reranked_pool = repaired_docs
         structure_meta = {
@@ -997,7 +1001,11 @@ def _get_stepback_model():
     return _stepback_model
 
 
-def _generate_step_back_pair(query: str) -> tuple[str, str]:
+def _generate_step_back_pair(
+    query: str,
+    *,
+    rewrite_context: str | None = None,
+) -> tuple[str, str]:
     model = _get_stepback_model()
     if not model:
         return "", ""
@@ -1009,7 +1017,8 @@ def _generate_step_back_pair(query: str) -> tuple[str, str]:
         "- step_back_question abstracts the user's concrete question into a broader principle question.\n"
         "- step_back_answer answers that broader question in no more than 120 Chinese characters when possible.\n"
         "- Do not include reasoning, markdown, or extra keys.\n"
-        f"User question: {query}"
+        f"User question: {query}\n"
+        f"Plan context:\n{rewrite_context or '(none)'}"
     )
     try:
         response = model.invoke(prompt)
@@ -1021,7 +1030,11 @@ def _generate_step_back_pair(query: str) -> tuple[str, str]:
         return "", ""
 
 
-def generate_hypothetical_document(query: str) -> str:
+def generate_hypothetical_document(
+    query: str,
+    *,
+    rewrite_context: str | None = None,
+) -> str:
     model = _get_stepback_model()
     if not model:
         return ""
@@ -1029,7 +1042,8 @@ def generate_hypothetical_document(query: str) -> str:
         "请基于用户问题生成一段‘假设性文档’，内容应像真实资料片段，"
         "用于帮助检索相关信息。文档可以包含合理推测，但需与问题语义相关。"
         "只输出文档正文，不要标题或解释。\n"
-        f"用户问题：{query}"
+        f"用户问题：{query}\n"
+        f"查询计划上下文：\n{rewrite_context or '（无）'}"
     )
     try:
         return (model.invoke(prompt).content or "").strip()
@@ -1037,8 +1051,11 @@ def generate_hypothetical_document(query: str) -> str:
         return ""
 
 
-def step_back_expand(query: str) -> dict:
-    step_back_question, step_back_answer = _generate_step_back_pair(query)
+def step_back_expand(query: str, *, rewrite_context: str | None = None) -> dict:
+    step_back_question, step_back_answer = _generate_step_back_pair(
+        query,
+        rewrite_context=rewrite_context,
+    )
     if step_back_question or step_back_answer:
         expanded_query = (
             f"{query}\n\n"

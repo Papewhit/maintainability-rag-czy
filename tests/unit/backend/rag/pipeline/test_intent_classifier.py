@@ -431,7 +431,7 @@ def test_llm_anchor_is_removed_only_after_being_recorded_as_consumed():
 
 
 @pytest.mark.unit
-def test_scope_hint_only_routes_a_resolved_document_scope():
+def test_scope_hint_cannot_override_a_deterministic_precise_range():
     boost = IntentDecision.model_validate(
         {
             "intent": "precise_lookup",
@@ -446,11 +446,11 @@ def test_scope_hint_only_routes_a_resolved_document_scope():
     unscoped = build_intent_parse_result("《部署手册》中，回滚要求", decision=none, filename_registry=REGISTRY)
 
     assert isinstance(boosted.query_plan, PreciseQueryPlan)
-    assert boosted.query_plan.scope_mode == "boost"
+    assert boosted.query_plan.scope_mode == "filter"
     assert "部署手册" not in boosted.query_plan.semantic_query
     assert isinstance(unscoped.query_plan, PreciseQueryPlan)
-    assert unscoped.query_plan.scope_mode == "none"
-    assert "《部署手册》" in unscoped.query_plan.semantic_query
+    assert unscoped.query_plan.scope_mode == "filter"
+    assert "部署手册" not in unscoped.query_plan.semantic_query
 
 
 @pytest.mark.unit

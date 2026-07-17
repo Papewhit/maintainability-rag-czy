@@ -27,7 +27,7 @@ confidence gate（`backend/rag/confidence.py`）已经输出了多维信号：
 ## Goals / Non-Goals
 
 **Goals：**
-- 每个 fallback level 有明确的触发信号、策略集、预算
+- 每个 fallback level 有明确的触发信号与策略集；Level 1/2 有独立预算，Level 3 是总预算下的确定性终止步骤
 - Router 是纯规则（无 LLM），逻辑可单测、可解释
 - Level 1 内部按 plan_type 路由（精确 vs 综合）
 - 整体预算可控，不会因 fallback 让单次 RAG 失控
@@ -83,7 +83,7 @@ Level 3 (Insufficient): 明确告知
   输出:
     精确 filter: "未在你指定的文档范围内找到足够依据；本次没有搜索范围外知识库"
     精确 boost/none: "未在当前知识库中找到与当前查询匹配的足够依据"
-    综合: 部分覆盖回答 + 未覆盖维度的明确标注
+    综合: 基于 final top-k 标注覆盖状态；0 < X < Y 时让现有回答模型只生成有来源证据维度的独立部分解答，不得跨未覆盖维度形成总体结论
 ```
 
 ### 决策 2：Fallback Router 实现
@@ -146,7 +146,7 @@ def route_fallback(
 
 ### 决策 4：Level 1 - 综合管线 rewrite
 
-新实现，使用合并的 LLM 调用同时做策略选择和重写。输入中的失败 branch 必须是 LLM sub-query；intent-routing 固定构造的 clean-query baseline 只提供 diagnostics，不得成为 rewrite/replace/decompose 目标。发生综合重试时 baseline 始终从 `ComprehensiveQueryPlan.clean_query` 原样重建：
+新实现，针对每个被选中的失败分支使用一次合并的 LLM 调用同时做策略选择和重写。输入中的失败 branch 必须是 LLM sub-query；intent-routing 固定构造的 clean-query baseline 只提供 diagnostics，不得成为 rewrite/replace/decompose 目标。多个生成分支同时失败时，按 `priority` 升序、再按稳定 `branch_id` 排序，单轮最多选择 `RAG_FALLBACK_COMPREHENSIVE_REWRITE_WINDOW` 个（默认 2）。发生综合重试时 baseline 始终从 `ComprehensiveQueryPlan.clean_query` 原样重建：
 
 ```
 System:
@@ -181,6 +181,10 @@ User input:
 
 输出可能是 1 个 sub_query（generalize/specialize/replace）或 2 个（decompose）。
 
+窗口允许一次处理多个失败分支，因此综合 trace 使用列表契约：`level1_comprehensive_strategy: list[str]`、`level1_new_sub_queries: list[dict]`、`level1_sub_query_replaced: list[str]`；三个字段按选中分支的稳定顺序记录。
+
+为满足通用 Level 1 trace 契约，综合分支还固定记录 `level1_strategy="comprehensive"`，并将 `level1_rewritten_query` 定义为 `list[str]`：按上述稳定分支顺序展平每个被接受的新 query。精确分支继续把 `level1_rewritten_query` 记录为单个字符串；消费者 MUST 根据 `level1_strategy` 解释该字段类型。
+
 ### 决策 5：Level 2 - 精确管线 scope relax
 
 无 LLM 调用，纯规则降级：
@@ -198,12 +202,13 @@ def relax_scope(query_plan: PreciseQueryPlan) -> PreciseQueryPlan:
         route="global_hybrid",
     )
 
-# 然后重新走一次 retrieve_candidate_pool, candidate_k 放大 1.5x
+# 然后重新走一次 retrieve_candidate_pool；candidate_k 放大 1.5x，
+# 并以既有 RAG_FALLBACK_EXPANDED_CANDIDATE_K 作为 max_candidate_k
 ```
 
 trace 记录 `level2_relaxations`（list，描述哪些约束被放宽）。
 
-任何 `filter` 都不得移除组合 filename filter，也不得追加全库 reserve。Level 2 仍可放大 `candidate_k`、放宽 `same_root_cap`，其重检结果继续完整通过共享 postprocess/confidence。`boost → none` 必须原子更新 `scope_mode=none`、`matched_files=()` 与 `route=global_hybrid`。Fallback 不检查 filter 的来源，也不为 `PreciseQueryPlan` 新增 `scope_source`。
+任何 `filter` 都不得移除组合 filename filter，也不得追加全库 reserve。Level 2 将 `candidate_k` 放大 1.5x、但不超过既有 `RAG_FALLBACK_EXPANDED_CANDIDATE_K`，并把本轮 `same_root_cap` 临时增加 1；这些参数变化不写回全局配置。重检结果继续完整通过共享 postprocess/confidence。`boost → none` 必须原子更新 `scope_mode=none`、`matched_files=()` 与 `route=global_hybrid`。Fallback 不检查 filter 的来源，也不为 `PreciseQueryPlan` 新增 `scope_source`。
 
 ### 决策 6：Level 2 - 综合管线 scope relax
 
@@ -237,13 +242,17 @@ def generate_level3_answer(query_plan, attempted_levels) -> str:
             f"建议: 检查相关文档是否已上传 / 调整问法 / 提供更多上下文文件。"
         )
     else:
-        # 综合管线: 用已成功的 sub_query 结果生成部分回答
+        # 综合管线: 仅从本轮 final top-k 判断覆盖与选择证据
         covered = [...]  # 成功的 sub_q
         missing = [...]  # 失败的 sub_q
         return f"已完成 {len(covered)}/{total} 个分析维度,...,未覆盖部分: {missing}"
 ```
 
-这是模板化输出，不调 LLM。`backend/chat/rag_execution.py` 的 prompt 注入逻辑识别 Level 3 并强制使用此输出。
+`generate_level3_answer()` 本身是模板化输出，不调用 LLM。综合 coverage、维度证据和 baseline evidence MUST 只来自本轮 final top-k 实际表示的 branch；被 final selection 淘汰的 raw branch candidate 不得重新进入 Level 3。baseline-only 时显示 `0/Y`，并输出一条明确标注为“一般背景证据、不得计入分析覆盖率”的 baseline 摘录。若所有生成维度均由 final top-k 表示但整体 confidence 仍不足，输出 `Y/Y`，明确说明“全部维度已有相关证据，但整体置信度不足”，展示证据摘录并建议核对来源或补充更具判别力的查询条件，不得建议补充“未覆盖维度”。
+
+当只有部分生成 sub-query 由 final top-k 表示（`0 < X < Y`）时，确定性模板列出 X/Y、每个已覆盖维度的证据摘录及既有 filename/page 来源、未覆盖维度，并约束现有回答模型：只基于这些摘录为已覆盖维度分别生成部分解答；明确整体证据不足；保留来源；不得回答未覆盖维度，也不得在缺少必要维度时做跨维度比较、汇总或总体建议。该模型调用属于现有回答交付，不是 `generate_level3_answer()` 新增的 LLM 调用。
+
+`Y/Y` 但整体 confidence 不足时继续保持 evidence-only：模板只列带来源的证据摘录和低置信提示，不授权合成回答。baseline-only 与完全无证据也不授权部分解答。forced-preload 仍通过系统消息交付模板约束，optional-tool 仍通过 tool response 交付同一约束，再由现有 agent LLM 完成回答；两条路径不得维护第二套文案。
 
 ### 决策 8：Level 2 触发时的 prompt 注入
 
@@ -259,7 +268,9 @@ elif turn_context.fallback_level == 2:
     instruction = "未在优先文件中找到精确匹配，以下包含范围外相关参考。"
 ```
 
-注入位置：在原 RAG 上下文 prompt 之后追加。
+当 Level 2 前后均为 `scope_mode=none` 时，声明为：“未在当前知识库中找到精确匹配，以下是扩大候选池及放宽结构限制后得到的相关参考；本轮没有改变文档检索范围。”不得套用“优先文件”或“范围外”措辞。
+
+注入位置：forced-preload 在原 RAG 上下文 prompt 之后追加；optional-tool 把同一声明附在 tool response 的检索结果之前。
 
 ### 决策 9：预算分配与超时
 
@@ -267,14 +278,17 @@ elif turn_context.fallback_level == 2:
 RAG_FALLBACK_TOTAL_BUDGET_MS    = 8000   # 整体上限
 RAG_FALLBACK_LEVEL1_BUDGET_MS   = 3000
 RAG_FALLBACK_LEVEL2_BUDGET_MS   = 2500
-RAG_FALLBACK_LEVEL3_BUDGET_MS   = 100    # Level 3 几乎零成本
 
-进入 level N 前检查: remaining_budget = total_budget - elapsed_since_turn_start
+进入 Level 1/2 前检查: remaining_budget = total_budget - elapsed_since_turn_start
   if remaining_budget < level_N_budget:
       跳过本 level, 直接进入 Level 3
+
+Level 3 不设独立预算配置或入口阈值；它是不调用检索、模板生成不调用 LLM 的确定性终止步骤，只受整体预算约束。
 ```
 
 复用 `_get_fallback_executor` 和 `_await_with_deadline` 基础设施。
+
+本 change 的受支持配置域只包含正整数毫秒值。零值和负值属于 unsupported configuration；本 change 不为其增加钳制、拒绝、禁用或兼容解释。
 
 ### 决策 10：意图与 plan_type 区分
 
@@ -288,18 +302,18 @@ match query_plan:
         return _comprehensive_fallback_path(decision, query_plan)
 ```
 
-Level 3 输出也按 plan_type 不同：精确管线给"未找到"，综合管线给"部分覆盖"。
+Level 3 输出也按 plan_type 不同：精确管线给"未找到"；综合管线报告 final top-k 所证明的覆盖状态，且仅在 `0 < X < Y` 时授权现有回答模型为已覆盖维度生成受来源约束的独立部分解答。
 
 ## Risks / Trade-offs
 
 **风险 1：多 level fallback 累计延迟**
 
-最坏情况：Level 1 (3s) → Level 2 (2.5s) → Level 3 (0.1s) = ~5.6s 额外延迟。加上原始检索可能超 10s。
+最坏的有界重试部分：Level 1 (3s) → Level 2 (2.5s) = 5.5s 额外延迟；Level 3 是总预算下的确定性模板终止步骤。加上原始检索仍可能接近整体预算边界。
 
 缓解：
 - 整体预算 8s 硬性限制
-- 各 level 入口检查预算
-- 实测 P95 落在 5-7s 范围内（多数查询 Level 0 直接成功）
+- Level 1/2 入口检查各自预算，所有 fallback 共享整体预算
+- 以 P95 5-7s 作为待真实评测验证的目标范围；tasks 10.3-10.5 完成前不声称已有实测结论
 
 **风险 2：fallback router 规则维护性**
 
@@ -374,6 +388,8 @@ query + context_files
 
 Level 1/2 的每次重检都是一个新的完整证据生命周期。节点不得只替换 documents 后沿用旧 `rag_trace.confidence_reasons`；必须对新候选重新执行共享 postprocess，基于该轮 final top-k 重新计算 confidence，再回到 router。
 
+新一轮只有在 retrieval、postprocess、final top-k 和 confidence 全部完成后才可原子提交 plan 与 evidence state。若 complete round 超时或失败，返回 router 的 query plan、final documents 和 branch identities 全部回退到上一轮已完成快照；尤其 comprehensive decompose 改变 sub-query 索引后，不得用新 plan 解释旧 final documents。
+
 环境默认值不阻碍实现：intent classifier 和 fallback 可以继续保持默认关闭，但 graph、typed plan 分支与测试按两者已显式启用的上线前提实现。关闭 `RAG_FALLBACK_ENABLED` 只保留现有兼容行为，不改变初检、postprocess 或回答上下文。
 
 ### 决策 12：filter producer 与下游契约边界
@@ -385,8 +401,10 @@ Level 1/2 的每次重检都是一个新的完整证据生命周期。节点不�
 ```text
 deterministic planner
   context_files                         -> filter
-  explicit closed wording + resolved A -> filter
-  resolved exact range form "《A》中"   -> filter
+  explicit closed wording + uniquely resolved A -> filter
+  uniquely resolved exact range form "《A》中"   -> filter
+  one hard hint resolving multiple files        -> boost
+  lexical compounds after title (中心/中文/中英文/中外/中长期/中短期/中间/中部) -> boost
   ordinary document hint               -> boost
   no document preference               -> none
 
@@ -402,3 +420,5 @@ fallback
 ```
 
 因此先收紧 producer，再实现 Level 2。Fallback 不查看匹配分数、不查看 classifier hint，也不追溯 filter 的成因。一旦 planner 输出 filter，下游就把它当成用户硬范围。`PreciseQueryPlan` 不增加 `scope_source`；综合管线已有的 `RetrievalScope.source` 继续服务 trace/provenance，但不得进入 Level 2 行为判断。
+
+唯一解析按每个 hard-scope 文档提示单独判断：一个提示只有一个达到 routable threshold 的文件时才贡献 hard filter；一个提示命中多个文件时，该提示降为普通 boost。多个彼此独立且各自唯一解析的 hard-scope 提示可以共同形成组合 filter。`《A》中说明步骤` 的 `中` 是范围标记；`《A》中心思想`、`《A》中文翻译`、`《A》中英文术语`、`《A》中外方案`、`《A》中长期计划`、`《A》中短期计划`、`《A》中间章节`、`《A》中部结构` 中的 `中` 属于后续词组，不是范围标记。

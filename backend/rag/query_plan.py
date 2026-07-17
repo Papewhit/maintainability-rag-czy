@@ -38,6 +38,28 @@ _BOOK_TITLE_RE = re.compile(r"《([^》]+)》")
 _MODEL_NUMBER_RE = re.compile(r"[A-Z]{2,}\d{3,}[A-Z0-9]*")
 _CHAPTER_RE = re.compile(r"第\s*[一二三四五六七八九十百千万零两\d]+\s*章|附录\s*[A-Z\d一二三四五六七八九十]")
 _BOOK_TITLE_PREFIX_RE = re.compile(r"《[^》]+》\s*中[，,]?\s*")
+_EXPLICIT_CLOSED_SCOPE_PATTERNS = (
+    re.compile(r"(?:仅限|只限|仅|只)(?:在|于|从|基于|依据|参考)?(?=\s*《)"),
+    re.compile(r"(?:检索|分析|资料|文档)?范围\s*(?:限定|限制|仅限|只限)(?:为|在|于)?(?=\s*《)"),
+)
+_NEGATED_CLOSED_SCOPE_PREFIX = re.compile(
+    r"(?:并非|并不(?:是)?|不(?:是|应当|应该|应|要|能|必|再)?|非|无需|无须|不限于|不局限于)\s*$"
+)
+_NEGATED_DOCUMENT_RANGE_PREFIX = re.compile(
+    r"(?:(?:并)?(?:不限于|不局限于)"
+    r"|(?:并非|不是|并不是)\s*[仅只]?\s*(?:在|于|从|基于|依据|参考)"
+    r"|(?:不(?:要|应当|应该|应|能|必|再)?|无需|无须|别)\s*[仅只]?\s*(?:在|于|从|基于|依据|参考))\s*$"
+)
+_NON_RANGE_ZHONG_COMPOUNDS = (
+    "中心",
+    "中文",
+    "中英文",
+    "中外",
+    "中长期",
+    "中短期",
+    "中间",
+    "中部",
+)
 
 
 @dataclass(frozen=True)
@@ -459,6 +481,7 @@ def parse_query_plan(
     *,
     fallback_empty_queries: bool = True,
     preferred_scope_mode: Literal["filter", "boost", "none"] | None = None,
+    exact_range_is_hard_scope: bool = True,
 ) -> QueryPlan:
     """Parse raw query into a QueryPlan with semantic_query, doc_hints, and route.
 
@@ -505,6 +528,7 @@ def parse_query_plan(
     model_scope_matches: dict[str, set[str]] = {}
     scope_mode: Literal["filter", "boost", "none"] = "none"
 
+    context_files = list(dict.fromkeys(context_files or []))
     if context_files:
         effective_registry = [
             {"raw": context_file, "normalized": _normalize_filename(context_file)}
@@ -536,21 +560,61 @@ def parse_query_plan(
                         model_hints.append((f, s))
             matched_files = sorted(model_hints, key=lambda x: -x[1])
 
-    # Determine scope_mode based on best match score
+    closed_scope_spans = _explicit_closed_scope_spans(raw_query)
+    hard_scope_document_starts: set[int] = set()
+    hard_scope_files: set[str] = set()
+    for match in book_title_matches:
+        hint_matches = _match_doc_hints([match.group(1)], effective_registry)
+        resolved_files = {
+            filename
+            for filename, score in hint_matches
+            if score >= DOC_SCOPE_MATCH_BOOST
+        }
+        if not resolved_files:
+            continue
+        suffix = raw_query[match.end():].lstrip()
+        exact_range_reference = (
+            exact_range_is_hard_scope
+            and not _NEGATED_DOCUMENT_RANGE_PREFIX.search(raw_query[max(0, match.start() - 12):match.start()])
+            and suffix.startswith("中")
+            and not suffix.startswith(_NON_RANGE_ZHONG_COMPOUNDS)
+        )
+        preceded_by_closed_scope = any(
+            not raw_query[end:match.start()].strip()
+            for _, end in closed_scope_spans
+            if end <= match.start()
+        )
+        if (exact_range_reference or preceded_by_closed_scope) and len(resolved_files) == 1:
+            hard_scope_document_starts.add(match.start())
+            hard_scope_files.update(resolved_files)
+
+    # Filename similarity establishes document identity or preference strength,
+    # but only deterministic user range syntax may create a hard filter.
     routable_matches = [(f, score) for f, score in matched_files if score >= DOC_SCOPE_MATCH_BOOST]
     if routable_matches:
-        best_score = routable_matches[0][1]
-        if preferred_scope_mode is not None:
-            scope_mode = preferred_scope_mode
-        elif best_score >= DOC_SCOPE_MATCH_FILTER:
+        if hard_scope_document_starts:
             scope_mode = "filter"
-        elif best_score >= DOC_SCOPE_MATCH_BOOST:
+            matched_files = [
+                (filename, score)
+                for filename, score in matched_files
+                if filename in hard_scope_files
+            ]
+        elif preferred_scope_mode == "none":
+            scope_mode = "none"
+            matched_files = []
+        else:
+            # A classifier filter hint is capped at boost; it cannot manufacture
+            # deterministic hard-scope semantics.
             scope_mode = "boost"
 
     # Explicit attached files are always the final hard scope, independent of LLM hints.
     if context_files:
         scope_mode = "filter"
         matched_files = [(f, 1.0) for f in context_files]
+    elif scope_mode == "none":
+        # Scope state is atomic: diagnostic weak matches are not authoritative
+        # retrieval constraints and cannot remain attached to an unscoped plan.
+        matched_files = []
 
     # 6. Build clean/semantic queries only from spans with an established owner.
     consumed_spans: list[ConsumedSpan] = [
@@ -558,12 +622,21 @@ def parse_query_plan(
         for text, start, end in anchor_spans
     ]
     if scope_mode in {"filter", "boost"}:
+        scoped_filenames = {filename for filename, _ in matched_files}
         for match in book_title_matches:
             hint_matches = _match_doc_hints([match.group(1)], effective_registry)
-            if not any(score >= DOC_SCOPE_MATCH_BOOST for _, score in hint_matches):
+            resolved_files = {
+                filename
+                for filename, score in hint_matches
+                if score >= DOC_SCOPE_MATCH_BOOST
+            }
+            if not (resolved_files & scoped_filenames):
                 continue
             end = match.end()
-            suffix = re.match(r"\s*中[，,]?\s*", raw_query[end:])
+            remaining_text = raw_query[end:]
+            suffix = None
+            if not remaining_text.lstrip().startswith(_NON_RANGE_ZHONG_COMPOUNDS):
+                suffix = re.match(r"\s*中[，,]?\s*", remaining_text)
             if suffix:
                 end += suffix.end()
             consumed_spans.append(
@@ -576,7 +649,6 @@ def parse_query_plan(
                 )
             )
 
-        scoped_filenames = {filename for filename, _ in matched_files}
         for model_number in model_numbers:
             if not (model_scope_matches.get(model_number, set()) & scoped_filenames):
                 continue
@@ -628,6 +700,21 @@ def parse_query_plan(
         route=route,
         consumed_spans=consumed_spans,
     )
+
+
+def _explicit_closed_scope_spans(raw_query: str) -> tuple[tuple[int, int], ...]:
+    matches: list[tuple[int, int]] = []
+    for pattern in _EXPLICIT_CLOSED_SCOPE_PATTERNS:
+        for match in pattern.finditer(raw_query):
+            prefix = raw_query[max(0, match.start() - 6):match.start()]
+            if not _NEGATED_CLOSED_SCOPE_PREFIX.search(prefix):
+                matches.append(match.span())
+    selected: list[tuple[int, int]] = []
+    for start, end in sorted(matches, key=lambda span: (span[0], -(span[1] - span[0]))):
+        if any(start < kept_end and end > kept_start for kept_start, kept_end in selected):
+            continue
+        selected.append((start, end))
+    return tuple(sorted(selected))
 
 
 def _remove_consumed_spans(text: str, spans: list[ConsumedSpan]) -> str:

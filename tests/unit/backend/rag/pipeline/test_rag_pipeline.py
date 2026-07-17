@@ -54,8 +54,7 @@ class RagPipelinePromptTests(unittest.TestCase):
             route="global_hybrid",
         )
 
-    def test_grade_prompt_keeps_json_example_literal(self):
-        grader = FakeGrader()
+    def test_grade_documents_never_calls_removed_llm_grader(self):
         runtime_config = replace(load_runtime_config({}), fallback_enabled=True)
         state = {
             "question": "What is the conclusion?",
@@ -65,14 +64,12 @@ class RagPipelinePromptTests(unittest.TestCase):
 
         with (
             patch("backend.rag.pipeline.load_runtime_config", return_value=runtime_config),
-            patch("backend.rag.pipeline._get_grader_model", return_value=grader),
+            patch("backend.rag.pipeline.init_chat_model", side_effect=AssertionError("grader must not run")),
         ):
             result = rag_pipeline.grade_documents_node(state)
 
-        prompt = grader.structured.messages[0]["content"]
-        self.assertIn('{"binary_score":"yes"}', prompt)
         self.assertEqual(result["route"], "generate_answer")
-        self.assertEqual(result["rag_trace"]["grade_score"], "yes")
+        self.assertEqual(result["rag_trace"]["grade_score"], "skipped_fast_path")
 
     def test_retrieve_expanded_timeout_returns_initial_result(self):
         initial_docs = [{"text": "initial", "filename": "a.pdf", "chunk_id": "c1"}]
