@@ -35,6 +35,7 @@
 - [x] 2.8 初检及每轮 Level 1/2 重检统一执行完整 postprocess/final top-k/confidence，并以本轮信号返回 router
 - [x] 2.9 测试：多个 `context_files` 在精确管线形成一次过滤检索；综合管线只保留既有 fan-out 且各分支携带同一 filter；不发生附件专用分支、逐附件直取补充或 confidence 后追加
 - [x] 2.10 comprehensive decompose 后完整重检超时/失败时，原子保留上一轮已完成的 plan、final docs 与 branch identity；补证据不串位回归
+- [x] 2.11 precise Level 2 boost→none 后完整重检超时/失败时，原子回滚上一轮 plan/evidence，并让 effective scope trace 保持上一轮值
 
 **验收**：graph 可视化输出清晰；多 level 路径在测试中正确执行；现有 RAG 测试不破坏。
 

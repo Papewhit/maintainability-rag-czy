@@ -1397,6 +1397,10 @@ def level2_scope_relax_node(state: RAGState) -> RAGState:
                 dict(retrieval.get("meta") or {}),
                 round_name="level2",
             )
+        else:
+            incomplete_round_trace = dict(working.get("rag_trace") or {})
+            working = {**state, "rag_trace": incomplete_round_trace}
+            new_scope_mode = old_scope_mode
     rag_trace = dict(working.get("rag_trace") or {})
     rag_trace.update({
         "level2_relaxations": relaxations,

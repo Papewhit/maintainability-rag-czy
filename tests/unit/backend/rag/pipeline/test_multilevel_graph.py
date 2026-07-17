@@ -917,7 +917,11 @@ def test_comprehensive_decompose_timeout_keeps_previous_completed_plan_and_evide
 
 
 def test_precise_level_two_uses_own_deadline_for_complete_postprocess_round():
-    plan = _plan()
+    plan = replace(
+        _plan(),
+        raw_query="参考《Manual》说明第三章的拆卸步骤",
+        scope_mode="boost",
+    )
     config = replace(
         _enabled_config(),
         fallback_total_budget_ms=1000,
@@ -929,7 +933,7 @@ def test_precise_level_two_uses_own_deadline_for_complete_postprocess_round():
         "semantic_query": plan.semantic_query,
         "query_plan": plan,
         "query_plan_type": "precise",
-        "context_files": ["manual.pdf"],
+        "context_files": [],
         "docs": [{"chunk_id": "l0", "text": "level zero"}],
         "attempted_levels": [],
         "fallback_started_at": time.perf_counter(),
@@ -957,6 +961,8 @@ def test_precise_level_two_uses_own_deadline_for_complete_postprocess_round():
         result = rag_pipeline.level2_scope_relax_node(state)
 
     assert result["docs"] == state["docs"]
+    assert result["query_plan"] == plan
+    assert result["rag_trace"]["level2_new_scope_mode"] == "boost"
     assert result["attempted_levels"] == [2]
     assert result["rag_trace"]["level2_timeout"] is True
     assert result["rag_trace"]["stage_errors"][-1]["stage"] == "level2_postprocess"

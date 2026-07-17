@@ -342,3 +342,17 @@ last_verified_date: 2026-07-17
 - Disposition: known_issue
 - Disposition target: docs/known-issues/intent-routing-fingerprint-archived-openspec-paths.md
 - Resolution evidence: KI-RAG-0007 records the clean-worktree reproducer and requires a durable-authority correction outside this change; no protective compatibility behavior was added.
+
+## RAG-MF-F025
+
+- Kind: behavior_defect
+- Primary scope: rag.fallback.evidence_lifecycle
+- Evidence status: confirmed
+- Observation: A precise Level 2 `boost → none` attempt that times out during complete postprocess retained the previous round documents but returned the relaxed `none` plan and `level2_new_scope_mode`, so Level 3 could describe an unscoped search that never completed.
+- Inference: This reachable supported path violates the existing complete-round atomic state scenario and combines a new plan with old final evidence.
+- Decision: When the precise Level 2 round returns no completed result, retain its timeout/failure diagnostics but restore the previous completed state and report the previous scope mode as the effective `level2_new_scope_mode`.
+- Residual risk: None after precise and comprehensive incomplete rounds share the same plan/evidence rollback outcome.
+- Evidence: First GitHub Codex review on PR #5; failing regression `test_precise_level_two_uses_own_deadline_for_complete_postprocess_round` reproduced `scope_mode=none` beside the previous Level 0 documents.
+- Disposition: change
+- Disposition target: openspec/changes/rag-multilevel-fallback/
+- Resolution evidence: The precise Level 2 incomplete-round branch now restores the prior state while preserving diagnostics; the regression asserts both plan equality and effective scope trace rollback.
