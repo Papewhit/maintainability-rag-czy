@@ -13,7 +13,26 @@ RAG 管线 MUST 支持 0-3 共 4 个 fallback level。Level 0 SHALL 为预处理
 
 #### Scenario: 顺序执行 Level 1 → Level 2
 - **WHEN** Level 0 失败触发 Level 1，Level 1 后仍不达标
-- **THEN** 进入 Level 2；不并行执行；trace 字段 `fallback_path=[1, 2]`
+- **THEN** Level 1 的新候选 MUST 完整经过共享 postprocess 和 confidence 后再进入 router；若仍不达标才进入 Level 2；不并行执行；trace 字段 `fallback_path=[1, 2]`
+
+### Requirement: 附件硬范围与统一证据路径
+当请求包含 `context_files` 时，系统 MUST 将其解释为用户显式选择的硬检索范围。所有初检及 Level 1/2 重检的每个既有检索分支 MUST 使用覆盖全部 `context_files` 的组合 filename filter，MUST NOT 因附件而新增无过滤的全库分支、附件专用分支，也 MUST NOT 逐附件直取 chunk 后追加到最终上下文。全部候选 MUST 平等进入同一去重、rerank、postprocess、final top-k 和 confidence 流程。
+
+#### Scenario: 多附件只形成一次检索范围
+- **WHEN** 请求包含一个或多个 `context_files`
+- **THEN** 精确管线的单个检索分支使用一个组合 filename filter 返回候选；附件数量不得直接产生逐文件语义检索或逐文件直取补充调用
+
+#### Scenario: 综合管线不因附件增加分支
+- **WHEN** 综合管线请求包含一个或多个 `context_files`
+- **THEN** baseline 与既有 LLM sub-query 分支数量仍由 intent-routing plan 决定；每个分支携带相同组合 filename filter，附件不得产生额外 retrieval branch
+
+#### Scenario: 附件候选统一评分
+- **WHEN** 带 `context_files` 的检索返回候选
+- **THEN** 所有候选在进入回答上下文前经过共享 postprocess；confidence MUST 基于同一 final top-k 计算；不得在 confidence 之后追加未评分附件 chunk
+
+#### Scenario: Fallback 重检刷新信号
+- **WHEN** Level 1 或 Level 2 完成一次重检
+- **THEN** 系统 MUST 使用该轮新候选重新执行完整 postprocess 和 confidence，再将新信号交给 Fallback Router；MUST NOT 复用上一轮 confidence
 
 ### Requirement: Fallback Router 规则
 Fallback Router MUST 是纯规则函数（MUST NOT 调用 LLM），SHALL 接受 confidence 信号、query_plan、attempted_levels、remaining_budget 作为输入，MUST 输出 FallbackDecision（target_level、primary_signal、reason、budget_ms）。
@@ -76,12 +95,51 @@ Fallback Router MUST 是纯规则函数（MUST NOT 调用 LLM），SHALL 接受 
 - **WHEN** LLM 生成 new_sub_queries
 - **THEN** new_sub_queries 与 succeeded_sub_queries 内容不重复（通过 prompt 约束 + 后置校验）
 
-### Requirement: Level 2 - Scope Relax
-Level 2 MUST 是纯规则降级，MUST NOT 调用 LLM。scope_mode SHALL 按 `filter → boost → none` 链路降级；candidate_k SHALL 放大 1.5x；same_root_cap SHALL 放宽。Level 2 MUST NOT 创建、删除或调整 semantic entity filter。
+### Requirement: 可信 Filter 产生契约
+在启用多级 Fallback 前，精确管线 planner MUST 将 `filter` 收紧为可信的用户硬范围。只有确定性信号 SHALL 产生 filter：请求中的 `context_files`、解析成功的明确封闭范围措辞（例如“仅在/只基于《A》”），以及解析成功且能表达范围选择的精确文档引用（例如“《A》中……”）。文件名字符串匹配分数本身 MUST NOT 产生 filter。classifier 的 `scope_hint` MUST NOT 单独将 boost/none 提升为 filter，也 MUST NOT 将确定性 hard filter 降级。没有确定性 hard-filter 信号时，classifier 只 MAY 在 boost 与 none 之间提供提示。
 
-#### Scenario: scope_mode 降级
-- **WHEN** Level 2 触发，当前 scope_mode=filter
-- **THEN** 新 query_plan 的 scope_mode=boost；trace 中 `level2_new_scope_mode="boost"`、`level2_relaxations=["scope_mode: filter -> boost"]`
+#### Scenario: context_files 产生 filter
+- **WHEN** 请求包含 `context_files`
+- **THEN** planner 输出 scope_mode=filter，matched_files 精确等于去重后的 context_files；classifier hint 不得覆盖该结果
+
+#### Scenario: 明确封闭措辞产生 filter
+- **WHEN** 查询包含解析成功且未被否定的“仅在/只基于《A》”等封闭范围措辞，并解析到唯一可用文件
+- **THEN** planner 输出 scope_mode=filter，并消费已确认归属 scope 的文档 span
+
+#### Scenario: 精确文档范围引用产生 filter
+- **WHEN** 查询使用可被确定性解析为范围选择的精确文档引用（例如“《A》中……”），且文档引用解析成功
+- **THEN** planner 输出 scope_mode=filter；文件匹配分数仅用于确认引用对应的文件，不单独决定硬范围语义
+
+#### Scenario: 高字符串匹配分数本身不是硬范围
+- **WHEN** 文档标题与文件名匹配分数大于等于 DOC_SCOPE_MATCH_FILTER，但查询没有 context_files、封闭范围措辞或精确范围引用
+- **THEN** planner MUST NOT 仅凭分数输出 filter；MAY 输出 boost
+
+#### Scenario: classifier 不得提升为 filter
+- **WHEN** 确定性解析仅得到 boost 或 none，而 classifier 输出 scope_hint=filter
+- **THEN** 最终 scope_mode MUST NOT 为 filter；planner 保持确定性 hard-boundary 判断，并将 classifier hint 限制在非硬范围行为内
+
+#### Scenario: Fallback 不追溯 filter 来源
+- **WHEN** planner 已输出 scope_mode=filter
+- **THEN** Fallback MUST 将其视为不可放宽的硬约束，不得根据 filename score、classifier hint 或 provenance 重新解释；PreciseQueryPlan MUST NOT 为此新增 scope_source
+
+#### Scenario: 综合 source 仅用于诊断
+- **WHEN** ComprehensiveQueryPlan.RetrievalScope 包含 source
+- **THEN** source MAY 保留在 trace/provenance 中，但 MUST NOT 参与 Level 2 路由或决定 filter 是否可放宽；scope_mode 是下游唯一范围行为契约
+
+### Requirement: Level 2 - Scope Relax
+Level 2 MUST 是纯规则降级，MUST NOT 调用 LLM。Fallback MUST 只消费 `scope_mode` 作为权威行为契约：`filter` SHALL 保持 filter，`boost` SHALL 降级为 none，`none` SHALL 保持 none。candidate_k SHALL 放大 1.5x；same_root_cap SHALL 放宽。Level 2 MUST NOT 创建、删除或调整 semantic entity filter。
+
+#### Scenario: filter 硬范围保持不变
+- **WHEN** Level 2 触发且当前 scope_mode=filter
+- **THEN** scope_mode、filename filter 和 matched_files MUST 保持不变；Level 2 MAY 放大 candidate_k 或放宽 same_root_cap，但 MUST NOT 检索范围外内容；trace 记录 `scope_mode: filter preserved`
+
+#### Scenario: boost 软偏好降级
+- **WHEN** Level 2 触发且当前 scope_mode=boost
+- **THEN** PreciseQueryPlan MUST 原子更新为 scope_mode=none、matched_files=()、route=global_hybrid；ComprehensiveQueryPlan 的 retrieval_scope MUST 原子更新为 scope_mode=none、matched_files=()；trace 记录 `scope_mode: boost -> none`
+
+#### Scenario: none 仅放宽参数
+- **WHEN** Level 2 触发且当前 scope_mode=none
+- **THEN** scope_mode 保持 none；PreciseQueryPlan 保持 route=global_hybrid 且 matched_files 为空；只放大 candidate_k、放宽 same_root_cap 等候选参数
 
 #### Scenario: candidate_k 放大
 - **WHEN** Level 2 触发
@@ -95,8 +153,12 @@ Level 2 MUST 是纯规则降级，MUST NOT 调用 LLM。scope_mode SHALL 按 `fi
 Level 3 MUST NOT 调用检索，SHALL 使用模板化输出告知用户证据不足。精确管线和综合管线模板 MUST 不同。
 
 #### Scenario: 精确管线 Level 3 输出
-- **WHEN** 精确管线进入 Level 3
+- **WHEN** 精确管线以 scope_mode=boost 或 none 进入 Level 3
 - **THEN** 回答以 "未在当前知识库中找到与当前查询及结构范围匹配的足够依据" 开头；附带 "已尝试: Level X → Level Y"；末尾给出建议（检查上传 / 调整问法 / 提供上下文文件）
+
+#### Scenario: 精确管线 filter 范围内证据不足
+- **WHEN** 精确管线以 scope_mode=filter 进入 Level 3
+- **THEN** 回答 MUST 明确说明“未在你指定的文档范围内找到足够依据；本次没有搜索该范围之外的知识库”；MUST NOT 声称整个知识库没有答案
 
 #### Scenario: 综合管线 Level 3 输出
 - **WHEN** 综合管线进入 Level 3 且有部分 sub_query 成功
@@ -111,11 +173,15 @@ Level 3 MUST NOT 调用检索，SHALL 使用模板化输出告知用户证据不
 - **THEN** 回答只包含"证据不足"声明 + 建议；不附带任何 chunk 引用
 
 ### Requirement: Level 2 触发时的 Prompt 注入
-当 fallback_level=2 时，`prepare_rag_answer_messages` MUST 追加 "非精确匹配" 声明指令到 RAG prompt 之后。
+当 fallback_level=2 时，`prepare_rag_answer_messages` MUST 根据 Level 2 前后的 scope_mode 追加准确的“非精确匹配”声明指令到 RAG prompt 之后。
 
 #### Scenario: 注入声明
-- **WHEN** RagTurnContext.fallback_level == 2
-- **THEN** 系统消息追加：要求 LLM 在回答开头说明 "未找到精确匹配，以下是相关参考"；对每个引用标注是否完全匹配；建议用户补充信息
+- **WHEN** RagTurnContext.fallback_level == 2 且 scope_mode 从 boost 降为 none
+- **THEN** 系统消息要求 LLM 说明“未在优先文件中找到精确匹配，以下包含范围外相关参考”；对每个引用标注是否完全匹配；建议用户补充信息
+
+#### Scenario: filter 域内放宽声明
+- **WHEN** RagTurnContext.fallback_level == 2 且 scope_mode=filter 保持不变
+- **THEN** 系统消息要求 LLM 说明“未在指定文档范围内找到精确匹配，以下是该范围内的相关参考；本次没有搜索范围外知识库”；不得声称扩大了文档范围
 
 #### Scenario: 其他 level 无注入
 - **WHEN** fallback_level 为 0/1/3
@@ -152,7 +218,7 @@ rag_trace MUST 完整记录 fallback 决策路径和每个 level 的执行细节
 
 #### Scenario: 总开关关闭
 - **WHEN** `RAG_FALLBACK_ENABLED=false`
-- **THEN** 所有 fallback level 跳过；Level 0 成功直接回答；Level 0 失败也不尝试 Level 1/2，直接 Level 3 模板化输出
+- **THEN** 所有 fallback level 跳过；无论 confidence 是否请求 fallback，都使用 Level 0 已完成 postprocess 的 final top-k 按现有常规回答流程直接回答；不得进入 Level 3 模板化输出；trace 保留原始 confidence 信号并记录 `fallback_disabled=true`
 
 #### Scenario: per-level 关闭
 - **WHEN** `RAG_FALLBACK_LEVEL1_ENABLED=false` 但 `RAG_FALLBACK_LEVEL2_ENABLED=true`

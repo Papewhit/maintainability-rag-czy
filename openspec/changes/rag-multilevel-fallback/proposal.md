@@ -29,7 +29,8 @@
    - 综合管线：以失败的 LLM sub_query + 完整 plan 上下文为输入，让 LLM 选择 generalize / specialize / replace / decompose 策略并生成新 sub_query；intent-routing 固定的 clean-query baseline 不是 rewrite 目标，重试时按 plan.clean_query 原样重建
 
 4. **Level 2 - Scope Relax**：当信号指向"搜索约束太紧"时触发。
-   - scope_mode 降级（filter → boost → none）
+   - `filter` 表示可信的用户硬范围，始终保持 filter
+   - `boost` 表示文件软偏好，可降级为 none；`none` 保持 none
    - 增大 candidate_k
    - 答案生成时强制注入"非精确匹配"声明
 
@@ -51,13 +52,19 @@
 
 10. **配置兼容**：保留 `RAG_FALLBACK_ENABLED` 作为总开关（=false 时所有 level 跳过直接回答）。新增 per-level 开关（`RAG_FALLBACK_LEVEL1_ENABLED` / `RAG_FALLBACK_LEVEL2_ENABLED`）。现有部署环境不修改配置时行为不破坏。
 
+11. **统一证据路径**：`context_files` 只表示每个既有检索分支的硬范围，不是额外候选来源或额外检索分支。精确管线每轮执行一次组合 filename-filtered retrieval；综合管线保留 baseline/sub-query fan-out，但每个分支携带相同硬范围。初检和每轮 Level 1/2 重检都必须让同一候选集完整经过去重、rerank、postprocess、final top-k 和 confidence；router 只消费本轮新产生的 confidence。删除附件逐文件直取 chunk 后追加到回答上下文的旁路。
+
+12. **可信 filter 前置条件**：先收紧精确管线的 filter 产生条件。只有 `context_files`、确定性解析出的明确封闭范围措辞，以及可被确定性识别为范围选择的精确文档引用（如解析成功的“《A》中……”）可以产生 filter。文件名字符串匹配分数本身不得把 boost 提升为 filter；classifier 的 `scope_hint` 也不得单独完成该提升。
+
+13. **scope_mode 是行为契约**：Fallback 只消费 `scope_mode`。`filter` 不可放宽，`boost` 可放宽为 none，`none` 只调整候选参数。综合管线保留 `RetrievalScope.source` 用于 trace/provenance，但它是非权威诊断字段；不为精确管线新增 `scope_source`。
+
 ## Capabilities
 
 ### New Capabilities
 - `rag-multilevel-fallback`: 分级 fallback 框架、信号-Level 映射、预算控制、意图区分
 
 ### Modified Capabilities
-<!-- 现有 openspec/specs/ 无既有 spec -->
+- `rag-intent-routing`：收紧精确 planner 的 filter producer；明确 `scope_mode` 为下游权威行为契约，综合 `RetrievalScope.source` 仅保留诊断用途；修正稳定 spec 中“Level 2 可放宽 filter”的旧约定
 
 ## Impact
 
@@ -68,6 +75,8 @@
   - 新增 `level2_scope_relax_node`
   - 新增 `level3_insufficient_evidence_node`
   - graph 结构调整：condition edge 根据 fallback router 输出路由到 Level 1/2/3
+  - 删除 `retrieve_initial` 中 `retrieve_context_documents()` 的附件直取补充；`context_files` 仅通过主检索 filename filter 生效
+- `backend/rag/query_plan.py`、`backend/rag/intent.py`：收紧精确管线 filter producer；字符串相似度和 classifier hint 不得单独产生硬范围
 - `backend/rag/fallback_router.py`（新文件）：信号到 level 的映射规则
 - `backend/rag/runtime_config.py`：新增多个 budget 配置
 - `backend/chat/rag_execution.py`：Level 2 触发时在 prompt 中注入"非精确匹配"声明
@@ -86,3 +95,5 @@
 **风险：**
 - 重构现有 fallback 逻辑可能引入回归（虽然现有默认关闭，但仍要保证关闭时行为不变）
 - 多 level 的 trace 字段较多，可能让前端展示复杂；需要明确的折叠策略
+- 附件很多时单次硬范围检索的 filter 与候选池会变大，但不应退化为“全库检索 + 每附件检索”的重复调用
+- 若可信 filter 前置条件未先完成，错误的 classifier hint 会把 Level 1/2 锁在错误文件内，并导致 Level 3 将系统误判归因于用户指定范围
