@@ -69,7 +69,7 @@
 - [x] 5.4 评测结果落地到 `eval/intent/{date}_{model}.json`（不进 git，gitignore 覆盖）
 - [x] 5.5 在 `docs/` 下记录评测方法和指标定义；阈值在标注完成后根据初评结果设定
 
-**验收**：评测脚本可重复跑；FAST_MODEL 评测结果达标（阈值由初评基线确定）；不达标时模型升级路径在 design.md 中记录。
+**验收**：评测数据、schema、真实模型 runner 和确定性契约测试均可重复使用；本 change 不声称 FAST_MODEL 已达标，真实阈值与模型选择由 `rag-intent-routing-activation` 产生。
 
 ## 5A. Milestone M5A：terminology / postprocess 边界收口
 
@@ -84,13 +84,13 @@
 
 - [x] 5B.1 增加 comprehensive postprocess eval harness，按 sub_query_count 与 retrieval_branch_count 分桶，单独统计 baseline 命中/最终入选率，并采集 embedding/hybrid 调用数、rerank pair、branch/merge pool、各阶段与端到端 P50/P95、CPU/GPU 峰值及错误/降级率
 - [x] 5B.2 注册 eval-only no-CrossEncoder 消融 profile：保持相同 clean-query baseline + 生成分支 fan-out、parallel hybrid retrieval、priority-weighted RRF、selection 和共享后处理，仅关闭 branch CrossEncoder
-- [ ] 5B.3 在相同数据集、commit、配置和 source fingerprint 下对比 `quality_first_v1` 与消融 profile 的分支代表率、引用有效性、回答质量、延迟和资源消耗
+- [x] 5B.3 将真实 FAST_MODEL / release Milvus paired A/B、阈值制定与激活责任迁移到 `rag-intent-routing-activation` tasks 1-4；本 change 不声称已执行真实评测
 - [x] 5B.4 将报告写入 `docs/validation/` 的 governed validation 文档，记录 source_commit、source_fingerprint、executed_at、运行环境和 passed/partial/failed 结论
 - [x] 5B.5 基于实测结果确定可接受阈值与生产 profile；没有结论时 intent classifier/comprehensive 默认保持关闭，消融 profile 不自动转为生产默认
 
-> 2026-07-14：真实 FAST_MODEL / release Milvus 环境未配置，`docs/validation/rag-intent-routing-evaluation.md` 结论为 `partial`。5B.3 保持未完成，默认开关继续为 false；合成 trace 只验证 harness，不作为成本或质量结论。
+> 2026-07-17：真实 FAST_MODEL / release Milvus 环境仍未配置，`docs/validation/rag-intent-routing-evaluation.md` 结论保持 `partial`。真实 paired A/B 与阈值 gate 已迁移到 `openspec/changes/rag-intent-routing-activation/`，默认开关继续为 false；合成 trace 只验证 harness，不作为成本或质量结论。
 
-**验收**：能够回答“质量优先 profile 相比便宜消融带来多少质量收益、增加多少延迟和资源成本”；报告可复现并成为启用 comprehensive 默认路径的 gate。
+**验收**：paired harness、指标、source binding 和 partial 报告可复现；在真实发布环境中回答质量/成本差异并形成默认启用 gate 的责任由 `rag-intent-routing-activation` 持有。
 
 ## 6. Milestone M6：上线开关与监控
 
@@ -98,7 +98,7 @@
 - [x] 6.2 监控指标：intent classifier 调用 P50/P95 延迟、LLM 失败率、规则降级率、各 intent 占比，以及 comprehensive profile、sub_query_count、retrieval_branch_count、baseline hit/selected、embedding/hybrid calls、rerank pairs、budget exhaustion、merge/postprocess 和端到端 P50/P95；公开 ChatResponse/历史消息 schema 保留这些 trace 字段
 - [x] 6.3 灰度策略文档：先 10% 流量启用，观察延迟和准确率，逐步全量
 - [x] 6.4 关闭开关时走兼容性 PreciseQueryPlan 路径；回归测试比较 semantic query、filters、route、检索结果和 `query_plan_enabled=false` telemetry，证明默认行为不变；另以显式回归用例记录并修复 `QUERY_PLAN_ENABLED=true` 时 terminology raw query 覆盖 semantic query 的既有缺陷
-- [ ] 6.5 完成评测后将默认值改为 true，作为单独的小 change 上线
+- [x] 6.5 将灰度与默认值改为 true 的上线工作迁移到 `rag-intent-routing-activation` tasks 5-6；本 change 以默认 false 收口
 - [x] 6.6 提供 `.env.rag-intent-routing-workflow.example`，仅为工作流验证成组开启 intent routing / QueryPlan、heading lexical、confidence anchor gate 与 fallback；契约测试验证完整组合和非生产警示；将多开关冲突、anchor extraction mismatch 与 fallback contract gap 记录到 governed known issue，不改变 anchor span 消费规范
 
 **验收**：在 `RAG_INTENT_CLASSIFIER_ENABLED=false` 状态下，所有现有测试通过、行为与改造前一致；监控字段在 rag_trace 中齐全。

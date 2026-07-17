@@ -1,8 +1,8 @@
 ---
 document_type: current_architecture
 status: current
-verified_commit: bd92b03fe6037317d72dbf3e3f5953f131ad99a9
-last_verified_date: 2026-07-15
+verified_commit: 27249fcc9393c84778a5ccc4860a670669aad5c8
+last_verified_date: 2026-07-17
 authority: current-system-overview
 ---
 
@@ -12,7 +12,7 @@ authority: current-system-overview
 
 This is the single current-system overview for Ragtenance. Stable contracts live in `openspec/specs/`; rationale, known issues, enhancements, and reproducible evidence live in the governed locations defined by [Evidence Governance](evidence-governance.md).
 
-Current facts were verified against commit `bd92b03fe6037317d72dbf3e3f5953f131ad99a9` on 2026-07-15 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
+Current facts were verified against commit `27249fcc9393c84778a5ccc4860a670669aad5c8` on 2026-07-17 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
 
 ## System Context and Components
 
@@ -204,13 +204,13 @@ Degradation rules include hybrid-to-dense fallback, candidate preservation when 
 | Query plan | Implemented, default disabled | `QUERY_PLAN_ENABLED=false` |
 | Unified execution/fallback scaffolding | Implemented, default disabled | both runtime flags false |
 | Citation verification | Implemented, default disabled | citation flag false |
-| Intent routing | Implemented, default disabled | `RAG_INTENT_CLASSIFIER_ENABLED=false` |
+| Intent routing | Implemented, default disabled; activation planned | `RAG_INTENT_CLASSIFIER_ENABLED=false`; [activation change](../openspec/changes/rag-intent-routing-activation/) |
 | Anchor workflow validation bundle | Validation-only | `.env.rag-intent-routing-workflow.example`; not production guidance |
 | Comprehensive parallel retrieval | Implemented, gated by intent routing | `quality_first_v1`; classifier default disabled |
 | No-CrossEncoder comprehensive ablation | Evaluation-only | `eval_no_crossencoder_v1` |
 | Multilevel fallback | Planned, not implemented | `openspec/changes/rag-multilevel-fallback/` |
 
-Planned changes are excluded from active diagrams and do not override current defaults. Implemented-but-disabled capabilities remain outside the default execution path until their validation and rollout gates are satisfied.
+Planned changes are excluded from active diagrams and do not override current defaults. Implemented-but-disabled capabilities remain outside the default execution path until their validation and rollout gates are satisfied. Intent-routing real-model/release-index evaluation, threshold selection, staged rollout, and any future default enablement are owned by `rag-intent-routing-activation`; the archived implementation change makes no release-readiness claim.
 
 ## Known Limitations and Navigation
 

@@ -23,7 +23,7 @@
 - 建立可重复跑的意图分类评测基线（intent accuracy / plan validity / sub-query quality）。
 
 **Non-Goals：**
-- 不做 LLM 微调。所有目标基于现有 FAST_MODEL 开箱即用达成。如评测显示不达标，先升级到更大模型或加 few-shot 示例，而不是微调。
+- 不做 LLM 微调。本 change 只提供可运行的 FAST_MODEL 评测路径，不声称真实模型已经达标；模型选择、few-shot 调整与激活结论由 `rag-intent-routing-activation` 基于真实评测决定。
 - 不引入新的长期记忆层。意图解析只用本轮 query + 当前 context_files，不依赖历史会话。
 - 不做意图分类的多分类细化（precise/comprehensive 二分即可，analysis_type 作为 comprehensive 内部子字段）。
 - 不重写 `plan_rag_turn`。它继续通过 context_files 与既有通用文档检索关键词负责 session 级 FORCED_PRELOAD vs OPTIONAL_TOOL 路由；不得在此分类 precise/comprehensive、构造 QueryPlan 或编排 sub-query。intent 解析作为 RAG graph 内部第一节点独立存在。
@@ -222,9 +222,9 @@ quality_first_v1
 
 ### 决策 10：综合后处理成本必须评测后才能上线
 
-`quality_first_v1` 明确是质量优先基线，不假定其成本可接受。上线评测必须至少记录：LLM requested/executed/truncated sub-query count、包含 baseline 的 retrieval branch count、baseline 独立命中/最终入选率、dense/sparse embedding 调用数、hybrid search 调用数、rerank pair 总量、各分支与合并候选数、merge/postprocess 耗时、端到端 P50/P95、CPU/GPU 峰值与错误/降级率，并绑定质量指标（生成分支代表率、引用有效性、回答质量）。错误/降级率同时消费顶层 stage_errors、branch_errors 与 branch diagnostics 的 error，避免保留候选的 branch-local rerank 降级被误报为成功。paired run 使用 version 2 source fingerprint：对排序后的固定证据文件以及全部 `backend/rag/**/*.py`、`backend/infra/**/*.py`、`backend/shared/**/*.py` 求哈希，确保 trace identity、terminology preflight、embedding/vector retrieval 等传递依赖变化都会使对照失配，而不是只绑定 graph 入口文件。
+`quality_first_v1` 明确是质量优先基线，不假定其成本可接受。本 change 实现可重复的评测 harness、指标与 source-binding 契约；真实 FAST_MODEL / release Milvus 的上线评测由后继 `rag-intent-routing-activation` change 执行。上线评测必须至少记录：LLM requested/executed/truncated sub-query count、包含 baseline 的 retrieval branch count、baseline 独立命中/最终入选率、dense/sparse embedding 调用数、hybrid search 调用数、rerank pair 总量、各分支与合并候选数、merge/postprocess 耗时、端到端 P50/P95、CPU/GPU 峰值与错误/降级率，并绑定质量指标（生成分支代表率、引用有效性、回答质量）。错误/降级率同时消费顶层 stage_errors、branch_errors 与 branch diagnostics 的 error，避免保留候选的 branch-local rerank 降级被误报为成功。paired run 使用 version 2 source fingerprint：对排序后的固定证据文件以及全部 `backend/rag/**/*.py`、`backend/infra/**/*.py`、`backend/shared/**/*.py` 求哈希，确保 trace identity、terminology preflight、embedding/vector retrieval 等传递依赖变化都会使对照失配，而不是只绑定 graph 入口文件。
 
-评测必须包含至少一个消融对照：保留相同 parallel retrieval 和 weighted-RRF merge，但关闭 branch CrossEncoder，只使用 Milvus local rank。该对照可作为 eval-only profile，不得在没有独立质量证据时成为生产默认。默认开启 intent classifier/comprehensive 路径前，必须形成质量增益相对于延迟和资源成本的评测结论；阈值在基线运行后确定，不在设计中伪造固定数值。
+评测必须包含至少一个消融对照：保留相同 parallel retrieval 和 weighted-RRF merge，但关闭 branch CrossEncoder，只使用 Milvus local rank。该对照可作为 eval-only profile，不得在没有独立质量证据时成为生产默认。默认开启 intent classifier/comprehensive 路径前，必须由 `rag-intent-routing-activation` 形成质量增益相对于延迟和资源成本的评测结论；阈值在真实基线运行后确定，不在本设计中伪造固定数值。
 
 ### 决策 11：评测集落地形态
 
@@ -233,7 +233,7 @@ quality_first_v1
 - `comprehensive_analysis.jsonl`（30 条，覆盖各 analysis_type）
 - 每条样本字段：`{query, expected_intent, expected_sub_queries?, expected_scope?, expected_granularity?, notes}`
 
-评测脚本 `tests/eval/rag/test_intent_classifier_eval.py` 用 pytest 标记 `@pytest.mark.eval`，CI 不默认跑需要真实模型的部分，但本地和发版前必跑。指标输出到 `eval/intent/{date}_{model}.json`。
+评测脚本 `tests/eval/rag/test_intent_classifier_eval.py` 用 pytest 标记 `@pytest.mark.eval`，CI 不默认跑需要真实模型的部分；真实模型与发布索引运行由 `rag-intent-routing-activation` 在发版 gate 执行。指标输出到 `eval/intent/{date}_{model}.json`。
 
 阈值目标（待初评后根据实际基线修正）：
 - Intent Accuracy（目标 > 正面率基线）
@@ -257,7 +257,7 @@ ENABLE_ANCHOR_GATE=true
 RAG_FALLBACK_ENABLED=true
 ```
 
-该文件不改变运行时默认值，不是生产推荐配置。只有在真实 FAST_MODEL / release Milvus 上完成 paired A/B、成本评测及 fallback 行为验证后，才可通过单独 enablement change 讨论升级。多个独立开关缺少统一 capability configuration 约束是根因，但统一 profile、启动时约束或隐式联动均不在本 change 重新设计；由 `docs/known-issues/anchor-capability-configuration.md` 持续治理。
+该文件不改变运行时默认值，不是生产推荐配置。只有在真实 FAST_MODEL / release Milvus 上完成 paired A/B、成本评测及 fallback 行为验证后，才可通过 `rag-intent-routing-activation` 讨论升级。多个独立开关缺少统一 capability configuration 约束是根因，但统一 profile、启动时约束或隐式联动均不在本 change 重新设计；由 `docs/known-issues/anchor-capability-configuration.md` 持续治理。
 
 验证期间还必须区分两个已确认问题面：
 

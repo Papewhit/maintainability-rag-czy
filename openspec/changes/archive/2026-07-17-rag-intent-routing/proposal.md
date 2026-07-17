@@ -17,7 +17,7 @@
 4. **Pipeline 分支**：`run_rag_graph` 的入口节点从 `retrieve_initial` 改为 `intent_parse`，按 intent 路由到 precise 子图或 comprehensive 子图；comprehensive 子图把 `clean_query` baseline 与全部 LLM sub-query 一起组成固定 fan-out，在单次 graph 调用内并行检索，先做 branch-local rerank，再合并候选并只执行一次共享结构后处理。baseline 是召回安全网，不新增 coverage domain，也不占用生成分支的最终保留席位。
 5. **兼容降级**：classifier 关闭或 LLM 调用失败时，按现有 `QUERY_PLAN_ENABLED` 语义构造兼容性 PreciseQueryPlan；关闭 QueryPlan 时保持 raw query + global route，启用时无损映射现有 `parse_query_plan()` 结果。Query preparation 修复只改变已启用 QueryPlan 与 terminology 组合时 raw query 覆盖 semantic query 的缺陷。
 6. **意图分类评测集**：人工标注 100-200 条样本，建立 intent accuracy / plan validity / sub-query quality 指标，无需微调，目标使用现有 FAST_MODEL 直接达标。
-7. **可组合后处理策略与成本 gate**：综合路径通过一个具名、版本化的 postprocess profile 组合 branch rerank、跨 query fusion、最终选择和共享预算策略；v1 采用质量优先组合。上线前必须评测随 sub-query 数增长的 embedding、hybrid search、rerank pair、延迟和资源成本，并与更便宜的消融方案比较。
+7. **可组合后处理策略与成本 gate**：综合路径通过一个具名、版本化的 postprocess profile 组合 branch rerank、跨 query fusion、最终选择和共享预算策略；v1 采用质量优先组合。本 change 提供可重复的 paired 评测 harness 并保持默认关闭；真实 FAST_MODEL / release Milvus 评测、阈值、灰度和默认启用由后继 `rag-intent-routing-activation` change 持有。
 8. **Anchor 工作流验证配置**：提供独立 validation-only env 示例，成组开启 intent routing / QueryPlan、heading lexical、confidence anchor gate 与现有 fallback；不修改默认值、不把 anchor 留在 semantic query，也不把该组合称为生产推荐。多开关缺少统一 capability 约束、各阶段 extraction mismatch 与 fallback contract gap 进入已知问题治理。
 
 ## Capabilities
@@ -40,6 +40,7 @@
 - `backend/rag/runtime_config.py`：新增 intent classifier 的模型、超时、启用配置、`RAG_COMPREHENSIVE_POSTPROCESS_PROFILE` 和 graph fanout 安全上限 `RAG_COMPREHENSIVE_MAX_SUB_QUERIES`；本 change 不增加 multi-turn 模式配置，也不为 profile 组件增加独立自由组合开关。
 - `.env.rag-intent-routing-workflow.example`：工作流验证专用配置，显式成组开启 anchor 相关消费者；它不是默认配置或生产推荐，不能替代 A/B、成本与 fallback 行为验证。
 - `tests/unit/backend/rag/` 与 `tests/eval/rag/`：分别验证 LLM 调用、规则降级、策略组合契约、并行后处理和意图/成本评测指标。
+- `openspec/changes/rag-intent-routing-activation/`：持有当前环境无法执行的真实评测、阈值、灰度与默认启用；本 change 归档时不宣称 release readiness。
 
 **接口影响：**
 - 现有 `rag_trace` 增加字段：`intent`, `intent_confidence`, `query_plan_type`, `intent_llm_model`, `intent_llm_ms`, `intent_fallback_to_rules`；comprehensive 路径区分 LLM `sub_query_count` 与包含 baseline 的 `retrieval_branch_count`。
