@@ -161,7 +161,8 @@ def test_classifier_disabled_compatibility_plan_preserves_legacy_retrieval_contr
     assert routed.trace_patch["query_plan_enabled"] is False
 
 
-def test_strict_scope_filter_runs_one_filtered_hybrid_without_global_reserve():
+def test_strict_scope_filter_runs_one_filtered_hybrid_without_global_reserve(monkeypatch):
+    monkeypatch.setattr(rag_utils, "DOC_SCOPE_MATCH_BOOST", 0.60)
     plan = PreciseQueryPlan(
         raw_query="综合分析",
         clean_query="综合分析",

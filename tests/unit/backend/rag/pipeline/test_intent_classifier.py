@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+import backend.rag.query_plan as query_plan
 from backend.rag.intent import (
     IntentClassifier,
     IntentDecision,
@@ -259,7 +260,8 @@ def test_closed_scope_cleanup_preserves_unrelated_restrictive_language():
 
 
 @pytest.mark.unit
-def test_unresolved_closed_scope_stays_comprehensive_and_preserves_query_text():
+def test_unresolved_closed_scope_stays_comprehensive_and_preserves_query_text(monkeypatch):
+    monkeypatch.setattr(query_plan, "DOC_SCOPE_MATCH_BOOST", 0.60)
     decision = IntentDecision.model_validate(
         {
             "intent": "comprehensive_analysis",
