@@ -156,3 +156,43 @@ def test_rag_trace_schema_preserves_postprocess_fields():
     assert response_trace["retrieval_scope"]["matched_files"] == [
         {"filename": "manual.pdf", "score": 0.9}
     ]
+
+
+def test_rag_trace_schema_preserves_multilevel_fallback_fields():
+    fallback_fields = {
+        "fallback_level": 3,
+        "fallback_signals": ["no_docs"],
+        "fallback_path": [1, 2, 3],
+        "fallback_decisions": [{"target_level": 3, "primary_signal": "no_docs"}],
+        "fallback_total_ms": 123.0,
+        "level1_strategy": "comprehensive",
+        "level1_rewritten_query": ["rewritten query"],
+        "level1_comprehensive_strategy": ["generalize"],
+        "level1_new_sub_queries": [{"query": "rewritten query", "priority": 1}],
+        "level1_sub_query_replaced": ["sub_query_0"],
+        "level1_timeout": False,
+        "level1_ms": 20.0,
+        "level2_relaxations": ["candidate_k: 20 -> 30"],
+        "level2_previous_scope_mode": "boost",
+        "level2_new_scope_mode": "none",
+        "level2_ms": 30.0,
+        "level3_reason": "insufficient evidence",
+        "level3_attempted_levels": [1, 2, 3],
+        "level3_uncovered_sub_queries": ["missing dimension"],
+        "level3_baseline_evidence_used": False,
+        "level3_answer": "deterministic constraint",
+        "level3_ms": 1.0,
+    }
+
+    response = ChatResponse.model_validate({
+        "response": "ok",
+        "rag_trace": {
+            "tool_used": True,
+            "tool_name": "search_knowledge_base",
+            **fallback_fields,
+        },
+    })
+    public_trace = response.model_dump()["rag_trace"]
+
+    for field, expected in fallback_fields.items():
+        assert public_trace[field] == expected

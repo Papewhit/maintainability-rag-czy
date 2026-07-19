@@ -426,3 +426,31 @@ last_verified_date: 2026-07-19
 - Disposition: change
 - Disposition target: openspec/changes/rag-multilevel-fallback/
 - Resolution evidence: `_level1_comprehensive()` now gates model initialization on a non-empty generated-branch selection; the focused test and 134-test fallback/OpenSpec scenario suite pass.
+
+## RAG-MF-F031
+
+- Kind: design_ambiguity
+- Primary scope: rag.query-preparation.scope
+- Evidence status: confirmed
+- Observation: For a precise hard-scope query such as `只基于《A》说明步骤`, query preparation consumes the resolved `《A》` document span but retains `只基于` in `semantic_query`; the same occurs for a prefix before an exact `《A》中` range.
+- Inference: This P2 is advisory rather than blocking under the current rule. The path is reachable, but no current MUST requires the prefix itself to be consumed and no failing regression establishes its ownership. Multi-document prefixes, conjunctions, punctuation, negation and unresolved hints require a specification decision before changing cleanup behavior.
+- Decision: Do not implement the reviewer's single cleanup interpretation in this PR. Preserve the question in an enhancement and require explicit OpenSpec scenarios before code changes.
+- Residual risk: Closed-scope control wording may add low-value terms to dense/sparse retrieval inside the already-correct hard document filter.
+- Evidence: Codex review on commit `230c3f3`; direct `parse_query_plan()` reproductions for `只基于《A》说明步骤`, `仅在《A》中说明步骤`, and the multi-document form; current deterministic query-preparation and hard-filter requirements.
+- Disposition: enhancement
+- Disposition target: docs/enhancements/rag-closed-scope-prefix-consumption.md
+- Resolution evidence: ENH-RAG-0007 records the ownership ambiguity, affected forms, non-goals and required future specification decisions without changing the current contract.
+
+## RAG-MF-F032
+
+- Kind: behavior_defect
+- Primary scope: rag.trace.public-api
+- Evidence status: confirmed
+- Observation: `POST /chat` validates graph output through `ChatResponse` / `RagTrace`, but the schema did not declare the multilevel fallback fields, so Pydantic dropped `fallback_level`, `fallback_path`, `fallback_decisions`, Level 1/2 details and Level 3 delivery fields from the supported non-streaming response.
+- Inference: This P3 is blocking under the current rule: public trace completeness is an explicit current-change requirement, the non-streaming chat path is supported, a failing serialization regression reproduces the loss, and declaring the already-existing fields in the existing schema does not expand the contract.
+- Decision: Add only the existing documented multilevel trace fields to `RagTrace`, preserving the precise scalar versus comprehensive list type of `level1_rewritten_query`; do not add new runtime fields or compatibility behavior.
+- Residual risk: Internal diagnostic-only fields not named by the current trace contract remain outside the public response schema.
+- Evidence: Codex review on commit `230c3f3`; failing `test_rag_trace_schema_preserves_multilevel_fallback_fields` with `KeyError: fallback_level` before remediation.
+- Disposition: change
+- Disposition target: openspec/changes/rag-multilevel-fallback/
+- Resolution evidence: The public schema now round-trips the documented Level 0/1/2/3 fields; the focused schema regression passes.
