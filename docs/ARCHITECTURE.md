@@ -66,6 +66,20 @@ DocumentService
 
 Only an unregistered extension can reach the legacy `DocumentLoader`. Parse metadata persistence is best-effort; adapter parsing and leaf generation are required for upload success.
 
+DeepDoc native-text output can currently merge paragraphs from opposite sides
+of a visible heading before normalization ([KI-RAG-0018](known-issues/deepdoc-native-text-can-merge-paragraphs-across-section-headings.md)).
+Its adapter also recognizes `x.y` headings but misclassifies `x.y.z` section
+headings as list items, allowing the list normalizer to group sibling sections
+and preventing their section identity from reaching chunks
+([KI-RAG-0019](known-issues/three-level-section-headings-are-treated-as-list-items.md)).
+
+The administrator document list is reconstructed by querying Milvus after an
+upload batch. Uploads are sequential, but the frontend performs only one list
+read after the batch, and insert/query operations use separate fresh Milvus
+clients without an explicit read-your-writes boundary. The immediate list can
+therefore omit the most recent successful upload until refresh; see
+[KI-RAG-0015](known-issues/document-list-can-lag-completed-multi-upload.md).
+
 ### Terminology and Rescan
 
 `backend/rag/terminology/` owns the database-backed terminology table, Aho-Corasick matching, jieba dictionary, query preflight, and rescan. Inline scan writes `entity_types`, `term_match_count`, `term_matches`, and `protected_tokens` when `v4_full` is active and the table is loaded; otherwise it safely leaves empty signals.
@@ -99,6 +113,12 @@ Step-chain repair uses two hops: query Milvus leaf metadata by `filename + index
 
 `backend/infra/vector_store/milvus_client.py`, `backend/rag/retrieval.py`, and `backend/rag/utils.py` perform dense+sparse hybrid search, RRF, document-scope filtering/boosting, normalization, dedupe, and dense fallback when hybrid retrieval fails.
 
+Table parents and leaves are emitted only when the active profile allows
+`v4_table_aware`; lower profiles can successfully parse and ingest a document
+while retaining only surrounding narrative blocks. Upload success and parse
+warnings therefore do not prove that table evidence is retrievable; see
+[KI-RAG-0010](known-issues/table-evidence-is-not-indexed-below-v4-table-aware.md).
+
 Candidate strategies:
 
 - **standard** (default): global/scoped hybrid candidates, then shared rerank/postprocess.
@@ -115,6 +135,8 @@ Before graph entry, `plan_rag_turn()` retains the existing session-level RAG tri
 When explicitly enabled, the classifier produces either a precise plan or a comprehensive plan. It does not produce semantic entities, terminology normalization, `semantic_query`, or postprocess strategy choices. Deterministic query preparation owns structural span consumption; terminology preflight then consumes the resulting retrieval text and independently supplies `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens`.
 
 Successfully parsed anchors follow the same structural ownership rule as other consumed spans: they are removed from semantic retrieval text and carried in the typed plan. Anchor consumption is currently distributed across independently configured capabilities. Heading lexical scoring reranks existing candidates, the confidence anchor gate checks agreement, and precise fallback may react to `anchor_mismatch`; no single switch establishes the complete workflow. `.env.rag-intent-routing-workflow.example` group-enables these capabilities only for controlled workflow validation and is explicitly not a production recommendation. Runtime defaults remain unchanged.
+
+`.env.rag-full-chain-e2e.example` is a second validation-only overlay for functional reachability of the composable standard RAG path. It enables intent routing through Level 3 delivery, selects the `v4_full` parser/chunker profile, and names an isolated Milvus collection and BM25 state file. It deliberately excludes deep-mode and reserved legacy routing flags because they are alternate or inert paths, not additional stages in the standard L0-L3 graph. The overlay does not contain secrets, does not replace the base `.env`, and is not rollout, latency, quality, or production-tuning evidence.
 
 ```text
 intent_parse
@@ -180,11 +202,35 @@ Runtime `entity_types` is `list[str]`. `backend/infra/vector_store/metadata_code
 | Milvus | Dense+sparse leaf vectors and retrieval metadata; not complete parent bodies. |
 | BM25 state | Sparse corpus statistics for the selected state file; not a document or vector store. |
 
-The unset index profile is backward-compatible `legacy`. Profiles logically isolate Milvus records/IDs within the configured collection, parent keys, and trace identity. BM25 isolation is manual through `BM25_STATE_PATH`.
+The unset index profile is backward-compatible `legacy`. Parent keys and trace
+identity are profile-aware, but ordinary Milvus candidate filters do not
+currently enforce the stored `index_profile`; a collection containing mixed
+profiles can therefore return cross-profile rows. Collection cleanliness is an
+operational prerequisite until [KI-RAG-0011](known-issues/milvus-retrieval-does-not-enforce-index-profile-isolation.md)
+is resolved. A new collection name is not created by configuration alone:
+writer and document-management paths initialize it, while registry/retrieval
+reads require the schema to exist already ([KI-RAG-0014](known-issues/milvus-read-path-requires-preinitialized-collection.md)).
+BM25 isolation is manual through `BM25_STATE_PATH`.
 
 ## Trace, Evaluation, and Degradation
 
 Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers intent/model fallback, requested/effective strategy, per-branch and aggregate embedding/search/rerank costs, stage status/errors/timings, terminology fusion coverage, final representation, and confidence. Comprehensive trace and every branch retrieval diagnostic retain the resolved shared retrieval scope mode/source/matched files so boost scope remains distinguishable from no scope across API/history boundaries (`RAG-INTENT-F029`). Public trace retains the complete terminology preflight context: `semantic_query`, `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens` (`RAG-INTENT-F019`, `RAG-INTENT-F023`). Public retrieved-chunk schemas also retain branch ids, per-branch ranks/scores, baseline match state, best local rank, coverage count, and multi-query RRF score (`RAG-INTENT-F025`); auto-merged parents inherit the maximum contributing multi-query RRF score alongside unioned branch provenance (`RAG-INTENT-F031`). A failed multi-query merge preserves the undeduplicated branch union, aggregates all known branch provenance by candidate identity onto every retained duplicate, and reports the skipped/error state plus all knowable candidate counts before branch-aware shared postprocess continues (`RAG-INTENT-F020`, `RAG-INTENT-F022`). `backend/rag/observability.py` defines pure aggregation over supplied traces for rollout metrics including classifier and graph P50/P95, failure/fallback rates, intent share, profile/bucket counts, baseline rates, retrieval calls, rerank pairs, and budget exhaustion. Comprehensive evaluation error/degradation rates count top-level stage errors as well as branch errors and diagnostic errors (`RAG-INTENT-F030`). The observability module is not yet connected to a persisted trace reader, exporter, dashboard, or alerting path.
+
+The current frontend does not render the intent-classifier fields already present in the final trace, and the SSE timeline has no event between the last RAG step and the first answer token. Model time-to-first-token is therefore a user-visible silent interval, while classifier activation and fallback require direct trace or external telemetry inspection; see [KI-RAG-0012](known-issues/rag-progress-ui-omits-intent-and-answer-handoff.md).
+
+LangSmith does not currently have a stable application request root. A
+forced-preload turn records its RAG graph and final answer model as separate
+roots, while the intent classifier's executor also loses the active trace
+parent; optional-tool execution keeps more of the agent path together but
+still emits the classifier as a separate root. See
+[KI-RAG-0016](known-issues/langsmith-chat-turns-fragment-across-root-traces.md).
+The active Qwen OpenAI-compatible endpoint also rejects the classifier's
+JSON-object structured-output call because the prompt omits the provider's
+literal `json` requirement, causing every inspected call to fall back to
+rules; see
+[KI-RAG-0017](known-issues/intent-classifier-json-mode-prompt-is-provider-incompatible.md).
+
+The confidence gate can also interpret a small score margin plus low dominant-root share as insufficient even when several high-score final chunks corroborate the requested fact. A contaminated shared collection is a known confounder in the current runtime evidence, so threshold or formula changes require an isolated-index reproduction; see [KI-RAG-0013](known-issues/rag-confidence-rejects-corroborating-evidence.md).
 
 Evaluation lives under `tests/eval/`, `tests/regression/`, and `backend/evaluation/`. Reports must bind a commit and source fingerprint and distinguish deterministic substitutes from real models/infrastructure. Intent-routing source fingerprint version 2 is intended to bind a sorted manifest containing all RAG, infrastructure, and shared Python runtime files plus the API schema, evaluation code/runner, OpenSpec design/spec, and annotated datasets, so transitive retrieval/preflight/merge changes invalidate paired evidence (`RAG-INTENT-F028`). Its current manifest still names historical change-artifact paths that are absent from clean worktrees, so fingerprint evaluation currently fails before producing that evidence ([KI-RAG-0007](known-issues/intent-routing-fingerprint-archived-openspec-paths.md)). Microbenchmarks are not production-capacity evidence.
 
@@ -213,6 +259,7 @@ Degradation rules include hybrid-to-dense fallback, candidate preservation when 
 | Citation verification | Implemented, default disabled | citation flag false |
 | Intent routing | Implemented, default disabled; activation planned | `RAG_INTENT_CLASSIFIER_ENABLED=false`; [activation change](../openspec/changes/rag-intent-routing-activation/) |
 | Anchor workflow validation bundle | Validation-only | `.env.rag-intent-routing-workflow.example`; not production guidance |
+| Full-chain RAG E2E bundle | Validation-only | `.env.rag-full-chain-e2e.example`; isolated `v4_full` index authorities; not production guidance |
 | Comprehensive parallel retrieval | Implemented, gated by intent routing | `quality_first_v1`; classifier default disabled |
 | No-CrossEncoder comprehensive ablation | Evaluation-only | `eval_no_crossencoder_v1` |
 | Multilevel fallback | Implemented, default disabled; manual M8 UX validated, activation planned | Implementation and deterministic regressions are complete; `RAG_FALLBACK_ENABLED=false`; `VAL-RAG-FALLBACK-001` closes M8.5; real evaluation, thresholds, budget tuning and rollout belong to [fallback activation](../openspec/changes/rag-multilevel-fallback-activation/) |
@@ -229,6 +276,14 @@ Planned changes are excluded from active diagrams and do not override current de
 - Terminology rescan currently violates the parent-only store contract and has unreliable parent rollback.
 - `.doc` is registered but lacks a legacy-DOC conversion/parser path.
 - Index profiles do not automatically isolate BM25 state.
+- Profiles below `v4_table_aware` omit parsed table parents and leaves without making upload fail ([KI-RAG-0010](known-issues/table-evidence-is-not-indexed-below-v4-table-aware.md)).
+- DeepDoc native-text parsing can merge paragraphs across a visible section heading, and three-level numeric headings can be normalized as list items instead of section boundaries ([KI-RAG-0018](known-issues/deepdoc-native-text-can-merge-paragraphs-across-section-headings.md), [KI-RAG-0019](known-issues/three-level-section-headings-are-treated-as-list-items.md)).
+- Milvus candidate retrieval can return mixed-profile rows from a contaminated collection ([KI-RAG-0011](known-issues/milvus-retrieval-does-not-enforce-index-profile-isolation.md)).
+- A newly configured Milvus collection must be initialized before the first registry/retrieval read ([KI-RAG-0014](known-issues/milvus-read-path-requires-preinitialized-collection.md)).
+- The post-upload document list can omit the most recent successful file until a manual refresh because its immediate Milvus read has no explicit read-your-writes boundary ([KI-RAG-0015](known-issues/document-list-can-lag-completed-multi-upload.md)).
+- Frontend progress omits intent results and the RAG-to-answer-generation handoff, leaving model TTFT as a silent interval ([KI-RAG-0012](known-issues/rag-progress-ui-omits-intent-and-answer-handoff.md)).
+- One chat turn can fragment into several LangSmith root traces, and the current intent classifier JSON-mode request is rejected by the active provider before degrading to rules ([KI-RAG-0016](known-issues/langsmith-chat-turns-fragment-across-root-traces.md), [KI-RAG-0017](known-issues/intent-classifier-json-mode-prompt-is-provider-incompatible.md)).
+- Confidence can reject mutually corroborating high-score evidence and produce a Level 3 no-evidence answer; shared-index contamination remains a confounder ([KI-RAG-0013](known-issues/rag-confidence-rejects-corroborating-evidence.md)).
 - Intent-routing source fingerprint evaluation references archived OpenSpec paths and fails in clean worktrees ([KI-RAG-0007](known-issues/intent-routing-fingerprint-archived-openspec-paths.md)).
 - Anchor routing lacks an atomic capability configuration and shared extraction/normalization contract; multilevel fallback real evaluation, tuning and rollout remain pending under [fallback activation](../openspec/changes/rag-multilevel-fallback-activation/), while its narrow manual M8.5 UX gate passed under `VAL-RAG-FALLBACK-001`; the grouped env examples remain validation-only.
 
