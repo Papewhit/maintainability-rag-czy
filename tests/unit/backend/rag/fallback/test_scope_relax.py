@@ -83,7 +83,13 @@ def test_comprehensive_filter_remains_hard_scope():
 
 @pytest.mark.parametrize(
     ("current", "maximum", "expected"),
-    [(50, 100, 75), (51, 100, 77), (80, 100, 100), (100, 100, 100)],
+    [
+        (50, 100, 75),
+        (51, 100, 77),
+        (80, 100, 100),
+        (100, 100, 100),
+        (120, 50, 120),
+    ],
 )
 def test_level2_candidate_k_grows_by_one_point_five_and_respects_existing_cap(
     current, maximum, expected

@@ -147,7 +147,7 @@ Fallback Router MUST 是纯规则函数（MUST NOT 调用 LLM），SHALL 接受 
 - **THEN** source MAY 保留在 trace/provenance 中，但 MUST NOT 参与 Level 2 路由或决定 filter 是否可放宽；scope_mode 是下游唯一范围行为契约
 
 ### Requirement: Level 2 - Scope Relax
-Level 2 MUST 是纯规则降级，MUST NOT 调用 LLM。Fallback MUST 只消费 `scope_mode` 作为权威行为契约：`filter` SHALL 保持 filter，`boost` SHALL 降级为 none，`none` SHALL 保持 none。candidate_k SHALL 放大 1.5x、且 SHALL 复用 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 作为 max_candidate_k；same_root_cap SHALL 在本轮临时增加 1。Level 2 MUST NOT 创建、删除或调整 semantic entity filter。
+Level 2 MUST 是纯规则降级，MUST NOT 调用 LLM。Fallback MUST 只消费 `scope_mode` 作为权威行为契约：`filter` SHALL 保持 filter，`boost` SHALL 降级为 none，`none` SHALL 保持 none。candidate_k SHALL 以 1.5x 为增长目标、且 SHALL 复用 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 作为扩大量上限；该上限 MUST NOT 使有效 candidate_k 低于上一轮已完成值。same_root_cap SHALL 在本轮临时增加 1。Level 2 MUST NOT 创建、删除或调整 semantic entity filter。
 
 #### Scenario: filter 硬范围保持不变
 - **WHEN** Level 2 触发且当前 scope_mode=filter
@@ -163,7 +163,11 @@ Level 2 MUST 是纯规则降级，MUST NOT 调用 LLM。Fallback MUST 只消费 
 
 #### Scenario: candidate_k 放大
 - **WHEN** Level 2 触发
-- **THEN** 检索的 candidate_k 从原值放大 1.5x；同时受既有 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 上限保护
+- **THEN** 检索的 candidate_k 以原值的 1.5x 为增长目标，同时受既有 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 扩大量上限保护；有效值 MUST NOT 小于上一轮已完成值
+
+#### Scenario: candidate_k 上限低于上一轮值
+- **WHEN** Level 2 触发且既有 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 小于上一轮已完成的 candidate_k
+- **THEN** 本轮 MUST 保持上一轮 candidate_k，MUST NOT 将配置上限解释为缩小候选池；trace MUST 记录保持后的有效值
 
 #### Scenario: 综合管线 Level 2
 - **WHEN** 综合管线触发 Level 2

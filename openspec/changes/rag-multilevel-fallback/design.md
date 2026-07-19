@@ -202,13 +202,14 @@ def relax_scope(query_plan: PreciseQueryPlan) -> PreciseQueryPlan:
         route="global_hybrid",
     )
 
-# 然后重新走一次 retrieve_candidate_pool；candidate_k 放大 1.5x，
-# 并以既有 RAG_FALLBACK_EXPANDED_CANDIDATE_K 作为 max_candidate_k
+# 然后重新走一次 retrieve_candidate_pool；candidate_k 目标放大 1.5x，
+# 并以既有 RAG_FALLBACK_EXPANDED_CANDIDATE_K 作为扩大量上限；
+# 当该值低于上一轮 candidate_k 时保持上一轮值，不允许 Level 2 缩小候选池
 ```
 
 trace 记录 `level2_relaxations`（list，描述哪些约束被放宽）。
 
-任何 `filter` 都不得移除组合 filename filter，也不得追加全库 reserve。Level 2 将 `candidate_k` 放大 1.5x、但不超过既有 `RAG_FALLBACK_EXPANDED_CANDIDATE_K`，并把本轮 `same_root_cap` 临时增加 1；这些参数变化不写回全局配置。重检结果继续完整通过共享 postprocess/confidence。`boost → none` 必须原子更新 `scope_mode=none`、`matched_files=()` 与 `route=global_hybrid`。Fallback 不检查 filter 的来源，也不为 `PreciseQueryPlan` 新增 `scope_source`。
+任何 `filter` 都不得移除组合 filename filter，也不得追加全库 reserve。Level 2 将 `candidate_k` 目标放大 1.5x，并以既有 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 限制扩大量；有效值为上一轮已完成值与受限增长值中的较大者，因此配置上限低于上一轮值时保持而不缩小候选池。本轮 `same_root_cap` 临时增加 1；这些参数变化不写回全局配置。重检结果继续完整通过共享 postprocess/confidence。`boost → none` 必须原子更新 `scope_mode=none`、`matched_files=()` 与 `route=global_hybrid`。Fallback 不检查 filter 的来源，也不为 `PreciseQueryPlan` 新增 `scope_source`。
 
 ### 决策 6：Level 2 - 综合管线 scope relax
 
@@ -338,7 +339,7 @@ intent classifier 降级到规则路径时，可能产出错误的 query_plan_ty
 scope_mode 从 boost 降级到 none 后可能召回大量无关 chunk，反而稀释证据质量。filter 永不降级。
 
 缓解：
-- candidate_k 放大但仍受 max_candidate_k 上限保护
+- candidate_k 目标放大且受 max_candidate_k 扩大量上限保护；上限不得反向缩小上一轮候选池
 - structure_rerank 的 same_root_cap 仍工作，避免被同源 chunk 淹没
 - Level 2 答案的 prompt 注入要求 LLM 明确标注"非精确匹配"，避免误导
 

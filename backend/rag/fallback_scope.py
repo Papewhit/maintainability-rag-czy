@@ -39,8 +39,11 @@ def relax_scope(query_plan: IntentQueryPlan) -> IntentQueryPlan:
 
 
 def level2_candidate_k(current_candidate_k: int, max_candidate_k: int) -> int:
-    """Grow the current candidate count by 1.5x without crossing the legacy cap."""
-    return min(max_candidate_k, math.ceil(current_candidate_k * 1.5))
+    """Grow by 1.5x within the legacy ceiling without shrinking prior work."""
+    return max(
+        current_candidate_k,
+        min(max_candidate_k, math.ceil(current_candidate_k * 1.5)),
+    )
 
 
 def level2_same_root_cap(current_same_root_cap: int) -> int:

@@ -75,6 +75,7 @@
 - [x] 5.8 测试：Level 2 不读取或修改 semantic entities，terminology 的 `entity_type_coverage` 不参与 scope-relax 路由
 - [x] 5.9 任意 filter 在 Level 2 都保持不变；只允许 candidate_k / same_root_cap 等域内放宽，Fallback 不读取 source、score 或 classifier hint
 - [x] 5.10 测试：精确与综合 Level 2 都不能越出 filter matched_files；`context_files` 场景每个重检分支仍携带相同 filename filter
+- [x] 5.11 当 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 低于上一轮 candidate_k 时保持上一轮值，不得把 Level 2 候选放宽变成候选缩小；补 `120 → 120` 回归
 
 **验收**：boost/none 场景或 filter 域内候选参数放宽后召回候选增加；scope_mode 行为完整；trace 反映范围是否保持及参数放宽细节。
 
@@ -110,7 +111,7 @@
 - [x] 8.2 步骤事件 schema：`{icon, label, detail, level, signal, strategy?}`
 - [x] 8.3 前端折叠"思考过程"组件：默认折叠，点击展开 fallback 路径
 - [x] 8.4 normal 流程（Level 0 成功）也显示简洁的"检索完成"步骤
-- [ ] 8.5 用户体验测试：fallback 多次时前端不卡顿、不闪烁
+- [x] 8.5 用户体验测试：fallback 多次时前端不卡顿、不闪烁（证据：`docs/validation/rag-multilevel-fallback-m8-ui.md`）
 
 **验收**：trace 可视化呈现 fallback 路径；用户能直观看到"试了哪些方法"。
 

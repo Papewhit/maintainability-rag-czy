@@ -31,7 +31,7 @@
 4. **Level 2 - Scope Relax**：当信号指向"搜索约束太紧"时触发。
    - `filter` 表示可信的用户硬范围，始终保持 filter
    - `boost` 表示文件软偏好，可降级为 none；`none` 保持 none
-   - candidate_k 增大 1.5x，并复用 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 作为上限
+   - candidate_k 目标增大 1.5x，并复用 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 作为扩大量上限；该上限不得把本轮候选数降到上一轮已完成值以下
    - same_root_cap 在本轮临时增加 1
    - 答案生成时强制注入"非精确匹配"声明
 
@@ -80,7 +80,7 @@
 - `backend/rag/query_plan.py`、`backend/rag/intent.py`：收紧精确管线 filter producer；字符串相似度和 classifier hint 不得单独产生硬范围
 - `backend/rag/fallback_router.py`（新文件）：信号到 level 的映射规则
 - `backend/rag/runtime_config.py`：新增多个 budget 配置
-- `RAG_FALLBACK_COMPREHENSIVE_REWRITE_WINDOW` 控制单轮综合失败分支改写数量（默认 2）；旧 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 作为 Level 2 candidate_k 上限继续复用
+- `RAG_FALLBACK_COMPREHENSIVE_REWRITE_WINDOW` 控制单轮综合失败分支改写数量（默认 2）；旧 `RAG_FALLBACK_EXPANDED_CANDIDATE_K` 作为 Level 2 candidate_k 扩大量上限继续复用，但不得导致候选池缩小
 - `backend/chat/rag_execution.py`：Level 2 触发时在 prompt 中注入"非精确匹配"声明
 - 现有 `RAG_FALLBACK_TIMEOUT_SECONDS` 映射到 `RAG_FALLBACK_TOTAL_BUDGET_MS`（乘 1000）
 - `tests/test_fallback_router.py`、`tests/test_multilevel_fallback.py`

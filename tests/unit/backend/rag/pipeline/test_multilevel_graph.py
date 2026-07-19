@@ -228,8 +228,16 @@ def test_precise_level_one_uses_rewritten_semantic_query_and_fresh_confidence():
     }
 
 
-@pytest.mark.parametrize(("scope_mode", "strict"), [("filter", True), ("boost", False)])
-def test_precise_level_two_preserves_filter_or_atomically_drops_boost(scope_mode, strict):
+@pytest.mark.parametrize(
+    ("scope_mode", "strict", "current_candidate_k", "expected_candidate_k"),
+    [("filter", True, 120, 120), ("boost", False, 40, 50)],
+)
+def test_precise_level_two_preserves_filter_or_atomically_drops_boost(
+    scope_mode,
+    strict,
+    current_candidate_k,
+    expected_candidate_k,
+):
     plan = replace(
         _plan(),
         scope_mode=scope_mode,
@@ -240,7 +248,7 @@ def test_precise_level_two_preserves_filter_or_atomically_drops_boost(scope_mode
         "semantic_query": plan.semantic_query,
         "query_plan": plan,
         "query_plan_type": "precise",
-        "context_files": ["manual.pdf"],
+        "context_files": ["manual.pdf"] if scope_mode == "filter" else [],
         "attempted_levels": [1],
         "fallback_decisions": [],
         "fallback_started_at": time.perf_counter(),
@@ -248,18 +256,22 @@ def test_precise_level_two_preserves_filter_or_atomically_drops_boost(scope_mode
         "rag_trace": {
             "fallback_required": True,
             "confidence_reasons": ["weak_margin_and_root"],
-            "candidate_k": 40,
+            "candidate_k": current_candidate_k,
             "query_plan_enabled": True,
         },
     }
     candidate_payload = {
         "candidates": [{"chunk_id": "fresh", "text": "fresh"}],
-        "meta": {"candidate_k": 50, "timings": {}, "stage_errors": []},
+        "meta": {
+            "candidate_k": expected_candidate_k,
+            "timings": {},
+            "stage_errors": [],
+        },
     }
     final_payload = {
         "docs": [{"chunk_id": "fresh", "text": "fresh"}],
         "meta": {
-            "candidate_k": 50,
+            "candidate_k": expected_candidate_k,
             "same_root_cap": 3,
             "fallback_required": False,
             "confidence_reasons": [],
@@ -278,7 +290,7 @@ def test_precise_level_two_preserves_filter_or_atomically_drops_boost(scope_mode
         result = rag_pipeline.level2_scope_relax_node(state)
 
     retry_plan = retrieve.call_args.kwargs["query_plan"]
-    assert retrieve.call_args.kwargs["candidate_k"] == 50
+    assert retrieve.call_args.kwargs["candidate_k"] == expected_candidate_k
     assert retrieve.call_args.kwargs["strict_scope_filter"] is strict
     assert finish.call_args.kwargs["same_root_cap_override"] == 3
     if scope_mode == "filter":

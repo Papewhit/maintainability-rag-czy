@@ -89,7 +89,7 @@ last_verified_date: 2026-07-17
 - Evidence: User request on 2026-07-17; no comparative evaluation evidence yet.
 - Disposition: enhancement
 - Disposition target: docs/enhancements/rag-fallback-routing-order-evaluation.md
-- Resolution evidence: The candidate enhancement records the evaluation question, non-goals, evidence dependencies, and requirement for a separately authorized OpenSpec change.
+- Resolution evidence: The candidate enhancement records the evaluation question, non-goals, evidence dependencies, and requirement for a separately authorized OpenSpec change. RAG-MF-F026 later adds real signal-directed `[2, 3]` path evidence and refines the question from a nominal fixed order to direct-Level-2 backfill.
 
 ## RAG-MF-F007
 
@@ -356,3 +356,31 @@ last_verified_date: 2026-07-17
 - Disposition: change
 - Disposition target: openspec/changes/rag-multilevel-fallback/
 - Resolution evidence: The precise Level 2 incomplete-round branch now restores the prior state while preserving diagnostics; the regression asserts both plan equality and effective scope trace rollback.
+
+## RAG-MF-F026
+
+- Kind: evaluation_result
+- Primary scope: rag.fallback.routing_order
+- Evidence status: confirmed
+- Observation: A real precise query with only `weak_margin_and_root` entered Level 2 directly and, after Level 2 retained the same signal, terminated at Level 3 without attempting Level 1; the persisted path was `[2, 3]`.
+- Inference: The current implementation is signal-directed rather than an unconditional Level 1 → Level 2 chain. The existing future-ordering question must include whether a failed direct-Level-2 path should evaluate query rewrite before Level 3, while separating ordering effects from confidence and candidate-cap defects.
+- Decision: Do not change routing in this change. Add the runtime evidence and refined comparison matrix to the existing routing-order enhancement.
+- Residual risk: A query whose signal selects Level 2 can reach Level 3 without testing whether rewrite would recover evidence, even when scope relaxation does not address the actual failure.
+- Evidence: Session `session_1784383996604`, assistant message `13`, on 2026-07-18: `top_score=0.87475`, `confidence_reasons=[weak_margin_and_root]`, decisions `Level 2 weak_margin_and_root` then `Level 3 levels_exhausted`, and `fallback_path=[2, 3]`; an earlier same-query run reached Level 3 before Level 2 because reranking exhausted the remaining budget.
+- Disposition: enhancement
+- Disposition target: docs/enhancements/rag-fallback-routing-order-evaluation.md
+- Resolution evidence: ENH-RAG-0004 now records the direct-Level-2 behavior, backfill evaluation question, latency-state comparison, and confounders without authorizing an order change.
+
+## RAG-MF-F027
+
+- Kind: behavior_defect
+- Primary scope: rag.fallback.level2
+- Evidence status: confirmed
+- Observation: In the same real Level 2 run, the trace recorded `candidate_k: 120 -> 50` because the prior-round candidate count exceeded the reused `RAG_FALLBACK_EXPANDED_CANDIDATE_K=50` ceiling.
+- Inference: `min(max_candidate_k, ceil(current_candidate_k * 1.5))` can narrow the candidate pool, contradicting the existing Level 2 enlargement contract and M5 acceptance boundary on a reachable positive configuration.
+- Decision: Treat the reused setting as an expansion ceiling rather than permission to shrink a completed prior pool. Compute the effective value as the larger of the prior completed candidate_k and the capped 1.5x growth target; preserve the prior value when the configured ceiling is lower.
+- Residual risk: A ceiling below the prior value prevents candidate-count growth, so Level 2 may rely only on its other relaxations; it no longer makes the retry strictly narrower.
+- Evidence: Session `session_1784383996604`, assistant message `13`, on 2026-07-18; `backend/rag/fallback_scope.py`; existing `test_level2_candidate_k_grows_by_one_point_five_and_respects_existing_cap` cases cover only current values at or below the cap.
+- Disposition: change
+- Disposition target: openspec/changes/rag-multilevel-fallback/
+- Resolution evidence: The updated Level 2 contract prohibits candidate shrink; task 5.11 passes both the pure rule and graph-node `120 → 120` regressions. KI-RAG-0009 retains the runtime history as mitigated pending a live rerun.
