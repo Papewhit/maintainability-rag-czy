@@ -59,6 +59,8 @@
 
 13. **scope_mode 是行为契约**：Fallback 只消费 `scope_mode`。`filter` 不可放宽，`boost` 可放宽为 none，`none` 只调整候选参数。综合管线保留 `RetrievalScope.source` 用于 trace/provenance，但它是非权威诊断字段；不为精确管线新增 `scope_source`。
 
+14. **实现与激活分离**：本 change 只交付默认关闭的实现、确定性回归与窄范围 UX 证据。真实 query-set 评测、Level 0/1/2/3 指标、P95 与数据驱动 budget 调优迁移到独立 `rag-multilevel-fallback-activation`，与 `rag-intent-routing-activation` 使用相同的发布身份边界；当前实现合并不得解释为生产激活。
+
 ## Capabilities
 
 ### New Capabilities

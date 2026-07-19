@@ -130,9 +130,9 @@
 
 - [x] 10.1 现有 `tests/unit/backend/rag/pipeline/test_rag_pipeline.py`、`test_rag_pipeline_fast_path.py` 与 `test_fallback_disabled_routing.py` 在 fallback 关闭时通过
 - [x] 10.2 在 `tests/unit/backend/rag/fallback/test_fallback_router.py` 与 `tests/unit/backend/rag/pipeline/test_multilevel_graph.py` 覆盖各种 confidence 信号组合与 graph 路径
-- [ ] 10.3 端到端评测：用包含各种失败模式的 query 集（精确未匹配/综合分析/术语变体等）跑完整 fallback 路径
-- [ ] 10.4 评测指标：Level 0 命中率、Level 1/2 提升回答质量的比例、Level 3 触发的合理性、P95 延迟
-- [ ] 10.5 调优默认 budget：根据评测数据调整 budget_ms
+- [x] 10.3 将真实 query-set 全链路评测迁移至 `rag-multilevel-fallback-activation`；当前无可用发布语料/索引，不在本 default-disabled implementation change 伪造执行证据
+- [x] 10.4 将 Level 0/1/2/3 路由、质量、来源、P95、资源与降级指标迁移至 `rag-multilevel-fallback-activation`
+- [x] 10.5 将基于真实 gate 的 total/Level 1/Level 2 budget 调优迁移至 `rag-multilevel-fallback-activation`；本 change 保持已实现默认值
 
 ## Evidence Disposition Gate
 
@@ -144,4 +144,4 @@
 - [x] ARCHITECTURE impact assessed
 - [x] No undispositioned design ambiguity remains
 
-**验收**：评测报告显示 fallback 在合适场景下有效；P95 延迟可控；Level 0/1/2/3 比例符合预期（如 Level 0 ≥ 70%、Level 1+2 ≤ 25%、Level 3 ≤ 5%）。
+**实现 change 验收**：default-disabled graph、契约、确定性回归、迁移文档与窄范围 UX 证据完成；真实评测报告、阈值、P95、路由比例和预算调优由 `rag-multilevel-fallback-activation` 验收，不是本 PR 的激活声明。

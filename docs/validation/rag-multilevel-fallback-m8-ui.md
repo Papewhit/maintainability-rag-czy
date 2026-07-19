@@ -18,7 +18,8 @@ This report closes the narrow M8.5 manual UX gate: a live fallback request can
 render multiple RAG steps, remain interactive, and deliver its final answer
 without page lock-up or visible flicker. It does not validate retrieval
 quality, confidence thresholds, upload observability, answer time-to-first-
-token, or the real-corpus M10.3-M10.5 evaluation gates.
+token, or the real-corpus activation gates now owned by
+`openspec/changes/rag-multilevel-fallback-activation/`.
 
 ## Method
 

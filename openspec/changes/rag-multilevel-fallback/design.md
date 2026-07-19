@@ -314,7 +314,7 @@ Level 3 输出也按 plan_type 不同：精确管线给"未找到"；综合管�
 缓解：
 - 整体预算 8s 硬性限制
 - Level 1/2 入口检查各自预算，所有 fallback 共享整体预算
-- 以 P95 5-7s 作为待真实评测验证的目标范围；tasks 10.3-10.5 完成前不声称已有实测结论
+- 以 P95 5-7s 仅作为待真实评测验证的早期目标范围；真实 query-set、指标、阈值与预算调优由 `rag-multilevel-fallback-activation` 持有，本 change 不声称已有实测结论
 
 **风险 2：fallback router 规则维护性**
 
@@ -423,3 +423,7 @@ fallback
 因此先收紧 producer，再实现 Level 2。Fallback 不查看匹配分数、不查看 classifier hint，也不追溯 filter 的成因。一旦 planner 输出 filter，下游就把它当成用户硬范围。`PreciseQueryPlan` 不增加 `scope_source`；综合管线已有的 `RetrievalScope.source` 继续服务 trace/provenance，但不得进入 Level 2 行为判断。
 
 唯一解析按每个 hard-scope 文档提示单独判断：一个提示只有一个达到 routable threshold 的文件时才贡献 hard filter；一个提示命中多个文件时，该提示降为普通 boost。多个彼此独立且各自唯一解析的 hard-scope 提示可以共同形成组合 filter。`《A》中说明步骤` 的 `中` 是范围标记；`《A》中心思想`、`《A》中文翻译`、`《A》中英文术语`、`《A》中外方案`、`《A》中长期计划`、`《A》中短期计划`、`《A》中间章节`、`《A》中部结构` 中的 `中` 属于后续词组，不是范围标记。
+
+### 决策 13：实现合并与生产激活分离
+
+当前无法准备代表发布使用方式的真实语料、Milvus/BM25 索引、稳定 answer/judge model 和经评审 query set。与 `rag-intent-routing-activation` 相同，本 change 以 default-disabled implementation 完成；原 tasks 10.3-10.5 的真实链路评测、指标和预算调优迁移到 `rag-multilevel-fallback-activation`。后继 change 必须绑定完整发布身份、冻结阈值并通过显式灰度后，才允许修改 fallback 或 budget 默认值。本 change 合并不构成 activation evidence。

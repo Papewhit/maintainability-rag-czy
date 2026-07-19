@@ -136,6 +136,7 @@ branch:
 - final source snippets, including whether the `2.2 交付物` table is present;
 - browser responsiveness during repeated fallback.
 
-M8.5 remains a human UX validation item until this evidence is actually
-collected. M10.3-M10.5 still require a real query set, metrics, and
-data-driven tuning rather than this smoke configuration.
+M8.5 is closed by `VAL-RAG-FALLBACK-001`. Real query-set evaluation, metrics,
+thresholds and data-driven tuning remain owned by
+`openspec/changes/rag-multilevel-fallback-activation/`; this smoke
+configuration is not activation evidence.

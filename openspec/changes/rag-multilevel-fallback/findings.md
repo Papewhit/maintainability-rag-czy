@@ -281,11 +281,11 @@ last_verified_date: 2026-07-17
 - Observation: The design called P95 5-7s an observed result while real-environment evaluation and metric tasks 10.3-10.5 remain incomplete.
 - Inference: Keeping the wording would overstate evidence confidence even though it does not alter runtime behavior.
 - Decision: Label 5-7s only as a target pending real evaluation, and align the no-evidence scenario wording with the already confirmed final-top-k authority boundary.
-- Residual risk: Actual P95 remains unknown until the non-agent-completable evaluation tasks run.
+- Residual risk: Actual P95 remains unknown until `rag-multilevel-fallback-activation` can run against a representative real corpus and release index.
 - Evidence: Stage 3 remediation spec review; unchecked tasks 10.3-10.5 and absence of a validation report.
 - Disposition: change
-- Disposition target: openspec/changes/rag-multilevel-fallback/
-- Resolution evidence: Design no longer claims measured latency, and the delta spec uses final-top-k semantics without changing the F014 contract.
+- Disposition target: openspec/changes/rag-multilevel-fallback-activation/
+- Resolution evidence: Design no longer claims measured latency, the delta spec uses final-top-k semantics without changing the F014 contract, and the remaining real P95 evidence now has an independent activation owner.
 
 ## RAG-MF-F021
 
@@ -384,3 +384,31 @@ last_verified_date: 2026-07-17
 - Disposition: change
 - Disposition target: openspec/changes/rag-multilevel-fallback/
 - Resolution evidence: The updated Level 2 contract prohibits candidate shrink; task 5.11 passes both the pure rule and graph-node `120 → 120` regressions. KI-RAG-0009 retains the runtime history as mitigated pending a live rerun.
+
+## RAG-MF-F028
+
+- Kind: evidence_gap
+- Primary scope: evaluation.rag.fallback.activation
+- Evidence status: confirmed
+- Observation: The current environment cannot prepare a representative real corpus, release Milvus/BM25 index, stable answer/judge models and reviewed query set, so tasks 10.3-10.5 cannot produce valid quality, routing, P95 or budget evidence inside the implementation PR.
+- Inference: This is the same implementation-versus-activation boundary already established for intent routing; leaving the tasks in the implementation change would either block default-disabled code indefinitely or invite non-representative evidence.
+- Decision: Migrate real query-set evaluation, metric thresholds and data-driven budget tuning to the independent `rag-multilevel-fallback-activation` change. Treat the current change as complete default-disabled implementation only; its merge is not activation evidence.
+- Residual risk: Production quality, routing proportions, P95 and tuned budgets remain unknown until the activation change obtains the required external environment and passes its gate.
+- Evidence: User decision on 2026-07-19; current tasks 10.3-10.5; absence of usable release corpus/index and activation-grade model/query-set identities; established `rag-intent-routing-activation` precedent.
+- Disposition: change
+- Disposition target: openspec/changes/rag-multilevel-fallback-activation/
+- Resolution evidence: The new change contains proposal, design, normative activation spec and tasks for real identity binding, evaluation, thresholds, budget tuning, coordinated canary and rollback.
+
+## RAG-MF-F029
+
+- Kind: documentation_drift
+- Primary scope: documentation.rag.anchor-routing
+- Evidence status: confirmed
+- Observation: KI-RAG-0006 still described multilevel fallback and the comprehensive fallback graph as planned or unimplemented after this change implemented both, which could make maintainers misjudge the remaining anchor-routing risk.
+- Inference: The known issue remains open for atomic capability configuration and shared anchor grammar, but its fallback status and resolution criteria must distinguish implemented wiring from missing real activation evidence.
+- Decision: Update KI-RAG-0006 to describe the current implemented default-disabled fallback boundary and point real behavior evaluation to the new activation change without claiming the broader anchor issue is resolved.
+- Residual risk: Atomic configuration and shared anchor normalization remain unresolved; fallback activation evidence is also pending.
+- Evidence: Current fallback graph and architecture in this PR; stale KI-RAG-0006 Observed Behavior, Evidence and Resolution Criteria text.
+- Disposition: known_issue
+- Disposition target: docs/known-issues/anchor-capability-configuration.md
+- Resolution evidence: KI-RAG-0006 now separates implemented fallback wiring from the still-open anchor contract and activation gates.
