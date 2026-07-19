@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Mapping
@@ -11,6 +12,7 @@ from backend.rag.profiles import normalize_index_profile
 
 EnvMapping = Mapping[str, str | None]
 COMPREHENSIVE_MAX_SUB_QUERIES_HARD_LIMIT = 8
+logger = logging.getLogger(__name__)
 
 
 def _value(env: EnvMapping, name: str, default: str | None = None) -> str | None:
@@ -106,6 +108,12 @@ class RagRuntimeConfig:
     unified_execution_enabled: bool = False
     fallback_enabled: bool = False
     fallback_timeout_seconds: float = 6.0
+    fallback_total_budget_ms: int = 8000
+    fallback_level1_budget_ms: int = 3000
+    fallback_level2_budget_ms: int = 2500
+    fallback_level1_enabled: bool = True
+    fallback_level2_enabled: bool = True
+    fallback_comprehensive_rewrite_window: int = 2
     fallback_workers: int = 4
     fallback_use_fast_model: bool = True
     fallback_candidate_only_enabled: bool = False
@@ -127,12 +135,25 @@ def load_candidate_strategy_config(env: EnvMapping | None = None) -> CandidateSt
 
 def load_runtime_config(env: EnvMapping | None = None) -> RagRuntimeConfig:
     env = os.environ if env is None else env
+    if "RAG_FALLBACK_ENABLED" in env:
+        logger.warning(
+            "RAG_FALLBACK_ENABLED is deprecated and will be removed in v2; "
+            "keep it only as the current master switch and migrate level control to "
+            "RAG_FALLBACK_LEVEL1_ENABLED / RAG_FALLBACK_LEVEL2_ENABLED."
+        )
     reserved_flags = {
         name: str(value)
         for name, value in env.items()
         if value is not None and _is_reserved_flag(name)
     }
     rerank_model = _value(env, "RERANK_MODEL") or _value(env, "RERANK_AVAILABLE_MODEL")
+    legacy_fallback_timeout = _float(env, "RAG_FALLBACK_TIMEOUT_SECONDS", 6.0)
+    if _value(env, "RAG_FALLBACK_TOTAL_BUDGET_MS") is not None:
+        fallback_total_budget_ms = _int(env, "RAG_FALLBACK_TOTAL_BUDGET_MS", 8000)
+    elif _value(env, "RAG_FALLBACK_TIMEOUT_SECONDS") is not None:
+        fallback_total_budget_ms = round(legacy_fallback_timeout * 1000)
+    else:
+        fallback_total_budget_ms = 8000
     return RagRuntimeConfig(
         rerank_model=str(rerank_model) if rerank_model else None,
         rerank_provider=_lower(env, "RERANK_PROVIDER", "local"),
@@ -198,7 +219,17 @@ def load_runtime_config(env: EnvMapping | None = None) -> RagRuntimeConfig:
         citation_verify_enabled=_bool(env, "RAG_CITATION_VERIFY_ENABLED", False),
         unified_execution_enabled=_bool(env, "RAG_UNIFIED_EXECUTION_ENABLED", False),
         fallback_enabled=_bool(env, "RAG_FALLBACK_ENABLED", False),
-        fallback_timeout_seconds=_float(env, "RAG_FALLBACK_TIMEOUT_SECONDS", 6.0),
+        fallback_timeout_seconds=legacy_fallback_timeout,
+        fallback_total_budget_ms=fallback_total_budget_ms,
+        fallback_level1_budget_ms=_int(env, "RAG_FALLBACK_LEVEL1_BUDGET_MS", 3000),
+        fallback_level2_budget_ms=_int(env, "RAG_FALLBACK_LEVEL2_BUDGET_MS", 2500),
+        fallback_level1_enabled=_bool(env, "RAG_FALLBACK_LEVEL1_ENABLED", True),
+        fallback_level2_enabled=_bool(env, "RAG_FALLBACK_LEVEL2_ENABLED", True),
+        fallback_comprehensive_rewrite_window=_int(
+            env,
+            "RAG_FALLBACK_COMPREHENSIVE_REWRITE_WINDOW",
+            2,
+        ),
         fallback_workers=_int(env, "RAG_FALLBACK_WORKERS", 4),
         fallback_use_fast_model=_bool(env, "RAG_FALLBACK_USE_FAST_MODEL", True),
         fallback_candidate_only_enabled=_bool(env, "RAG_FALLBACK_CANDIDATE_ONLY", False),

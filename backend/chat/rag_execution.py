@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Mapping
 
@@ -10,6 +10,7 @@ from langchain_core.messages import SystemMessage
 from backend.rag.runtime_config import load_runtime_config
 from backend.rag.trace import RAG_CONTEXT_FORMAT_VERSION
 from backend.shared.filename_utils import dedupe_filenames
+from backend.chat.fallback_delivery import build_fallback_delivery_instruction
 
 
 class RagExecutionPolicy(str, Enum):
@@ -32,6 +33,10 @@ class RagTurnContext:
     delivery_mode: str | None = None
     unified_execution_enabled: bool = False
     policy_reason: str = "default"
+    fallback_level: int = 0
+    scope_mode_before: str | None = None
+    scope_mode_after: str | None = None
+    level3_answer: str | None = None
 
 
 @dataclass(frozen=True)
@@ -141,19 +146,52 @@ def _with_retrieved_context_instruction(
     return messages[:-1] + [SystemMessage(content=instruction), messages[-1]]
 
 
+def apply_rag_trace_to_turn_context(
+    turn_context: RagTurnContext,
+    rag_trace: Mapping[str, Any] | None,
+) -> RagTurnContext:
+    trace = rag_trace or {}
+    return replace(
+        turn_context,
+        fallback_level=int(trace.get("fallback_level") or 0),
+        scope_mode_before=trace.get("level2_previous_scope_mode"),
+        scope_mode_after=trace.get("level2_new_scope_mode"),
+        level3_answer=trace.get("level3_answer"),
+    )
+
+
+def _with_fallback_delivery_instruction(
+    messages: list[Any],
+    turn_context: RagTurnContext,
+) -> list[Any]:
+    instruction = build_fallback_delivery_instruction(
+        fallback_level=turn_context.fallback_level,
+        scope_mode_before=turn_context.scope_mode_before,
+        scope_mode_after=turn_context.scope_mode_after,
+        level3_answer=turn_context.level3_answer,
+    )
+    if not instruction:
+        return messages
+    return messages[:-1] + [SystemMessage(content=instruction), messages[-1]]
+
+
 def prepare_rag_answer_messages(
     messages: list[Any],
     turn_context: RagTurnContext,
     *,
     retrieved_context: str = "",
 ) -> list[Any]:
+    if turn_context.fallback_level == 3:
+        return _with_fallback_delivery_instruction(messages, turn_context)
     if turn_context.policy == RagExecutionPolicy.FORCED_PRELOAD:
-        return _with_retrieved_context_instruction(
+        prepared = _with_retrieved_context_instruction(
             messages,
             turn_context.context_files,
             retrieved_context,
         )
-    return _with_context_file_instruction(messages, turn_context.context_files)
+    else:
+        prepared = _with_context_file_instruction(messages, turn_context.context_files)
+    return _with_fallback_delivery_instruction(prepared, turn_context)
 
 
 def answer_with_rag_context(

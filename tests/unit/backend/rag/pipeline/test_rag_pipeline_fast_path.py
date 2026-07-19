@@ -24,7 +24,6 @@ class RagPipelineFastPathTests(unittest.TestCase):
 
         with (
             patch("backend.rag.pipeline.load_runtime_config", return_value=runtime_config),
-            patch("backend.rag.pipeline._get_grader_model", side_effect=AssertionError("grader should not be called")),
         ):
             result = rag_pipeline.grade_documents_node(state)
 
@@ -44,7 +43,6 @@ class RagPipelineFastPathTests(unittest.TestCase):
 
         with (
             patch("backend.rag.pipeline.load_runtime_config", return_value=runtime_config),
-            patch("backend.rag.pipeline._get_grader_model", side_effect=AssertionError("grader should not be called")),
         ):
             result = rag_pipeline.grade_documents_node(state)
 

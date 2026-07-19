@@ -64,7 +64,10 @@ class RagObservabilityTests(unittest.TestCase):
             "rag_trace": {"fallback_required": False, "timings": {}},
         }
 
-        with patch("backend.rag.pipeline._get_grader_model", side_effect=AssertionError("grader should not be called")):
+        with patch(
+            "backend.rag.pipeline.init_chat_model",
+            side_effect=AssertionError("rule-only grading must not initialize an LLM"),
+        ):
             result = rag_pipeline.grade_documents_node(state)
 
         self.assertEqual(result["route"], "generate_answer")

@@ -1,4 +1,5 @@
 import unittest
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,6 +35,11 @@ class RagUtilsDiagnosticsTests(unittest.TestCase):
             "RAG_DEEP_MIN_COVERAGE": "0.5",
             "RAG_FALLBACK_ENABLED": "true",
             "RAG_FALLBACK_TIMEOUT_SECONDS": "2.5",
+            "RAG_FALLBACK_TOTAL_BUDGET_MS": "9000",
+            "RAG_FALLBACK_LEVEL1_BUDGET_MS": "3100",
+            "RAG_FALLBACK_LEVEL2_BUDGET_MS": "2600",
+            "RAG_FALLBACK_LEVEL1_ENABLED": "false",
+            "RAG_FALLBACK_LEVEL2_ENABLED": "true",
             "RAG_FALLBACK_WORKERS": "3",
             "RAG_FALLBACK_USE_FAST_MODEL": "false",
             "RAG_FALLBACK_CANDIDATE_ONLY": "true",
@@ -61,6 +67,11 @@ class RagUtilsDiagnosticsTests(unittest.TestCase):
         self.assertEqual(config.deep_min_coverage, 0.5)
         self.assertTrue(config.fallback_enabled)
         self.assertEqual(config.fallback_timeout_seconds, 2.5)
+        self.assertEqual(config.fallback_total_budget_ms, 9000)
+        self.assertEqual(config.fallback_level1_budget_ms, 3100)
+        self.assertEqual(config.fallback_level2_budget_ms, 2600)
+        self.assertFalse(config.fallback_level1_enabled)
+        self.assertTrue(config.fallback_level2_enabled)
         self.assertEqual(config.fallback_workers, 3)
         self.assertFalse(config.fallback_use_fast_model)
         self.assertTrue(config.fallback_candidate_only_enabled)
@@ -71,6 +82,30 @@ class RagUtilsDiagnosticsTests(unittest.TestCase):
         self.assertEqual(config.reserved_flags["RAG_DEEP_TRACE"], "shadow")
         self.assertNotIn("RAG_MODEL", config.reserved_flags)
         self.assertEqual(candidate_strategy.strategy, CandidateStrategyId.LAYERED)
+
+    def test_legacy_timeout_maps_to_total_budget_when_new_budget_is_unset(self):
+        config = load_runtime_config({"RAG_FALLBACK_TIMEOUT_SECONDS": "2.5"})
+
+        self.assertEqual(config.fallback_total_budget_ms, 2500)
+
+    def test_new_total_budget_takes_precedence_over_legacy_timeout(self):
+        config = load_runtime_config(
+            {
+                "RAG_FALLBACK_TIMEOUT_SECONDS": "2.5",
+                "RAG_FALLBACK_TOTAL_BUDGET_MS": "8100",
+            }
+        )
+
+        self.assertEqual(config.fallback_total_budget_ms, 8100)
+
+    def test_explicit_legacy_master_switch_logs_v2_deprecation(self):
+        with self.assertLogs("backend.rag.runtime_config", level=logging.WARNING) as captured:
+            config = load_runtime_config({"RAG_FALLBACK_ENABLED": "true"})
+
+        self.assertTrue(config.fallback_enabled)
+        self.assertIn("RAG_FALLBACK_ENABLED", captured.output[0])
+        self.assertIn("v2", captured.output[0])
+        self.assertIn("RAG_FALLBACK_LEVEL1_ENABLED", captured.output[0])
 
     def test_legacy_layered_env_is_ignored_by_runtime_config(self):
         legacy_flag = "LAYERED_" + "RERANK_ENABLED"
@@ -571,6 +606,29 @@ class RagUtilsDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["step_back_question"], "")
         self.assertEqual(result["step_back_answer"], "")
         self.assertEqual(result["expanded_query"], "具体问题？")
+
+    def test_step_back_and_hyde_prompts_receive_plan_context_separately_from_query(self):
+        class FakeResponse:
+            content = '{"step_back_question":"通用问题","step_back_answer":"通用答案"}'
+
+        class FakeModel:
+            def __init__(self):
+                self.prompts = []
+
+            def invoke(self, prompt):
+                self.prompts.append(prompt)
+                return FakeResponse()
+
+        model = FakeModel()
+        context = "原始 query: raw\nanchors: ['第三章']\nscope_mode: filter"
+        with patch.object(rag_utils, "_get_stepback_model", return_value=model):
+            rag_utils.step_back_expand("clean semantic", rewrite_context=context)
+            rag_utils.generate_hypothetical_document("clean semantic", rewrite_context=context)
+
+        assert all("clean semantic" in prompt for prompt in model.prompts)
+        assert all("原始 query: raw" in prompt for prompt in model.prompts)
+        assert all("第三章" in prompt for prompt in model.prompts)
+        assert all("filter" in prompt for prompt in model.prompts)
 
     def test_total_retrieval_failure_reports_hybrid_and_dense_errors(self):
         with (

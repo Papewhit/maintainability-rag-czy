@@ -76,7 +76,7 @@ Comprehensive structural resolution is also contract-tested: a resolved ordinary
 
 `tests/e2e/rag/test_intent_routing_graph_e2e.py` invokes the compiled graph entry through `run_rag_graph()` and keeps graph routing, the `IntentClassifier` structured-output wrapper, deterministic QueryPlan construction, baseline/generated-branch fan-out, query-local terminology preparation, merge, one shared postprocess pass, and public `ChatResponse.rag_trace` serialization in scope. The test asserts three independent dense and BM25 inputs, a shared context-file hard filter, branch provenance, merge output, one shared postprocess execution, and public fan-out/search/rerank telemetry.
 
-The LLM response, embedding vectors, reranker scores, and Milvus candidate responses are deterministic substitutes. This E2E therefore closes the graph-wiring evidence gap but is not real-model, real-index, retrieval-quality, latency, resource-cost, or release-readiness evidence. The existing `test_postprocess_evidence_e2e.py` remains a narrower shared-postprocess evidence test; task 5B.3 remains the real FAST_MODEL and release-Milvus paired A/B gate.
+The LLM response, embedding vectors, reranker scores, and Milvus candidate responses are deterministic substitutes. This E2E therefore closes the graph-wiring evidence gap but is not real-model, real-index, retrieval-quality, latency, resource-cost, or release-readiness evidence. The existing `test_postprocess_evidence_e2e.py` remains a narrower shared-postprocess evidence test; `openspec/changes/rag-intent-routing-activation/` owns the deferred real FAST_MODEL and release-Milvus paired A/B gate.
 
 ## Inputs
 
@@ -135,4 +135,4 @@ Multi-turn retrieval is not part of this rollout. Any future multi-turn enhancem
 
 ## Findings
 
-`RAG-INTENT-F012` records that the prior postprocess report is now historical because its source fingerprint no longer matches this implementation. `RAG-INTENT-F036` records and closes the compiled graph wiring evidence gap with deterministic external-boundary substitutes. The unresolved real-model and release-index evidence remains an explicit activation gate owned by this OpenSpec change and is preserved here as a typed partial validation result.
+`RAG-INTENT-F012` records that the prior postprocess report is now historical because its source fingerprint no longer matches this implementation. `RAG-INTENT-F036` records and closes the compiled graph wiring evidence gap with deterministic external-boundary substitutes. The unresolved real-model and release-index evidence remains an explicit activation gate owned by `openspec/changes/rag-intent-routing-activation/` and is preserved here as a typed partial validation result.

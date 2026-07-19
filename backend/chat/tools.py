@@ -75,12 +75,26 @@ def set_rag_step_queue(queue):
         _RAG_STEP_LOOP.set(None)
 
 
-def emit_rag_step(icon: str, label: str, detail: str = ""):
+def emit_rag_step(
+    icon: str,
+    label: str,
+    detail: str = "",
+    *,
+    level: int | None = None,
+    signal: str | None = None,
+    strategy: str | None = None,
+):
     """向队列发送一个 RAG 检索步骤。支持跨线程安全调用。"""
     queue = _RAG_STEP_QUEUE.get()
     loop = _RAG_STEP_LOOP.get()
     if queue is not None and loop is not None:
         step = {"icon": icon, "label": label, "detail": detail}
+        if level is not None:
+            step["level"] = level
+        if signal is not None:
+            step["signal"] = signal
+        if strategy is not None:
+            step["strategy"] = strategy
         try:
             if not loop.is_closed():
                 loop.call_soon_threadsafe(queue.put_nowait, step)

@@ -3,19 +3,29 @@
 ## Purpose
 
 RAG 检索后处理管线：定义候选重排、父块合并、步骤链补齐、结构重排、结果截断、置信度门控及其可观测性契约。
-
 ## Requirements
-
 ### Requirement: 后处理管线顺序
-RAG 检索的后处理阶段 MUST 按固定顺序执行：rerank → auto_merge → step_chain_check → structure_rerank → top_k_truncate → confidence_gate。每个阶段的输入 MUST 是上一阶段的输出，输出 SHALL 可被独立测试。
+Precise 路径 MUST 保持 `rerank → auto_merge → step_chain_check → structure_rerank → top_k_truncate → confidence_gate`。Comprehensive 路径 MUST 对 clean-query baseline 与全部 LLM sub-query 扩展为 `branch-local rerank → multi_query_merge → auto_merge → step_chain_check → structure_rerank → branch-aware top_k_truncate → comprehensive confidence_gate`。每个共享结构阶段 MUST 在 merge 后只执行一次；任一可恢复阶段失败时继续使用前一阶段可用输出。
 
-#### Scenario: 完整管线执行
-- **WHEN** 检索返回 candidate_k 个候选 chunk
-- **THEN** 依次执行 6 个阶段；最终输出 top_k 个 chunk；rag_trace 中每个阶段的耗时字段（rerank_ms / auto_merge_ms / step_chain_ms / structure_rerank_ms / confidence_ms）填充
+#### Scenario: precise 顺序不变
+- **WHEN** QueryPlan 为 PreciseQueryPlan
+- **THEN** 使用既有 shared-postprocess-v1 顺序与 trace 契约，不创建 multi-query merge 阶段
 
-#### Scenario: 任意阶段失败的降级
-- **WHEN** 某个后处理阶段抛异常
-- **THEN** 在 stage_errors 中记录 stage 名和原因；用上一阶段的输出作为最终结果（不阻断流程）；trace 中标记 `<stage>_skipped=true`
+#### Scenario: comprehensive 先局部相关性再全局结构处理
+- **WHEN** QueryPlan 为 ComprehensiveQueryPlan
+- **THEN** clean-query baseline 与每个生成分支先产生 query-local rerank pool；multi_query_merge 去重融合 branch provenance 后，auto_merge、step-chain、structure rerank、最终截断和 confidence 各执行一次；baseline 不占生成分支 reservation 席位
+
+#### Scenario: comprehensive 分支失败
+- **WHEN** 一个分支的 retrieve 或 local rerank 失败
+- **THEN** 记录 branch-scoped error；保留其他分支及该分支失败前仍可用的候选；不得因单分支失败清空 global candidate pool；retrieve 通过 `retrieval_mode="failed"`/stage_errors 返回失败或 local rerank 通过 meta 返回 error 时，即使没有抛异常也必须进入相同的分支降级诊断与 comprehensive confidence 输入
+
+#### Scenario: precise 完整管线执行
+- **WHEN** precise 检索返回 candidate_k 个候选 chunk
+- **THEN** 依次执行既有 6 个阶段；最终输出 top_k 个 chunk；rag_trace 中每个阶段的耗时字段（rerank_ms / auto_merge_ms / step_chain_ms / structure_rerank_ms / confidence_ms）填充
+
+#### Scenario: 任意共享阶段失败的降级
+- **WHEN** precise 或 comprehensive 的某个共享后处理阶段抛异常
+- **THEN** 在 stage_errors 中记录 stage 名和原因；用上一阶段输出继续后续安全阶段；trace 中标记 `<stage>_skipped=true`；不得清空已经合并的可用证据；multi_query_merge 失败时还必须保留 branch union，并按 candidate identity 将所有重复项的已知 branch provenance 求并集后写回每个保留副本，同时记录 error、branch/merged/unique/deduplicated 候选计数，使后续去重式 branch-aware selection 与 confidence 仍能识别全部成功分支
 
 ### Requirement: auto_merge 真实接入
 auto_merge MUST 在 rerank 之后、structure_rerank 之前真实调用 `auto_merge_documents()`。trace 字段 `auto_merge_applied` 和 `auto_merge_replaced_chunks` MUST 反映真实执行结果，MUST NOT 被 hardcoded 为 false。
@@ -33,19 +43,31 @@ auto_merge MUST 在 rerank 之后、structure_rerank 之前真实调用 `auto_me
 - **THEN** auto_merge 阶段直接跳过；trace 中 `auto_merge_enabled=false`、`auto_merge_applied=false`
 
 ### Requirement: rerank 候选池解耦
-rerank 输出量 MUST 由 `RERANK_CANDIDATE_POOL_SIZE` 控制（默认 20），SHALL 与最终 top_k 解耦。最终 top_k 截断 MUST 在 structure_rerank 之后进行。
+Precise 路径继续以 `RERANK_CANDIDATE_POOL_SIZE` 控制单 query rerank 输出。Comprehensive 路径 MUST 将该值解释为跨 clean-query baseline 与全部 sub-query 共享的全局 rerank 输出候选预算，并由 effective postprocess profile 的 budget policy 分配；CrossEncoder pair budget 由当前 device tier 的 `RERANK_INPUT_K_CPU/GPU` 解析，未配置时回退到输出候选预算。最终 top_k 仍只在全局 structure rerank 后截断。
 
-#### Scenario: 标准配置
-- **WHEN** RERANK_CANDIDATE_POOL_SIZE=20，candidate_count=50，top_k=5
+#### Scenario: comprehensive 不复制候选池预算
+- **WHEN** RERANK_CANDIDATE_POOL_SIZE=20 且有 4 个 sub-query
+- **THEN** baseline + 4 个生成分支合计的 rerank 输出候选预算为 20，而不是每个分支 20；pair budget 按 device-tier input cap 独立计算；trace 记录 `sub_query_count=4`、`retrieval_branch_count=5`，并分别记录每个分支及总量的 allocated/used output budget 和 pair budget
+
+#### Scenario: budget 不足安全降级
+- **WHEN** 某分支未获得 CrossEncoder 配额
+- **THEN** 该分支使用 Milvus local rank 继续进入 multi_query_merge；后处理标记局部 rerank budget exhaustion，但不把它视为无召回
+
+#### Scenario: pair 配额小于 output 配额
+- **WHEN** 某分支获得的 CrossEncoder pair 配额小于其 output candidate 配额
+- **THEN** 已配对候选按 CrossEncoder local rank 排在前面，剩余 output 配额由未配对候选按 Milvus local rank 补齐；不得因 pair cap 较小而静默缩小该分支的 merge pool
+
+#### Scenario: precise 标准配置
+- **WHEN** precise 路径下 RERANK_CANDIDATE_POOL_SIZE=20，candidate_count=50，top_k=5
 - **THEN** rerank 输出 20 个 chunk；auto_merge / step_chain_check / structure_rerank 在 20 个候选上工作；最终输出 5 个
 
-#### Scenario: 候选不足
-- **WHEN** candidate_count=10 < RERANK_CANDIDATE_POOL_SIZE
+#### Scenario: precise 候选不足
+- **WHEN** precise 路径 candidate_count=10 < RERANK_CANDIDATE_POOL_SIZE
 - **THEN** rerank 输出全部 10 个候选；其余阶段在 10 个上工作；最终输出 min(10, top_k)
 
 #### Scenario: RERANK_TOP_N 兼容
 - **WHEN** 部署方设置 RERANK_TOP_N=15（旧配置）
-- **THEN** 等价于 RERANK_CANDIDATE_POOL_SIZE=15，rerank 输出 15 个；deprecation 警告输出到日志
+- **THEN** precise 路径等价于 RERANK_CANDIDATE_POOL_SIZE=15；comprehensive 路径将 15 解释为全局共享 budget；deprecation 警告输出到日志
 
 ### Requirement: step_chain_check 步骤链完整性检查
 当配置 `STEP_CHAIN_CHECK_ENABLED=true` 且 chunk 携带 list_group_id 等列表 metadata 时，后处理管线 MUST 检测 top-K parent chunk 的步骤链完整性，SHALL 必要时拉取相邻 parent 补齐。
@@ -87,19 +109,27 @@ rerank 输出量 MUST 由 `RERANK_CANDIDATE_POOL_SIZE` 控制（默认 20），S
 - **THEN** 阶段完全跳过；trace 中 `step_chain_check_enabled=false`
 
 ### Requirement: entity 信号融入 score fusion
-当 `RERANK_SCORE_FUSION_ENABLED=true`、query 携带 query_entities（来自 intent classifier 或 terminology preflight）且 chunk 携带 entity_types / term_match_count metadata 时，rerank score fusion 的 metadata 分量 MUST 使用 entity 信号计算。
+当 `RERANK_SCORE_FUSION_ENABLED=true`、terminology preflight 输出 query `term_matches`，且 chunk 携带 terminology 扫描产生的 `entity_types` / `term_match_count` metadata 时，rerank score fusion 的 metadata 分量 MUST 使用这些术语信号计算。QueryPlan 或 intent classifier MUST NOT 作为 query semantic entities 的生产者；实现中的 `query_entities`、`entity_types`、`entity_type_coverage` 等既有字段名 SHALL 视为 terminology 历史命名，不得解释为实例级实体匹配。
 
-#### Scenario: entity 命中加分
-- **WHEN** RERANK_SCORE_FUSION_ENABLED=true，query_entities = [{type: product_model, ...}, {type: component, ...}]，某 chunk 的 entity_types = [product_model, component, maintenance_action]
-- **THEN** _metadata_score(doc, query_entities) > 0；该 chunk 的 final_score 在 metadata 分量上获得加权；trace 中 `entity_type_coverage = 1.0`（query 中两种类型都被覆盖）
+#### Scenario: terminology 类型命中加分
+- **WHEN** `RERANK_SCORE_FUSION_ENABLED=true`，query term_matches 的类型为 `[product_model, component]`，某 chunk 的 entity_types 为 `[product_model, component, maintenance_action]`
+- **THEN** metadata score 大于 0；该 chunk 的 final_score 在 metadata 分量上获得加权；trace 中现有 `entity_type_coverage = 1.0` 表示两种 query 术语类别均被覆盖，不表示 canonical/value 实例完全匹配
+
+#### Scenario: term_match_count 表示 chunk 术语密度
+- **WHEN** chunk 的 `term_match_count=3`
+- **THEN** metadata score MAY 将其作为封顶的 chunk-wide 术语密度信号；MUST NOT 将其解释为当前 query 的三个术语都在 chunk 中精确命中，也 MUST NOT 据此生成实例级 entity coverage
 
 #### Scenario: score fusion 关闭
-- **WHEN** RERANK_SCORE_FUSION_ENABLED=false，即使 query 和 chunk 都带 entity metadata
-- **THEN** entity metadata 分量不参与最终分数；trace 中 `entity_metadata_score_applied=false`
+- **WHEN** `RERANK_SCORE_FUSION_ENABLED=false`，即使 query 和 chunk 都带 terminology metadata
+- **THEN** terminology metadata 分量不参与最终分数；trace 中 `entity_metadata_score_applied=false`
 
-#### Scenario: 无 entity 信号降级
-- **WHEN** query_entities 为空 或 chunk 的 entity_types 为空
-- **THEN** _metadata_score = 0；与 terminology 未上线时的行为等价；trace 中 `entity_metadata_score_applied=false`
+#### Scenario: 无 terminology 信号降级
+- **WHEN** query term_matches 为空，或 chunk 的 entity_types 为空
+- **THEN** terminology metadata score 为 0；与 terminology 未上线时的行为等价；trace 中 `entity_metadata_score_applied=false`
+
+#### Scenario: intent parser 不提供 metadata fusion 信号
+- **WHEN** intent classifier 产出 PreciseQueryPlan 或 ComprehensiveQueryPlan
+- **THEN** 两种 plan 均不含 entities；postprocess MUST NOT 从 intent result 合成 query_entities，terminology preflight 仍是 query 侧术语信号的唯一生产者
 
 #### Scenario: 数据缺失不报错
 - **WHEN** chunk metadata 不含 entity_types 字段（旧 schema）
@@ -115,7 +145,7 @@ rerank 输出量 MUST 由 `RERANK_CANDIDATE_POOL_SIZE` 控制（默认 20），S
 
 #### Scenario: 非法 entity_types 安全降级
 - **WHEN** Milvus 返回非法 JSON、非数组 JSON 或不支持的 entity_types 类型
-- **THEN** 视为空列表处理；MUST NOT 按字符串字符参与 entity 覆盖率计算，MUST NOT 阻断检索
+- **THEN** 视为空列表处理；MUST NOT 按字符串字符参与术语类别覆盖率计算，MUST NOT 阻断检索
 
 ### Requirement: 后处理 trace 字段完整性
 rag_trace MUST 包含每个后处理阶段的详细字段，供调试和评测使用。

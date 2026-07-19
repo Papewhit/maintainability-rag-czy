@@ -1,16 +1,15 @@
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Any, Callable, Literal, TypedDict, List, Optional
 import time
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from backend.config import (
     ARK_API_KEY as API_KEY,
     BASE_URL,
     FAST_MODEL,
-    GRADE_MODEL,
     MODEL,
 )
 from backend.rag.candidate_strategy import RerankExecutionMode
@@ -27,7 +26,6 @@ from backend.rag.utils import (
     generate_hypothetical_document,
     load_query_filename_registry,
     retrieve_candidate_pool,
-    retrieve_context_documents,
     retrieve_documents,
     step_back_expand,
 )
@@ -41,6 +39,17 @@ from backend.rag.comprehensive_postprocess import (
     run_branch_rerank,
     run_shared_postprocess,
 )
+from backend.rag.comprehensive_rewriter import (
+    ComprehensiveRewriteResult,
+    rewrite_failed_sub_query,
+    select_failed_generated_branches,
+)
+from backend.rag.fallback_scope import (
+    level2_candidate_k,
+    level2_same_root_cap,
+    relax_scope,
+)
+from backend.rag.level3_answer import generate_level3_answer
 from backend.rag.intent import IntentClassifier, IntentParseResult, build_intent_parse_result
 from backend.rag.query_plan import (
     ComprehensiveQueryPlan,
@@ -56,9 +65,9 @@ from backend.rag.trace import (
     merge_expanded_rag_trace,
 )
 from backend.rag.runtime_config import RagRuntimeConfig, load_runtime_config
+from backend.rag.fallback_router import FallbackDecision, route_fallback
 from backend.chat.tools import emit_rag_step
 
-_grader_model = None
 _router_model = None
 _fast_model = None
 _fallback_executor: ThreadPoolExecutor | None = None
@@ -95,7 +104,7 @@ def _get_fallback_model_name(config: RagRuntimeConfig | None = None) -> str:
     """Return the model name used for fallback LLM calls, for tracing."""
     if _fast_model_enabled(config):
         return FAST_MODEL
-    return GRADE_MODEL or MODEL or "unknown"
+    return MODEL or "unknown"
 
 
 def _get_fast_model(config: RagRuntimeConfig | None = None):
@@ -176,22 +185,30 @@ def _await_with_deadline(
         return None
 
 
-def _get_grader_model(config: RagRuntimeConfig | None = None):
-    global _grader_model
-    if _fast_model_enabled(config):
-        return _get_fast_model(config)
-    if not API_KEY or not GRADE_MODEL:
-        return None
-    if _grader_model is None:
-        _grader_model = init_chat_model(
-            model=GRADE_MODEL,
-            model_provider="openai",
-            api_key=API_KEY,
-            base_url=BASE_URL,
-            temperature=0,
-            stream_usage=True,
+def _await_fallback_round(
+    future,
+    deadline: float,
+    rag_trace: dict,
+    *,
+    level: Literal[1, 2],
+    stage: str,
+):
+    """Bound a complete fallback retrieval/postprocess round by its level deadline."""
+    try:
+        return future.result(timeout=_remaining_fallback_seconds(deadline))
+    except TimeoutError:
+        future.cancel()
+        rag_trace[f"level{level}_timeout"] = True
+        _append_stage_error(
+            rag_trace,
+            stage,
+            f"timed out at Level {level} deadline",
+            "fallback_router",
         )
-    return _grader_model
+        return None
+    except Exception as exc:
+        _append_stage_error(rag_trace, stage, str(exc), "fallback_router")
+        return None
 
 
 def _get_router_model(config: RagRuntimeConfig | None = None):
@@ -210,24 +227,6 @@ def _get_router_model(config: RagRuntimeConfig | None = None):
             stream_usage=True,
         )
     return _router_model
-
-
-GRADE_PROMPT = (
-    "You are a grader assessing relevance of a retrieved document to a user question. \n "
-    "Here is the retrieved document: \n\n {context} \n\n"
-    "Here is the user question: {question} \n"
-    "If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n"
-    "Return JSON only, for example {{\"binary_score\":\"yes\"}} or {{\"binary_score\":\"no\"}}. "
-    "Give a binary score 'yes' or 'no' to indicate whether the document is relevant to the question."
-)
-
-
-class GradeDocuments(BaseModel):
-    """Grade documents using a binary score for relevance check."""
-
-    binary_score: str = Field(
-        description="Relevance score: 'yes' if relevant, or 'no' if not relevant"
-    )
 
 
 class RewriteStrategy(BaseModel):
@@ -266,6 +265,10 @@ class RAGState(TypedDict):
     branch_rerank_results: Optional[List[BranchRetrievalResult]]
     merged_candidates: Optional[List[dict]]
     merge_meta: Optional[dict]
+    fallback_decisions: List[FallbackDecision]
+    attempted_levels: List[int]
+    candidate_k_override: Optional[int]
+    same_root_cap_override: Optional[int]
 
 
 def _format_docs(docs: List[dict]) -> str:
@@ -347,13 +350,6 @@ def retrieve_initial(state: RAGState) -> RAGState:
         retrieve_kwargs["strict_scope_filter"] = query_plan.scope_mode == "filter"
     retrieved = retrieve_documents(query, **retrieve_kwargs)
     results = retrieved.get("docs", [])
-    attached_docs = []
-    attached_meta = {}
-    if context_files:
-        attached = retrieve_context_documents(context_files, limit_per_file=8)
-        attached_docs = attached.get("docs", [])
-        attached_meta = attached.get("meta", {})
-        results = dedupe_docs(attached_docs + results)
     retrieve_meta = retrieved.get("meta", {})
     context = _format_docs(results)
     retrieve_timings = dict(retrieve_meta.get("timings") or {})
@@ -387,8 +383,8 @@ def retrieve_initial(state: RAGState) -> RAGState:
         context=context,
         retrieve_meta=retrieve_meta,
         context_files=context_files,
-        attached_docs=attached_docs,
-        attached_meta=attached_meta,
+        attached_docs=[],
+        attached_meta={},
     )
     intent_result = state.get("intent_result")
     intent_trace = intent_result.trace if isinstance(intent_result, IntentParseResult) else {}
@@ -400,7 +396,6 @@ def retrieve_initial(state: RAGState) -> RAGState:
     rag_trace = {**prior_trace, **initial_trace}
     rag_trace["timings"] = prior_timings
     rag_trace["stage_errors"] = prior_errors
-    rag_trace.setdefault("attached_context_chunks", list(attached_docs or []))
     return {
         "query": query,
         "docs": results,
@@ -479,6 +474,7 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
             for filename, score in plan.retrieval_scope.matched_files
         ],
     }
+    candidate_k_override = state.get("candidate_k_override")
 
     def branch_query_plan(query: str, scope: RetrievalScope) -> PreciseQueryPlan:
         return PreciseQueryPlan(
@@ -501,6 +497,7 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
                 branch.query,
                 top_k=5,
                 context_files=context_files,
+                candidate_k=candidate_k_override,
                 query_plan=branch_query_plan(branch.query, plan.retrieval_scope),
                 query_plan_active=True,
                 strict_scope_filter=plan.retrieval_scope.scope_mode == "filter",
@@ -572,6 +569,10 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
     split_search_call_count = sum(
         int(result.meta.get("split_search_call_count") or 0) for result in results
     )
+    candidate_k = max(
+        (int(result.meta.get("candidate_k") or 0) for result in results),
+        default=0,
+    )
     patch = {
         "requested_comprehensive_postprocess_profile": resolution.requested_profile,
         "effective_comprehensive_postprocess_profile": resolution.effective_profile,
@@ -592,6 +593,7 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         "embedding_call_count": dense_embedding_call_count + sparse_embedding_call_count,
         "hybrid_search_call_count": hybrid_search_call_count,
         "split_search_call_count": split_search_call_count,
+        "candidate_k": candidate_k,
         "baseline_candidate_count": len(baseline.candidates),
         "baseline_hit": bool(baseline.candidates),
         "query_plan_enabled": True,
@@ -748,6 +750,17 @@ def shared_postprocess_node(state: RAGState) -> RAGState:
     if not isinstance(plan, ComprehensiveQueryPlan) or not isinstance(resolution, ComprehensivePolicyResolution):
         raise TypeError("shared_postprocess requires comprehensive plan and policy")
     started = time.perf_counter()
+    same_root_cap_override = state.get("same_root_cap_override")
+
+    def structure_rerank_with_round_cap(docs, top_k):
+        if same_root_cap_override is None:
+            return _apply_structure_rerank(docs=docs, top_k=top_k)
+        return _apply_structure_rerank(
+            docs=docs,
+            top_k=top_k,
+            same_root_cap=same_root_cap_override,
+        )
+
     docs, patch = run_shared_postprocess(
         resolution.policy,
         plan,
@@ -755,7 +768,7 @@ def shared_postprocess_node(state: RAGState) -> RAGState:
         top_k=5,
         auto_merge_fn=_auto_merge_documents,
         step_chain_fn=_step_chain_check,
-        structure_rerank_fn=_apply_structure_rerank,
+        structure_rerank_fn=structure_rerank_with_round_cap,
         confidence_fn=_evaluate_retrieval_confidence,
         premerged=(list(state.get("merged_candidates") or []), dict(state.get("merge_meta") or {})),
     )
@@ -779,11 +792,10 @@ def shared_postprocess_node(state: RAGState) -> RAGState:
 
 
 def grade_documents_node(state: RAGState) -> RAGState:
+    """Translate confidence metadata for compatibility; routing is rule-only downstream."""
     stage_start = time.perf_counter()
     config = _runtime_config()
-    rag_trace = state.get("rag_trace", {}) or {}
-
-    # When fallback is disabled, short-circuit: always go to generate_answer
+    rag_trace = dict(state.get("rag_trace") or {})
     fallback_required_raw = rag_trace.get("fallback_required")
     if not config.fallback_enabled:
         rag_trace.update({
@@ -799,7 +811,8 @@ def grade_documents_node(state: RAGState) -> RAGState:
         _trace_timings(rag_trace)["grader_ms"] = elapsed_ms(stage_start)
         return {"route": "generate_answer", "rag_trace": rag_trace}
 
-    if rag_trace.get("fallback_required") is False:
+    fallback_required = bool(fallback_required_raw)
+    if not fallback_required:
         rag_trace.update({
             "grade_score": "skipped_fast_path",
             "grade_route": "generate_answer",
@@ -811,67 +824,669 @@ def grade_documents_node(state: RAGState) -> RAGState:
         })
         _trace_timings(rag_trace)["grader_ms"] = elapsed_ms(stage_start)
         return {"route": "generate_answer", "rag_trace": rag_trace}
-    if rag_trace.get("fallback_required") is True:
-        rag_trace.update({
-            "grade_score": "fallback_triggered",
-            "grade_route": "rewrite_question",
-            "rewrite_needed": True,
-            "fallback_required_raw": fallback_required_raw,
-            "fallback_executed": True,
-            "fallback_disabled": False,
-            "fallback_llm_model": _get_fallback_model_name(config),
-        })
-        _trace_timings(rag_trace)["grader_ms"] = elapsed_ms(stage_start)
-        return {"route": "rewrite_question", "rag_trace": rag_trace}
-
-    grader = _get_grader_model(config)
-    emit_rag_step("📊", "正在评估文档相关性...")
-    if not grader:
-        grade_update = {
-            "grade_score": "unknown",
-            "grade_route": "rewrite_question",
-            "rewrite_needed": True,
-        }
-        rag_trace = state.get("rag_trace", {}) or {}
-        rag_trace.update(grade_update)
-        _trace_timings(rag_trace)["grader_ms"] = elapsed_ms(stage_start)
-        return {"route": "rewrite_question", "rag_trace": rag_trace}
-    question = state["question"]
-    context = state.get("context", "")
-    prompt = GRADE_PROMPT.format(question=question, context=context)
-    try:
-        response = grader.with_structured_output(GradeDocuments).invoke(
-            [{"role": "user", "content": prompt}]
-        )
-        score = (response.binary_score or "").strip().lower()
-        grade_error = None
-    except Exception as exc:
-        score = "unknown"
-        grade_error = str(exc)
-    route = "generate_answer" if score == "yes" else "rewrite_question"
-    if grade_error and context:
-        route = "generate_answer"
-    if route == "generate_answer":
-        emit_rag_step("✅", "文档相关性评估通过", f"评分: {score}")
-    else:
-        emit_rag_step("⚠️", "文档相关性不足，将重写查询", f"评分: {score}")
-    grade_update = {
-        "grade_score": score,
-        "grade_route": route,
-        "rewrite_needed": route == "rewrite_question",
+    rag_trace.update({
+        "grade_score": "fallback_triggered",
+        "grade_route": "rewrite_question",
+        "rewrite_needed": True,
         "fallback_required_raw": fallback_required_raw,
-        "fallback_executed": route == "rewrite_question",
+        "fallback_executed": True,
         "fallback_disabled": False,
         "fallback_llm_model": _get_fallback_model_name(config),
-    }
-    if grade_error:
-        grade_update["grade_error"] = grade_error
-    rag_trace = state.get("rag_trace", {}) or {}
-    rag_trace.update(grade_update)
-    if grade_error:
-        _append_stage_error(rag_trace, "grade_documents", grade_error, "generate_answer" if context else "rewrite_question")
+    })
     _trace_timings(rag_trace)["grader_ms"] = elapsed_ms(stage_start)
-    return {"route": route, "rag_trace": rag_trace}
+    return {"route": "rewrite_question", "rag_trace": rag_trace}
+
+
+def _remaining_total_budget_ms(state: RAGState, config: RagRuntimeConfig) -> float:
+    started_at = float(state.get("fallback_started_at") or time.perf_counter())
+    return float(config.fallback_total_budget_ms) - ((time.perf_counter() - started_at) * 1000.0)
+
+
+def _latest_fallback_signal(state: RAGState) -> str:
+    decisions = list(state.get("fallback_decisions") or [])
+    if decisions:
+        return str(decisions[-1].primary_signal)
+    reasons = list((state.get("rag_trace") or {}).get("confidence_reasons") or [])
+    return str(reasons[0] if reasons else "insufficient_evidence")
+
+
+def fallback_router_node(state: RAGState) -> RAGState:
+    """Route the current round's confidence signals without invoking an LLM."""
+    config = _runtime_config()
+    rag_trace = dict(state.get("rag_trace") or {})
+    attempted_levels = list(state.get("attempted_levels") or [])
+    decisions = list(state.get("fallback_decisions") or [])
+    plan = state.get("query_plan")
+    if not isinstance(plan, (PreciseQueryPlan, ComprehensiveQueryPlan)):
+        raise TypeError("fallback_router requires a typed query plan")
+    confidence = {
+        "fallback_required": rag_trace.get("fallback_required"),
+        "confidence_reasons": list(rag_trace.get("confidence_reasons") or []),
+    }
+    fallback_required_raw = rag_trace.get("fallback_required")
+
+    if not config.fallback_enabled:
+        decision = FallbackDecision(
+            target_level=0,
+            primary_signal="fallback_disabled",
+            contributing_signals=confidence["confidence_reasons"],
+            reason="fallback disabled; use Level 0 final top-k",
+            budget_ms=0,
+        )
+        route = "generate_answer"
+        rag_trace.update({
+            "fallback_required_raw": fallback_required_raw,
+            "fallback_executed": False,
+            "fallback_disabled": bool(fallback_required_raw),
+            "fallback_level": 0,
+            "fallback_path": [],
+        })
+    else:
+        remaining_budget_ms = _remaining_total_budget_ms(state, config)
+        decision = route_fallback(
+            confidence,
+            plan,
+            attempted_levels,
+            remaining_budget_ms,
+            level1_budget_ms=config.fallback_level1_budget_ms,
+            level2_budget_ms=config.fallback_level2_budget_ms,
+        )
+        if decision.target_level == 1 and not config.fallback_level1_enabled:
+            rag_trace["level1_skipped_by_config"] = True
+            if config.fallback_level2_enabled:
+                skipped = route_fallback(
+                    confidence,
+                    plan,
+                    [*attempted_levels, 1],
+                    remaining_budget_ms,
+                    level1_budget_ms=config.fallback_level1_budget_ms,
+                    level2_budget_ms=config.fallback_level2_budget_ms,
+                )
+                decision = replace(
+                    skipped,
+                    primary_signal="level1_skipped_by_config",
+                    reason="Level 1 disabled; route directly to Level 2",
+                )
+            else:
+                decision = FallbackDecision(
+                    3,
+                    "fallback_levels_disabled",
+                    confidence["confidence_reasons"],
+                    "enabled fallback levels unavailable",
+                    0,
+                )
+        if decision.target_level == 2 and not config.fallback_level2_enabled:
+            rag_trace["level2_skipped_by_config"] = True
+            decision = FallbackDecision(
+                3,
+                "level2_skipped_by_config",
+                confidence["confidence_reasons"],
+                "Level 2 disabled",
+                0,
+            )
+        route = {
+            0: "generate_answer",
+            1: "level1",
+            2: "level2",
+            3: "level3",
+        }[decision.target_level]
+        landed_level = attempted_levels[-1] if decision.target_level == 0 and attempted_levels else decision.target_level
+        rag_trace.update({
+            "fallback_required_raw": fallback_required_raw,
+            "fallback_executed": bool(attempted_levels or decision.target_level in {1, 2, 3}),
+            "fallback_disabled": False,
+            "fallback_level": landed_level,
+            "fallback_path": attempted_levels,
+            "fallback_signals": confidence["confidence_reasons"],
+            "fallback_remaining_budget_ms": max(0, round(remaining_budget_ms)),
+        })
+
+    decisions.append(decision)
+    rag_trace["fallback_decisions"] = [asdict(item) for item in decisions]
+    if decision.target_level == 0 and not attempted_levels:
+        emit_rag_step(
+            "✅",
+            "检索完成",
+            "Level 0 已完成检索与置信度判断",
+            level=0,
+            signal=decision.primary_signal,
+        )
+    return {
+        "route": route,
+        "fallback_decisions": decisions,
+        "attempted_levels": attempted_levels,
+        "rag_trace": rag_trace,
+    }
+
+
+def _merge_fallback_round_trace(
+    prior_trace: dict[str, Any],
+    round_meta: dict[str, Any],
+    *,
+    round_name: str,
+) -> dict[str, Any]:
+    trace = dict(prior_trace)
+    prior_timings = dict(trace.get("timings") or {})
+    prior_errors = list(trace.get("stage_errors") or [])
+    meta = dict(round_meta)
+    round_timings = dict(meta.pop("timings", {}) or {})
+    round_errors = list(meta.pop("stage_errors", []) or [])
+    trace.update(meta)
+    trace["timings"] = {**prior_timings, **round_timings}
+    trace["stage_errors"] = prior_errors + _prefixed_stage_errors(round_name, round_errors)
+    trace["confidence_round"] = round_name
+    return trace
+
+
+def _precise_round_queries(state: RAGState, strategy: str) -> list[str]:
+    if strategy == "hyde":
+        return [state.get("hypothetical_doc") or state.get("expanded_query") or state["semantic_query"]]
+    if strategy == "complex":
+        return list(dict.fromkeys([
+            state.get("expanded_query") or state["semantic_query"],
+            state.get("hypothetical_doc") or state.get("expanded_query") or state["semantic_query"],
+        ]))
+    return [state.get("expanded_query") or state["semantic_query"]]
+
+
+def _retrieve_precise_fallback_round(
+    state: RAGState,
+    *,
+    level: Literal[1, 2],
+    strategy: str,
+    candidate_k: int | None = None,
+    same_root_cap: int | None = None,
+) -> dict[str, Any] | None:
+    plan = state.get("query_plan")
+    if not isinstance(plan, PreciseQueryPlan):
+        raise TypeError("precise fallback retrieval requires PreciseQueryPlan")
+    started = time.perf_counter()
+    context_files = list(state.get("context_files") or [])
+    queries = _precise_round_queries(state, strategy)
+    deadline = float(state.get("fallback_deadline") or (time.perf_counter() + 3600))
+    query_plan_active = _expanded_query_plan_active(state)
+    jobs = {}
+    for index, query in enumerate(queries):
+        retry_plan = replace(plan, semantic_query=query)
+        jobs[index] = _submit_with_context(
+            lambda q=query, qp=retry_plan: retrieve_candidate_pool(
+                q,
+                top_k=5,
+                context_files=context_files,
+                candidate_k=candidate_k,
+                query_plan=qp,
+                query_plan_active=query_plan_active,
+                strict_scope_filter=qp.scope_mode == "filter",
+            )
+        )
+
+    candidates: list[dict] = []
+    timings: dict[str, float] = {}
+    stage_errors: list[dict] = []
+    candidate_counts: list[int] = []
+    for index, future in jobs.items():
+        payload = _await_fallback_round(
+            future,
+            deadline,
+            state.get("rag_trace") or {},
+            level=level,
+            stage=f"level{level}_candidate_{index}",
+        )
+        if payload is None:
+            return None
+        meta = dict(payload.get("meta") or {})
+        timings.update({
+            f"fallback_query_{index}_{key}": value
+            for key, value in dict(meta.get("timings") or {}).items()
+        })
+        stage_errors.extend(_prefixed_stage_errors(f"fallback_query_{index}", meta.get("stage_errors") or []))
+        candidate_counts.append(int(meta.get("candidate_k") or 0))
+        candidates.extend(list(payload.get("candidates") or []))
+
+    deduped = dedupe_docs(candidates)
+    primary_query = queries[0]
+    retry_plan = replace(plan, semantic_query=primary_query)
+    finish_future = _submit_with_context(
+        lambda: finish_retrieval_pipeline(
+            query=primary_query,
+            search_query="\n".join(queries),
+            retrieved=deduped,
+            top_k=5,
+            candidate_k=max(candidate_counts, default=candidate_k or len(deduped)),
+            timings=timings,
+            stage_errors=stage_errors,
+            total_start=started,
+            extra_trace={
+                "fallback_round_query_count": len(queries),
+                "fallback_round_queries": queries,
+            },
+            query_plan=retry_plan,
+            context_files=context_files,
+            retrieval_mode="multilevel_fallback",
+            query_term_matches=_state_term_matches(state),
+            same_root_cap_override=same_root_cap,
+        )
+    )
+    return _await_fallback_round(
+        finish_future,
+        deadline,
+        state.get("rag_trace") or {},
+        level=level,
+        stage=f"level{level}_postprocess",
+    )
+
+
+def _run_comprehensive_round(state: RAGState) -> RAGState:
+    working: dict[str, Any] = dict(state)
+    for node in (
+        decompose_and_fanout,
+        branch_rerank_node,
+        merge_sub_query_results,
+        shared_postprocess_node,
+    ):
+        working.update(node(working))
+    return working
+
+
+def _run_comprehensive_round_with_deadline(
+    state: RAGState,
+    *,
+    previous_completed_state: RAGState,
+    level: Literal[1, 2],
+    deadline: float,
+    config: RagRuntimeConfig,
+) -> RAGState:
+    rag_trace = state.get("rag_trace") or {}
+    future = _submit_with_context(lambda: _run_comprehensive_round(state), config)
+    result = _await_fallback_round(
+        future,
+        deadline,
+        rag_trace,
+        level=level,
+        stage=f"level{level}_comprehensive_round",
+    )
+    if isinstance(result, dict):
+        return result
+    return {**previous_completed_state, "rag_trace": rag_trace}
+
+
+def _apply_comprehensive_rewrites(
+    plan: ComprehensiveQueryPlan,
+    results: list[ComprehensiveRewriteResult],
+) -> ComprehensiveQueryPlan:
+    replacements = {
+        int(item.replaced_branch_id.removeprefix("sub_query_")): item.new_sub_queries
+        for item in results
+    }
+    sub_queries = tuple(
+        replacement
+        for index, original in enumerate(plan.sub_queries)
+        for replacement in replacements.get(index, (original,))
+    )
+    return replace(
+        plan,
+        sub_queries=sub_queries,
+        coverage_domains=tuple(dict.fromkeys(item.domain for item in sub_queries)),
+    )
+
+
+def _level1_comprehensive(state: RAGState, config: RagRuntimeConfig) -> RAGState:
+    plan = state.get("query_plan")
+    if not isinstance(plan, ComprehensiveQueryPlan):
+        raise TypeError("comprehensive Level 1 requires ComprehensiveQueryPlan")
+    branch_results = list(state.get("branch_retrieval_results") or [])
+    selected = select_failed_generated_branches(
+        branch_results,
+        window=config.fallback_comprehensive_rewrite_window,
+    )
+    successful = [
+        result.branch.branch_id
+        for result in branch_results
+        if result.branch.branch_kind == "sub_query"
+        and result.error is None
+        and result.candidates
+    ]
+    succeeded_sub_queries = tuple(
+        plan.sub_queries[int(branch_id.removeprefix("sub_query_"))]
+        for branch_id in successful
+    )
+    model = _get_router_model(config) if selected else None
+    rewrite_results: list[ComprehensiveRewriteResult] = []
+    rag_trace = dict(state.get("rag_trace") or {})
+    deadline = float(state.get("fallback_deadline") or (time.perf_counter() + 3600))
+    for result in selected:
+        diagnostic = next(
+            (
+                item
+                for item in list(rag_trace.get("branch_retrieval_diagnostics") or [])
+                if item.get("branch_id") == result.branch.branch_id
+            ),
+            {},
+        )
+        if model is None:
+            _append_stage_error(
+                rag_trace,
+                "comprehensive_rewriter",
+                "fallback rewrite model unavailable",
+                "fallback_router",
+            )
+            break
+        future = _submit_with_context(
+            lambda failed=result: rewrite_failed_sub_query(
+                plan,
+                failed_branch=failed.branch,
+                failure_signal={
+                    "candidate_count": len(failed.candidates),
+                    "top_score": diagnostic.get("top_score"),
+                    "anchors_matched": diagnostic.get("anchors_matched") or [],
+                    "error": failed.error,
+                },
+                succeeded_sub_queries=succeeded_sub_queries,
+                model=model,
+            ),
+            config,
+        )
+        rewrite_result = _await_with_deadline(
+            future,
+            deadline,
+            rag_trace,
+            "comprehensive_rewriter",
+            "fallback_router",
+            timeout_seconds=config.fallback_level1_budget_ms / 1000.0,
+        )
+        if isinstance(rewrite_result, ComprehensiveRewriteResult):
+            rewrite_results.append(rewrite_result)
+    if rewrite_results:
+        plan = _apply_comprehensive_rewrites(plan, rewrite_results)
+        working = _run_comprehensive_round_with_deadline(
+            {**state, "query_plan": plan, "rag_trace": rag_trace},
+            previous_completed_state=state,
+            level=1,
+            deadline=deadline,
+            config=config,
+        )
+        rag_trace = dict(working.get("rag_trace") or {})
+    else:
+        working = dict(state)
+    rag_trace.update({
+        "level1_strategy": "comprehensive",
+        "level1_rewritten_query": [
+            sub_query.query
+            for item in rewrite_results
+            for sub_query in item.new_sub_queries
+        ],
+        "level1_comprehensive_strategy": [item.strategy for item in rewrite_results],
+        "level1_new_sub_queries": [
+            asdict(sub_query)
+            for item in rewrite_results
+            for sub_query in item.new_sub_queries
+        ],
+        "level1_sub_query_replaced": [item.replaced_branch_id for item in rewrite_results],
+        "level1_baseline_rewrite_attempted": False,
+    })
+    return {**working, "rag_trace": rag_trace}
+
+
+def level1_query_rewrite_node(state: RAGState) -> RAGState:
+    started = time.perf_counter()
+    signal = _latest_fallback_signal(state)
+    emit_rag_step(
+        "✏️",
+        "Level 1：重写查询",
+        "进入查询重写与重检",
+        level=1,
+        signal=signal,
+    )
+    config = _runtime_config()
+    total_remaining_ms = _remaining_total_budget_ms(state, config)
+    prior_attempted_levels = list(state.get("attempted_levels") or [])
+    attempted_levels = [*prior_attempted_levels, 1]
+    rag_trace = dict(state.get("rag_trace") or {})
+    if total_remaining_ms < config.fallback_level1_budget_ms:
+        rag_trace.update({"level1_timeout": True, "level1_ms": elapsed_ms(started)})
+        emit_rag_step(
+            "⏱️",
+            "Level 1：预算不足",
+            "跳过本层并返回 fallback router",
+            level=1,
+            signal="budget_exhausted",
+        )
+        return {
+            "query_plan": state.get("query_plan"),
+            "attempted_levels": prior_attempted_levels,
+            "rag_trace": rag_trace,
+        }
+
+    level_deadline = min(
+        float(state.get("fallback_started_at") or started) + (config.fallback_total_budget_ms / 1000.0),
+        started + (config.fallback_level1_budget_ms / 1000.0),
+    )
+    working = {**state, "rag_trace": rag_trace, "fallback_deadline": level_deadline}
+    if isinstance(state.get("query_plan"), ComprehensiveQueryPlan):
+        result = _level1_comprehensive(working, config)
+    else:
+        rewrite_patch = rewrite_question_node(working)
+        working.update(rewrite_patch)
+        strategy = str(working.get("expansion_type") or "step_back")
+        retrieval = None if strategy == "timeout" else _retrieve_precise_fallback_round(
+            working,
+            level=1,
+            strategy=strategy,
+        )
+        rag_trace = dict(working.get("rag_trace") or {})
+        if retrieval is not None:
+            docs = list(retrieval.get("docs") or [])
+            rag_trace = _merge_fallback_round_trace(
+                rag_trace,
+                dict(retrieval.get("meta") or {}),
+                round_name="level1",
+            )
+            working.update({"docs": docs, "context": _format_docs(docs)})
+        rag_trace.update({
+            "level1_strategy": strategy,
+            "level1_rewritten_query": working.get("expanded_query") or working.get("semantic_query"),
+        })
+        result = {**working, "rag_trace": rag_trace}
+    final_trace = dict(result.get("rag_trace") or {})
+    if final_trace.get("fallback_timed_out"):
+        final_trace["level1_timeout"] = True
+        final_trace.pop("fallback_returned_initial", None)
+    final_trace["level1_ms"] = elapsed_ms(started)
+    completed_strategy = str(
+        final_trace.get("level1_strategy")
+        or ("comprehensive" if isinstance(state.get("query_plan"), ComprehensiveQueryPlan) else "step_back")
+    )
+    emit_rag_step(
+        "✅",
+        "Level 1：重检完成",
+        f"策略: {completed_strategy}",
+        level=1,
+        signal=signal,
+        strategy=completed_strategy,
+    )
+    return {**result, "attempted_levels": attempted_levels, "rag_trace": final_trace}
+
+
+def level2_scope_relax_node(state: RAGState) -> RAGState:
+    started = time.perf_counter()
+    signal = _latest_fallback_signal(state)
+    emit_rag_step(
+        "🔎",
+        "Level 2：放宽候选约束",
+        "进入规则化 scope relax 与重检",
+        level=2,
+        signal=signal,
+    )
+    config = _runtime_config()
+    plan = state.get("query_plan")
+    if not isinstance(plan, (PreciseQueryPlan, ComprehensiveQueryPlan)):
+        raise TypeError("Level 2 requires a typed query plan")
+    if _remaining_total_budget_ms(state, config) < config.fallback_level2_budget_ms:
+        rag_trace = dict(state.get("rag_trace") or {})
+        rag_trace.update({"level2_timeout": True, "level2_ms": elapsed_ms(started)})
+        emit_rag_step(
+            "⏱️",
+            "Level 2：预算不足",
+            "跳过本层并返回 fallback router",
+            level=2,
+            signal="budget_exhausted",
+        )
+        return {
+            "query_plan": plan,
+            "attempted_levels": list(state.get("attempted_levels") or []),
+            "rag_trace": rag_trace,
+        }
+    total_deadline = float(state.get("fallback_started_at") or started) + (
+        config.fallback_total_budget_ms / 1000.0
+    )
+    level_deadline = min(
+        total_deadline,
+        started + (config.fallback_level2_budget_ms / 1000.0),
+    )
+    old_scope_mode = plan.scope_mode if isinstance(plan, PreciseQueryPlan) else plan.retrieval_scope.scope_mode
+    relaxed_plan = relax_scope(plan)
+    new_scope_mode = (
+        relaxed_plan.scope_mode
+        if isinstance(relaxed_plan, PreciseQueryPlan)
+        else relaxed_plan.retrieval_scope.scope_mode
+    )
+    current_candidate_k = int((state.get("rag_trace") or {}).get("candidate_k") or 0)
+    next_candidate_k = level2_candidate_k(
+        current_candidate_k,
+        config.fallback_expanded_candidate_k,
+    )
+    next_same_root_cap = level2_same_root_cap(config.same_root_cap)
+    relaxations = [
+        (
+            "scope_mode: boost -> none"
+            if old_scope_mode == "boost"
+            else f"scope_mode: {old_scope_mode} preserved"
+        ),
+        f"candidate_k: {current_candidate_k} -> {next_candidate_k}",
+        f"same_root_cap: {config.same_root_cap} -> {next_same_root_cap}",
+    ]
+    working: dict[str, Any] = {
+        **state,
+        "query_plan": relaxed_plan,
+        "candidate_k_override": next_candidate_k,
+        "same_root_cap_override": next_same_root_cap,
+        "fallback_deadline": level_deadline,
+    }
+    if isinstance(relaxed_plan, ComprehensiveQueryPlan):
+        working = _run_comprehensive_round_with_deadline(
+            working,
+            previous_completed_state=state,
+            level=2,
+            deadline=level_deadline,
+            config=config,
+        )
+    else:
+        working["semantic_query"] = relaxed_plan.semantic_query
+        retrieval = _retrieve_precise_fallback_round(
+            working,
+            level=2,
+            strategy=str(state.get("expansion_type") or "level2"),
+            candidate_k=next_candidate_k,
+            same_root_cap=next_same_root_cap,
+        )
+        if retrieval is not None:
+            docs = list(retrieval.get("docs") or [])
+            working.update({"docs": docs, "context": _format_docs(docs)})
+            working["rag_trace"] = _merge_fallback_round_trace(
+                dict(working.get("rag_trace") or {}),
+                dict(retrieval.get("meta") or {}),
+                round_name="level2",
+            )
+        else:
+            incomplete_round_trace = dict(working.get("rag_trace") or {})
+            working = {**state, "rag_trace": incomplete_round_trace}
+            new_scope_mode = old_scope_mode
+    rag_trace = dict(working.get("rag_trace") or {})
+    rag_trace.update({
+        "level2_relaxations": relaxations,
+        "level2_previous_scope_mode": old_scope_mode,
+        "level2_new_scope_mode": new_scope_mode,
+        "level2_ms": elapsed_ms(started),
+    })
+    emit_rag_step(
+        "✅",
+        "Level 2：重检完成",
+        f"scope_mode: {old_scope_mode} → {new_scope_mode}",
+        level=2,
+        signal=signal,
+        strategy="scope_relax",
+    )
+    return {
+        **working,
+        "attempted_levels": [*list(state.get("attempted_levels") or []), 2],
+        "rag_trace": rag_trace,
+    }
+
+
+def level3_insufficient_evidence_node(state: RAGState) -> RAGState:
+    started = time.perf_counter()
+    signal = _latest_fallback_signal(state)
+    emit_rag_step(
+        "⚠️",
+        "Level 3：证据不足",
+        "进入模板化证据不足回答",
+        level=3,
+        signal=signal,
+    )
+    attempted_levels = [*list(state.get("attempted_levels") or []), 3]
+    rag_trace = dict(state.get("rag_trace") or {})
+    last_decision = (state.get("fallback_decisions") or [None])[-1]
+    plan = state.get("query_plan")
+    if not isinstance(plan, (PreciseQueryPlan, ComprehensiveQueryPlan)):
+        raise TypeError("Level 3 requires a typed query plan")
+    final_documents = list(state.get("docs") or [])
+    answer = generate_level3_answer(
+        plan,
+        attempted_levels,
+        final_documents=final_documents,
+    )
+    uncovered_sub_queries = []
+    baseline_evidence_used = False
+    if isinstance(plan, ComprehensiveQueryPlan):
+        represented_branch_ids = {
+            branch_id
+            for document in final_documents
+            for branch_id in document.get("matched_branch_ids") or []
+        }
+        uncovered_sub_queries = [
+            sub_query.query
+            for index, sub_query in enumerate(plan.sub_queries)
+            if f"sub_query_{index}" not in represented_branch_ids
+        ]
+        baseline_evidence_used = bool(
+            "baseline" in represented_branch_ids
+            and len(uncovered_sub_queries) == len(plan.sub_queries)
+        )
+    rag_trace.update({
+        "fallback_level": 3,
+        "fallback_path": attempted_levels,
+        "level3_reason": getattr(last_decision, "reason", "insufficient evidence"),
+        "level3_attempted_levels": attempted_levels,
+        "level3_uncovered_sub_queries": uncovered_sub_queries,
+        "level3_baseline_evidence_used": baseline_evidence_used,
+        "level3_answer": answer,
+        "level3_ms": elapsed_ms(started),
+    })
+    emit_rag_step(
+        "✅",
+        "Level 3：处理完成",
+        "已准备证据不足结果",
+        level=3,
+        signal=signal,
+        strategy="template",
+    )
+    return {
+        "route": "generate_answer",
+        "context": answer,
+        "docs": [],
+        "attempted_levels": attempted_levels,
+        "rag_trace": rag_trace,
+    }
 
 
 def rewrite_question_node(state: RAGState) -> RAGState:
@@ -881,6 +1496,25 @@ def rewrite_question_node(state: RAGState) -> RAGState:
     fallback_started_at = float(state.get("fallback_started_at") or rewrite_start)
     fallback_deadline = float(state.get("fallback_deadline") or _fallback_deadline(fallback_started_at, config))
     question = state["question"]
+    plan = state.get("query_plan")
+    rewrite_query = (
+        plan.semantic_query
+        if isinstance(plan, PreciseQueryPlan)
+        else state.get("semantic_query") or question
+    )
+    generation_context = (
+        "\n".join(
+            [
+                f"原始 query: {plan.raw_query}",
+                f"anchors: {list(plan.anchors)}",
+                f"doc_hints: {list(plan.doc_hints)}",
+                f"scope_mode: {plan.scope_mode}",
+                f"matched_files: {[name for name, _ in plan.matched_files]}",
+            ]
+        )
+        if isinstance(plan, PreciseQueryPlan)
+        else f"原始 query: {question}"
+    )
     rag_trace = state.get("rag_trace", {}) or {}
     rag_trace["fallback_timeout_seconds"] = timeout_seconds
     emit_rag_step("✏️", "正在重写查询...")
@@ -895,7 +1529,11 @@ def rewrite_question_node(state: RAGState) -> RAGState:
             "- hyde：模糊、概念性、需要解释或定义的问题。\n"
             "- complex：多步骤、需要分解或综合多种信息的复杂问题。\n"
             "Return JSON only, for example {\"strategy\":\"step_back\"}.\n"
-            f"用户问题：{question}"
+            f"原始用户问题：{question}\n"
+            f"Level 0 清洗后的检索问题：{rewrite_query}\n"
+            f"结构锚点：{list(plan.anchors) if isinstance(plan, PreciseQueryPlan) else []}\n"
+            f"文档提示：{list(plan.doc_hints) if isinstance(plan, PreciseQueryPlan) else []}\n"
+            f"范围状态：{plan.scope_mode if isinstance(plan, PreciseQueryPlan) else 'none'}"
         )
         router_start = time.perf_counter()
 
@@ -922,7 +1560,7 @@ def rewrite_question_node(state: RAGState) -> RAGState:
         else:
             strategy = decision.strategy
 
-    expanded_query = question
+    expanded_query = rewrite_query
     step_back_question = ""
     step_back_answer = ""
     hypothetical_doc = ""
@@ -933,12 +1571,30 @@ def rewrite_question_node(state: RAGState) -> RAGState:
     if strategy in ("step_back", "complex"):
         emit_rag_step("🧠", f"使用策略: {strategy}", "生成退步问题")
         stepback_start = time.perf_counter()
-        futures["step_back"] = (stepback_start, _submit_with_context(lambda: step_back_expand(question), config))
+        futures["step_back"] = (
+            stepback_start,
+            _submit_with_context(
+                lambda: step_back_expand(
+                    rewrite_query,
+                    rewrite_context=generation_context,
+                ),
+                config,
+            ),
+        )
 
     if strategy in ("hyde", "complex"):
         emit_rag_step("📝", "HyDE 假设性文档生成中...")
         hyde_start = time.perf_counter()
-        futures["hyde"] = (hyde_start, _submit_with_context(lambda: generate_hypothetical_document(question), config))
+        futures["hyde"] = (
+            hyde_start,
+            _submit_with_context(
+                lambda: generate_hypothetical_document(
+                    rewrite_query,
+                    rewrite_context=generation_context,
+                ),
+                config,
+            ),
+        )
 
     if "step_back" in futures:
         start, future = futures["step_back"]
@@ -954,7 +1610,7 @@ def rewrite_question_node(state: RAGState) -> RAGState:
         if isinstance(step_back, dict):
             step_back_question = step_back.get("step_back_question", "")
             step_back_answer = step_back.get("step_back_answer", "")
-            expanded_query = step_back.get("expanded_query", question)
+            expanded_query = step_back.get("expanded_query", rewrite_query)
 
     if "hyde" in futures:
         start, future = futures["hyde"]
@@ -1443,8 +2099,10 @@ def build_rag_graph():
     graph.add_node("merge_sub_query_results", merge_sub_query_results)
     graph.add_node("shared_postprocess", shared_postprocess_node)
     graph.add_node("grade_documents", grade_documents_node)
-    graph.add_node("rewrite_question", rewrite_question_node)
-    graph.add_node("retrieve_expanded", retrieve_expanded)
+    graph.add_node("fallback_router", fallback_router_node)
+    graph.add_node("level1_query_rewrite", level1_query_rewrite_node)
+    graph.add_node("level2_scope_relax", level2_scope_relax_node)
+    graph.add_node("level3_insufficient_evidence", level3_insufficient_evidence_node)
 
     graph.set_entry_point("intent_parse")
     graph.add_conditional_edges(
@@ -1459,17 +2117,21 @@ def build_rag_graph():
     graph.add_edge("decompose_and_fanout", "branch_rerank")
     graph.add_edge("branch_rerank", "merge_sub_query_results")
     graph.add_edge("merge_sub_query_results", "shared_postprocess")
-    graph.add_edge("shared_postprocess", END)
+    graph.add_edge("shared_postprocess", "grade_documents")
+    graph.add_edge("grade_documents", "fallback_router")
     graph.add_conditional_edges(
-        "grade_documents",
+        "fallback_router",
         lambda state: state.get("route"),
         {
             "generate_answer": END,
-            "rewrite_question": "rewrite_question",
+            "level1": "level1_query_rewrite",
+            "level2": "level2_scope_relax",
+            "level3": "level3_insufficient_evidence",
         },
     )
-    graph.add_edge("rewrite_question", "retrieve_expanded")
-    graph.add_edge("retrieve_expanded", END)
+    graph.add_edge("level1_query_rewrite", "fallback_router")
+    graph.add_edge("level2_scope_relax", "fallback_router")
+    graph.add_edge("level3_insufficient_evidence", END)
     return graph.compile()
 
 
@@ -1490,11 +2152,17 @@ def run_rag_graph(question: str, context_files: list[str] | None = None) -> dict
         "step_back_question": None,
         "step_back_answer": None,
         "hypothetical_doc": None,
-        "fallback_started_at": None,
+        "fallback_started_at": graph_start,
         "fallback_deadline": None,
         "rag_trace": None,
+        "fallback_decisions": [],
+        "attempted_levels": [],
+        "candidate_k_override": None,
+        "same_root_cap_override": None,
     })
     rag_trace = result.get("rag_trace") or {}
-    _trace_timings(rag_trace)["total_rag_graph_ms"] = elapsed_ms(graph_start)
+    total_ms = elapsed_ms(graph_start)
+    _trace_timings(rag_trace)["total_rag_graph_ms"] = total_ms
+    rag_trace["fallback_total_ms"] = total_ms
     result["rag_trace"] = rag_trace
     return result

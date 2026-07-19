@@ -700,6 +700,33 @@ select:focus-visible {
     color: var(--paper-muted);
 }
 
+.thinking-process-details {
+    width: min(760px, 100%);
+    margin-top: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: rgba(42, 32, 26, 0.035);
+    color: var(--paper-muted);
+}
+
+.thinking-process-details summary {
+    padding: 9px 12px;
+    cursor: pointer;
+    color: var(--paper-soft);
+}
+
+.thinking-process-details .thinking-timeline {
+    margin: 0 12px 12px 16px;
+}
+
+.trace-level {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--paper-faint);
+    color: var(--cinnabar-strong);
+    font-size: 0.72rem;
+}
+
 .reasoning-details {
     width: min(760px, 100%);
     margin-top: 10px;

@@ -128,6 +128,22 @@
 
                         <div v-else class="message-content bot-content" v-html="msg.html"></div>
 
+                        <details
+                            v-if="!msg.isUser && !msg.isThinking && msg.ragSteps && msg.ragSteps.length"
+                            class="thinking-process-details"
+                        >
+                            <summary>思考过程 · {{ msg.ragSteps.length }} 步</summary>
+                            <div class="thinking-timeline">
+                                <div v-for="(step, sIdx) in msg.ragSteps" :key="sIdx" class="thinking-line">
+                                    <span class="trace-dot">{{ step.icon || '' }}</span>
+                                    <span class="trace-label">{{ step.label }}</span>
+                                    <span v-if="step.level !== undefined" class="trace-level">L{{ step.level }}</span>
+                                    <small v-if="step.signal">{{ step.signal }}</small>
+                                    <small v-if="step.detail">{{ step.detail }}</small>
+                                </div>
+                            </div>
+                        </details>
+
                         <div v-if="!msg.isUser && !msg.isThinking" class="bot-message-actions" aria-label="消息操作">
                             <button
                                 type="button"

@@ -1,8 +1,8 @@
 ---
 document_type: finding_ledger
 change: rag-intent-routing
-last_verified_commit: bd92b03fe6037317d72dbf3e3f5953f131ad99a9
-last_verified_date: 2026-07-15
+last_verified_commit: f65e6ae
+last_verified_date: 2026-07-17
 ---
 
 # Change Findings
@@ -169,11 +169,11 @@ last_verified_date: 2026-07-15
 - Observation: The historical `VAL-RAG-POSTPROCESS-001` current-result fingerprint covers `backend/rag/utils.py`, `backend/rag/context.py`, and `backend/rag/rerank.py`; intent routing changes two of those files, so the recorded fingerprint no longer matches the working implementation.
 - Inference: Keeping the old report presented as current would let maintainers reuse deterministic quality and latency claims against a materially different postprocess contract.
 - Decision: Retain the paired result only as historical evidence bound to revision `8babe339cda636936c6c0af3c95a99e7c77c2f19`; require the new intent-routing validation gate for current claims.
-- Residual risk: Current real-model and real-retrieval quality/cost evidence is still unavailable, so intent routing remains default disabled until task 5B.3 is completed.
+- Residual risk: Current real-model and real-retrieval quality/cost evidence is still unavailable, so intent routing remains default disabled until `rag-intent-routing-activation` completes its evaluation and rollout gates.
 - Evidence: `tests/eval/rag/test_postprocess_revision_evidence.py` detects that the recorded `faf0e2b0…37e6c1` fingerprint differs from the current postprocess source fingerprint; `docs/rag-postprocess-evidence/evaluation.md` records the original revision and source set.
 - Disposition: change
-- Disposition target: openspec/changes/rag-intent-routing/
-- Resolution evidence: `docs/rag-postprocess-evidence/evaluation.md` is marked `historical`, and the governed intent-routing report is `partial` with activation blocked.
+- Disposition target: openspec/changes/rag-intent-routing-activation/
+- Resolution evidence: `docs/rag-postprocess-evidence/evaluation.md` is marked `historical`; the governed intent-routing report remains `partial`, and `rag-intent-routing-activation` now owns the blocked real-model paired evaluation and default-enable decision.
 
 ## RAG-INTENT-F013
 
@@ -183,11 +183,11 @@ last_verified_date: 2026-07-15
 - Observation: The first evaluation implementation invoked query-plan construction without the synthetic filename registry, passed no citation target to an evaluator that only measured qrel coverage, omitted the answer evaluator and key model/retrieval settings from fingerprints, and renamed three historical terminology trace keys despite the delta spec retaining them as wire-compatible names.
 - Inference: A real run would systematically mark labeled filter/boost plans invalid, could never produce citation validity, could reuse a fingerprint across materially different judges or retrieval stores, and would break existing trace consumers.
 - Decision: Add and fingerprint a curated evaluation filename registry; bind it to real intent reports; measure generated citation consistency against retrieved filename/page evidence; expand source/config fingerprints; and retain `entity_metadata_score_applied`, `entity_type_coverage`, and `entity_match_density` as terminology-only historical response keys while keeping query-side inputs terminology-typed.
-- Residual risk: The synthetic filename registry proves parsing and plan validity, not that the release Milvus corpus contains those documents. Citation validity measures precision against retrieved evidence rather than recall against human qrels. Both limitations remain explicit in the partial validation report and 5B.3 stays incomplete.
+- Residual risk: The synthetic filename registry proves parsing and plan validity, not that the release Milvus corpus contains those documents. Citation validity measures precision against retrieved evidence rather than recall against human qrels. Both limitations remain explicit in the partial validation report and are owned by `rag-intent-routing-activation`.
 - Evidence: Third-stage independent review on 2026-07-14 and `@codex` review on 2026-07-15; `tests/eval/rag/test_intent_classifier_eval.py`, `tests/eval/rag/test_comprehensive_intent_routing_eval.py`, `tests/unit/backend/evaluation/test_answer_eval.py`, and success/failure trace contract tests cover the corrections.
 - Disposition: change
-- Disposition target: openspec/changes/rag-intent-routing/
-- Resolution evidence: The real runners now carry registry/model/retrieval fingerprints and a constructible citation-validity metric; all retrieval/rerank failure paths retain the historical terminology metadata response keys; targeted evaluation and contract tests pass.
+- Disposition target: openspec/changes/rag-intent-routing-activation/
+- Resolution evidence: The real runners now carry registry/model/retrieval fingerprints and a constructible citation-validity metric; all retrieval/rerank failure paths retain the historical terminology metadata response keys; targeted evaluation and contract tests pass, while the successor change owns execution against release infrastructure.
 
 ## RAG-INTENT-F014
 
@@ -509,7 +509,7 @@ last_verified_date: 2026-07-15
 - Evidence: `tests/e2e/rag/test_intent_routing_graph_e2e.py`; `tests/e2e/rag/test_postprocess_evidence_e2e.py`.
 - Disposition: validation
 - Disposition target: docs/validation/rag-intent-routing-evaluation.md
-- Resolution evidence: The validation report separates deterministic compiled-graph evidence from the pending real-model and release-Milvus paired evaluation.
+- Resolution evidence: The validation report separates deterministic compiled-graph evidence from the pending real-model and release-Milvus paired evaluation; that pending activation evidence is owned by `openspec/changes/rag-intent-routing-activation/`.
 
 ## RAG-INTENT-F037
 
@@ -524,3 +524,17 @@ last_verified_date: 2026-07-15
 - Disposition: closed_in_place
 - Disposition target: null
 - Resolution evidence: `backend/rag/pipeline.py::branch_rerank_node()` now preserves candidate output and trace diagnostics without changing the postprocess profile or graph topology.
+
+## RAG-INTENT-F038
+
+- Kind: behavior_defect
+- Primary scope: test.rag.configuration_isolation
+- Evidence status: confirmed
+- Observation: Two scope-contract unit tests assumed the documented/code-default `DOC_SCOPE_MATCH_BOOST=0.60`, but imported the operator value from the local `.env` (`0.35`). Under that legitimate override, an unknown document could exceed the lower match boundary and a `0.5` candidate could enter the strict filter, causing both tests to fail even though their assertions were specifically about the 0.60 boundary.
+- Inference: Repository verification depended on the maintainer's local dotenv configuration and could report false regressions or false passes for scope ownership and strict-filter behavior.
+- Decision: Pin `DOC_SCOPE_MATCH_BOOST=0.60` with `monkeypatch` inside the two boundary-specific tests. Preserve runtime configurability and do not rewrite the user's `.env`; tests for other configured thresholds must set those thresholds explicitly.
+- Residual risk: none
+- Evidence: Focused red run on 2026-07-17 failed both tests with the local 0.35 override; commit `f65e6ae` isolates the constants; the same focused command then passed 2 tests.
+- Disposition: closed_in_place
+- Disposition target: null
+- Resolution evidence: `tests/unit/backend/rag/pipeline/test_intent_classifier.py::test_unresolved_closed_scope_stays_comprehensive_and_preserves_query_text` and `tests/unit/backend/rag/retrieval/test_query_preparation.py::test_strict_scope_filter_runs_one_filtered_hybrid_without_global_reserve` now declare their threshold precondition.

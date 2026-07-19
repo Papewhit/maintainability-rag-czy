@@ -21,6 +21,7 @@ def test_intent_classifier_config_defaults_are_safe():
     assert config.intent_classifier_timeout_seconds == 2.0
     assert config.comprehensive_postprocess_profile == "quality_first_v1"
     assert config.comprehensive_max_sub_queries == 4
+    assert config.fallback_comprehensive_rewrite_window == 2
 
 
 def test_intent_classifier_config_reads_explicit_environment():
@@ -31,6 +32,7 @@ def test_intent_classifier_config_reads_explicit_environment():
             "RAG_INTENT_CLASSIFIER_TIMEOUT_SECONDS": "1.25",
             "RAG_COMPREHENSIVE_POSTPROCESS_PROFILE": "quality_first_v2",
             "RAG_COMPREHENSIVE_MAX_SUB_QUERIES": "6",
+            "RAG_FALLBACK_COMPREHENSIVE_REWRITE_WINDOW": "3",
         }
     )
 
@@ -39,6 +41,7 @@ def test_intent_classifier_config_reads_explicit_environment():
     assert config.intent_classifier_timeout_seconds == 1.25
     assert config.comprehensive_postprocess_profile == "quality_first_v2"
     assert config.comprehensive_max_sub_queries == 6
+    assert config.fallback_comprehensive_rewrite_window == 3
 
 
 @pytest.mark.parametrize(

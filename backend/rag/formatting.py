@@ -3,6 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from backend.chat.fallback_delivery import (
+    FALLBACK_DELIVERY_HEADER,
+    build_fallback_delivery_instruction,
+)
+
 
 CHUNK_SEPARATOR = "\n\n---\n\n"
 NO_RELEVANT_DOCUMENTS_MESSAGE = "No relevant documents found in the knowledge base."
@@ -54,12 +59,28 @@ def format_rag_tool_response(
     context: str | None = None,
     retrieval_meta: Mapping[str, Any] | None = None,
 ) -> str:
+    retrieval_meta = retrieval_meta or {}
+    delivery_instruction = build_fallback_delivery_instruction(
+        fallback_level=int(retrieval_meta.get("fallback_level") or 0),
+        scope_mode_before=retrieval_meta.get("level2_previous_scope_mode"),
+        scope_mode_after=retrieval_meta.get("level2_new_scope_mode"),
+        level3_answer=retrieval_meta.get("level3_answer"),
+    )
+    delivery_prefix = (
+        f"{FALLBACK_DELIVERY_HEADER}\n{delivery_instruction}"
+        if delivery_instruction
+        else ""
+    )
     if not docs:
-        return NO_RELEVANT_DOCUMENTS_MESSAGE
+        return delivery_prefix or NO_RELEVANT_DOCUMENTS_MESSAGE
     body = context or format_rag_documents(docs)
     if not body:
-        return NO_RELEVANT_DOCUMENTS_MESSAGE
+        return delivery_prefix or NO_RELEVANT_DOCUMENTS_MESSAGE
     meta = _format_tool_retrieval_meta(retrieval_meta)
     if meta:
-        return f"{TOOL_META_HEADER}\n{meta}\n\n{RETRIEVED_CHUNKS_HEADER}\n{body}"
-    return f"{RETRIEVED_CHUNKS_HEADER}\n{body}"
+        response = f"{TOOL_META_HEADER}\n{meta}\n\n{RETRIEVED_CHUNKS_HEADER}\n{body}"
+    else:
+        response = f"{RETRIEVED_CHUNKS_HEADER}\n{body}"
+    if delivery_prefix:
+        return f"{delivery_prefix}\n\n{response}"
+    return response

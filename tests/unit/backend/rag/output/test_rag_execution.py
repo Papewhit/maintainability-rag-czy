@@ -1,10 +1,12 @@
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 
 from backend.chat.rag_execution import (
     RagExecutionPolicy,
     RagTurnRequest,
     answer_with_rag_context,
+    apply_rag_trace_to_turn_context,
     mark_rag_execution_policy,
     plan_rag_turn,
     prepare_rag_answer_messages,
@@ -101,6 +103,127 @@ class RagAnswerExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prepared[-1], messages[-1])
         self.assertIn("Retrieved document context", prepared[-2].content)
         self.assertIn("evidence", prepared[-2].content)
+
+    def test_level_two_boost_to_none_appends_outside_preferred_files_disclosure(self):
+        turn = replace(
+            plan_rag_turn(
+                RagTurnRequest(user_text="summarize", context_files=["manual.pdf"]),
+                unified_execution_enabled=False,
+            ),
+            fallback_level=2,
+            scope_mode_before="boost",
+            scope_mode_after="none",
+        )
+        messages = [SimpleNamespace(type="human", content="summarize")]
+
+        prepared = prepare_rag_answer_messages(messages, turn, retrieved_context="evidence")
+
+        self.assertIn("Retrieved document context", prepared[-3].content)
+        self.assertIn("未在优先文件中找到精确匹配", prepared[-2].content)
+        self.assertIn("范围外相关参考", prepared[-2].content)
+
+    def test_level_two_filter_preserved_never_claims_scope_expansion(self):
+        turn = replace(
+            plan_rag_turn(
+                RagTurnRequest(user_text="summarize", context_files=["manual.pdf"]),
+                unified_execution_enabled=False,
+            ),
+            fallback_level=2,
+            scope_mode_before="filter",
+            scope_mode_after="filter",
+        )
+
+        prepared = prepare_rag_answer_messages(
+            [SimpleNamespace(type="human", content="summarize")],
+            turn,
+            retrieved_context="evidence",
+        )
+
+        self.assertIn("以下是该范围内的相关参考", prepared[-2].content)
+        self.assertIn("本次没有搜索范围外知识库", prepared[-2].content)
+        self.assertNotIn("包含范围外相关参考", prepared[-2].content)
+
+    def test_level_two_none_preserved_describes_candidate_relaxation_only(self):
+        turn = replace(
+            plan_rag_turn(RagTurnRequest(user_text="search"), unified_execution_enabled=True),
+            fallback_level=2,
+            scope_mode_before="none",
+            scope_mode_after="none",
+        )
+
+        prepared = prepare_rag_answer_messages(
+            [SimpleNamespace(type="human", content="search")],
+            turn,
+            retrieved_context="evidence",
+        )
+
+        self.assertIn("扩大候选池及放宽结构限制", prepared[-2].content)
+        self.assertIn("本轮没有改变文档检索范围", prepared[-2].content)
+        self.assertNotIn("优先文件", prepared[-2].content)
+
+    def test_level_three_uses_template_constraint_instead_of_regular_context(self):
+        partial_template = (
+            "已完成 1/2 个分析维度。"
+            "仅基于上述证据，为已覆盖维度分别生成部分解答；"
+            "不得回答未覆盖维度，也不得生成跨维度比较、汇总或总体建议。"
+        )
+        turn = replace(
+            plan_rag_turn(
+                RagTurnRequest(user_text="summarize", context_files=["manual.pdf"]),
+                unified_execution_enabled=False,
+            ),
+            fallback_level=3,
+            level3_answer=partial_template,
+        )
+
+        prepared = prepare_rag_answer_messages(
+            [SimpleNamespace(type="human", content="summarize")],
+            turn,
+            retrieved_context="must not be injected",
+        )
+
+        self.assertEqual(len(prepared), 2)
+        self.assertIn(partial_template, prepared[-2].content)
+        self.assertIn("不得回答未覆盖维度", prepared[-2].content)
+        self.assertNotIn("must not be injected", prepared[-2].content)
+
+    def test_other_levels_do_not_add_fallback_delivery_instruction(self):
+        turn = replace(
+            plan_rag_turn(
+                RagTurnRequest(user_text="summarize", context_files=["manual.pdf"]),
+                unified_execution_enabled=False,
+            ),
+            fallback_level=1,
+        )
+
+        prepared = prepare_rag_answer_messages(
+            [SimpleNamespace(type="human", content="summarize")],
+            turn,
+            retrieved_context="evidence",
+        )
+
+        self.assertEqual(len(prepared), 2)
+        self.assertNotIn("非精确匹配", prepared[-2].content)
+
+    def test_rag_trace_maps_delivery_fields_into_turn_context(self):
+        turn = plan_rag_turn(
+            RagTurnRequest(user_text="summarize", context_files=["manual.pdf"]),
+            unified_execution_enabled=False,
+        )
+
+        updated = apply_rag_trace_to_turn_context(
+            turn,
+            {
+                "fallback_level": 2,
+                "level2_previous_scope_mode": "boost",
+                "level2_new_scope_mode": "none",
+                "level3_answer": None,
+            },
+        )
+
+        self.assertEqual(updated.fallback_level, 2)
+        self.assertEqual(updated.scope_mode_before, "boost")
+        self.assertEqual(updated.scope_mode_after, "none")
 
     def test_answer_with_rag_context_hides_model_agent_branch_from_callers(self):
         turn = plan_rag_turn(

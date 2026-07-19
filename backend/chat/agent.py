@@ -6,7 +6,9 @@ from backend.config import ARK_API_KEY as API_KEY, MODEL, BASE_URL
 from backend.infra.db.conversation_storage import ConversationStorage
 from backend.chat.rag_execution import (
     RagExecutionPolicy,
+    RagTurnContext,
     RagTurnRequest,
+    apply_rag_trace_to_turn_context,
     answer_with_rag_context,
     extract_answer_content,
     mark_rag_execution_policy,
@@ -250,9 +252,12 @@ def _retrieve_attached_context(user_text: str, context_files: list[str]) -> dict
     return run_rag_graph(user_text, context_files=context_files)
 
 
-def _attached_context_payload(rag_result: dict | None) -> tuple[str, dict | None]:
+def _attached_context_payload(
+    rag_result: dict | None,
+    turn_context: RagTurnContext,
+) -> tuple[str, dict | None, RagTurnContext]:
     if not isinstance(rag_result, dict):
-        return "", None
+        return "", None, turn_context
     docs = rag_result.get("docs", [])
     context = rag_result.get("context", "")
     rag_trace = mark_context_delivery(
@@ -261,7 +266,7 @@ def _attached_context_payload(rag_result: dict | None) -> tuple[str, dict | None
         context=context,
         docs=docs,
     )
-    return context, rag_trace
+    return context, rag_trace, apply_rag_trace_to_turn_context(turn_context, rag_trace)
 
 def summarize_old_messages(model, messages: list) -> str:
     """将旧消息总结为摘要"""
@@ -313,7 +318,10 @@ def chat_with_agent(
     retrieved_context = ""
     if turn_context.policy == RagExecutionPolicy.FORCED_PRELOAD:
         rag_result = _retrieve_attached_context(user_text, context_files)
-        retrieved_context, attached_rag_trace = _attached_context_payload(rag_result)
+        retrieved_context, attached_rag_trace, turn_context = _attached_context_payload(
+            rag_result,
+            turn_context,
+        )
     try:
         answer_result = answer_with_rag_context(
             messages=messages,
@@ -407,7 +415,10 @@ async def chat_with_agent_stream(
     retrieved_context = ""
     if turn_context.policy == RagExecutionPolicy.FORCED_PRELOAD:
         rag_result = await asyncio.to_thread(_retrieve_attached_context, user_text, context_files)
-        retrieved_context, attached_rag_trace = _attached_context_payload(rag_result)
+        retrieved_context, attached_rag_trace, turn_context = _attached_context_payload(
+            rag_result,
+            turn_context,
+        )
 
     full_response = ""
 
