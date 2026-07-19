@@ -511,6 +511,7 @@ def test_comprehensive_baseline_failure_does_not_call_rewriter():
 
     with (
         patch("backend.rag.pipeline.load_runtime_config", return_value=_enabled_config()),
+        patch("backend.rag.pipeline._get_router_model", side_effect=AssertionError("model")),
         patch("backend.rag.pipeline.rewrite_failed_sub_query", side_effect=AssertionError("baseline")),
         patch("backend.rag.pipeline._run_comprehensive_round", side_effect=AssertionError("rerun")),
     ):

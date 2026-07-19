@@ -1150,7 +1150,7 @@ def _level1_comprehensive(state: RAGState, config: RagRuntimeConfig) -> RAGState
         plan.sub_queries[int(branch_id.removeprefix("sub_query_"))]
         for branch_id in successful
     )
-    model = _get_router_model(config)
+    model = _get_router_model(config) if selected else None
     rewrite_results: list[ComprehensiveRewriteResult] = []
     rag_trace = dict(state.get("rag_trace") or {})
     deadline = float(state.get("fallback_deadline") or (time.perf_counter() + 3600))

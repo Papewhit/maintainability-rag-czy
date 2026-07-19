@@ -1,8 +1,8 @@
 ---
 document_type: finding_ledger
 change: rag-multilevel-fallback
-last_verified_commit: 70decc4f9fdc01f25e981b595b5b584bdb89693a
-last_verified_date: 2026-07-17
+last_verified_commit: 230c3f3889eebea6210466e7be3fdbe9b0ea1d2f
+last_verified_date: 2026-07-19
 ---
 
 # Change Findings
@@ -412,3 +412,17 @@ last_verified_date: 2026-07-17
 - Disposition: known_issue
 - Disposition target: docs/known-issues/anchor-capability-configuration.md
 - Resolution evidence: KI-RAG-0006 now separates implemented fallback wiring from the still-open anchor contract and activation gates.
+
+## RAG-MF-F030
+
+- Kind: behavior_defect
+- Primary scope: rag.fallback.level1.comprehensive
+- Evidence status: confirmed
+- Observation: When only the clean-query baseline branch fails and no generated sub-query is eligible for rewrite, `_level1_comprehensive()` still initializes the rewrite model before observing the empty selected-branch set. Model initialization can fail before the node returns the required no-rewrite result.
+- Inference: This is blocking under the current P2 rule: it violates the explicit baseline-no-rewrite scenario, is reachable with comprehensive fallback enabled, has a failing regression in the supported unit configuration, and the minimal fix does not expand the contract.
+- Decision: Initialize the rewrite model only when `select_failed_generated_branches()` returns at least one eligible generated branch; keep baseline-only failure diagnostics and the existing empty rewrite trace unchanged.
+- Residual risk: None; generated-branch rewrite continues to use the same model path, while an empty rewrite target set no longer creates an unrelated model dependency.
+- Evidence: Failing `test_comprehensive_baseline_failure_does_not_call_rewriter` on reviewed commit `230c3f3`, where eager model construction raised before the baseline-only result; strengthened regression asserts that model lookup, rewrite, and rerun are all skipped.
+- Disposition: change
+- Disposition target: openspec/changes/rag-multilevel-fallback/
+- Resolution evidence: `_level1_comprehensive()` now gates model initialization on a non-empty generated-branch selection; the focused test and 134-test fallback/OpenSpec scenario suite pass.
