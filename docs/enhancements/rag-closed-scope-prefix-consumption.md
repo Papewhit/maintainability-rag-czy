@@ -1,6 +1,6 @@
 ---
 document_type: enhancement
-enhancement_id: ENH-RAG-0007
+enhancement_id: ENH-RAG-0008
 status: candidate
 scope: rag.query-preparation.scope
 motivation: Decide whether and how deterministic closed-scope control wording should be removed from precise retrieval text after it establishes a hard filter.

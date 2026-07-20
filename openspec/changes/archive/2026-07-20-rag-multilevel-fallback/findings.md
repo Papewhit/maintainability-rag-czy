@@ -439,7 +439,7 @@ last_verified_date: 2026-07-19
 - Evidence: Codex review on commit `230c3f3`; direct `parse_query_plan()` reproductions for `只基于《A》说明步骤`, `仅在《A》中说明步骤`, and the multi-document form; current deterministic query-preparation and hard-filter requirements.
 - Disposition: enhancement
 - Disposition target: docs/enhancements/rag-closed-scope-prefix-consumption.md
-- Resolution evidence: ENH-RAG-0007 records the ownership ambiguity, affected forms, non-goals and required future specification decisions without changing the current contract.
+- Resolution evidence: ENH-RAG-0008 records the ownership ambiguity, affected forms, non-goals and required future specification decisions without changing the current contract.
 
 ## RAG-MF-F032
 
