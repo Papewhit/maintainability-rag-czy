@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 112" role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">Ragtenance</title>
+  <desc id="logo-desc">由六个等尺寸模块和中央连接组成的 Maintenance M 标志</desc>
+
+  <defs>
+    <path id="maintenance-module" d="M0 0 L34 17 V37 L0 20 Z" />
+    <path id="maintenance-module-top" d="M0 5 Q0 0 5 2.5 L34 17 V37 L0 20 Z" />
+    <path id="maintenance-module-bottom" d="M0 0 L34 17 V32 Q34 37 29 34.5 L5 22.5 Q0 20 0 15 Z" />
+  </defs>
+
+  <g fill="#123B66">
+    <use href="#maintenance-module-top" transform="translate(5 8)" />
+    <use href="#maintenance-module" transform="translate(5 34)" />
+    <use href="#maintenance-module-bottom" transform="translate(5 60)" />
+  </g>
+
+  <g fill="#55A7F3">
+    <use href="#maintenance-module-top" transform="translate(123 8) scale(-1 1)" />
+    <use href="#maintenance-module" transform="translate(123 34) scale(-1 1)" />
+    <use href="#maintenance-module-bottom" transform="translate(123 60) scale(-1 1)" />
+  </g>
+
+  <path
+    d="M44 27.5 L59 35 Q64 37.5 69 35 L84 27.5 V47.5 L69 55 Q64 57.5 59 55 L44 47.5 Z"
+    fill="#2474C8"
+  />
+</svg>

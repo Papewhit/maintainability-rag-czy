@@ -5,37 +5,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ragtenance — Design Preview</title>
-    <link rel="icon" href="logo-horse.svg" type="image/svg+xml">
+    <link rel="icon" href="logo-ragtenance.svg" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --ink-bg: #F4ECD8;
-            --ink-bg-soft: #ECE0C4;
-            --ink-surface: rgba(255, 249, 235, 0.86);
-            --ink-surface-solid: #FBF5E3;
-            --ink-panel: rgba(42, 32, 26, 0.055);
-            --paper: #1F1B16;
-            --paper-soft: #3F362C;
-            --paper-muted: #6E6054;
-            --paper-faint: rgba(42, 32, 26, 0.08);
-            --cinnabar: #C2402C;
-            --cinnabar-strong: #D95E3B;
-            --cinnabar-soft: rgba(194, 64, 44, 0.16);
-            --seal-red: #8E2A1D;
-            --gamboge: #D9A441;
-            --gamboge-soft: rgba(217, 164, 65, 0.18);
-            --indigo-ink: #425A78;
-            --indigo-soft: rgba(66, 90, 120, 0.14);
-            --bamboo: #6B8F73;
-            --bamboo-soft: rgba(107, 143, 115, 0.14);
-            --line: rgba(42, 32, 26, 0.1);
-            --line-strong: rgba(42, 32, 26, 0.18);
-            --line-brush: rgba(42, 32, 26, 0.28);
-            --shadow-soft: 0 18px 50px rgba(60, 42, 32, 0.14);
-            --shadow-tight: 0 8px 24px rgba(42, 32, 26, 0.08);
-            --shadow-brush: 0 2px 0 rgba(42, 32, 26, 0.05);
+            --blue-canvas: #F3F8FD;
+            --blue-surface: #F8FBFE;
+            --blue-ink: #102A43;
+            --blue-navy: #123B66;
+            --blue-main: #2474C8;
+            --blue-signal: #55A7F3;
+            --danger: #B84242;
+            --danger-strong: #963535;
+            --danger-soft: rgba(184, 66, 66, 0.12);
+            --ink-bg: var(--blue-canvas);
+            --ink-bg-soft: #E4EFF9;
+            --ink-surface: rgba(255, 255, 255, 0.86);
+            --ink-surface-solid: var(--blue-surface);
+            --ink-panel: rgba(18, 59, 102, 0.055);
+            --paper: var(--blue-ink);
+            --paper-soft: #27445F;
+            --paper-muted: #5B7288;
+            --paper-faint: rgba(18, 59, 102, 0.08);
+            --cinnabar: var(--blue-main);
+            --cinnabar-strong: #3D8DDD;
+            --cinnabar-soft: rgba(36, 116, 200, 0.16);
+            --seal-red: var(--blue-navy);
+            --gamboge: var(--blue-signal);
+            --gamboge-soft: rgba(85, 167, 243, 0.18);
+            --indigo-ink: #326FA8;
+            --indigo-soft: rgba(50, 111, 168, 0.14);
+            --bamboo: #3B8C78;
+            --bamboo-soft: rgba(59, 140, 120, 0.14);
+            --line: rgba(18, 59, 102, 0.1);
+            --line-strong: rgba(18, 59, 102, 0.18);
+            --line-brush: rgba(18, 59, 102, 0.28);
+            --shadow-soft: 0 18px 50px rgba(18, 59, 102, 0.14);
+            --shadow-tight: 0 8px 24px rgba(18, 59, 102, 0.08);
+            --shadow-brush: 0 2px 0 rgba(18, 59, 102, 0.05);
             --radius-sm: 8px;
             --radius-md: 12px;
             --radius-lg: 16px;
@@ -55,13 +64,12 @@
         body {
             font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
             background:
-                radial-gradient(ellipse 42rem 30rem at 12% 6%, rgba(194, 64, 44, 0.09), transparent 60%),
-                radial-gradient(ellipse 38rem 26rem at 90% 10%, rgba(217, 164, 65, 0.12), transparent 58%),
-                radial-gradient(ellipse 48rem 34rem at 18% 102%, rgba(66, 90, 120, 0.09), transparent 60%),
-                radial-gradient(ellipse 34rem 22rem at 92% 96%, rgba(107, 143, 115, 0.08), transparent 60%),
-                repeating-linear-gradient(95deg, rgba(42, 32, 26, 0.022) 0 1px, transparent 1px 9px),
-                repeating-linear-gradient(6deg, rgba(42, 32, 26, 0.012) 0 1px, transparent 1px 14px),
-                linear-gradient(135deg, #FBF5E3 0%, #F4ECD8 42%, #EDDFBC 100%);
+                radial-gradient(ellipse 44rem 32rem at 10% 4%, rgba(85, 167, 243, 0.16), transparent 62%),
+                radial-gradient(ellipse 40rem 28rem at 92% 8%, rgba(36, 116, 200, 0.1), transparent 60%),
+                radial-gradient(ellipse 52rem 30rem at 50% 108%, rgba(18, 59, 102, 0.07), transparent 64%),
+                repeating-linear-gradient(95deg, rgba(18, 59, 102, 0.022) 0 1px, transparent 1px 10px),
+                repeating-linear-gradient(6deg, rgba(18, 59, 102, 0.014) 0 1px, transparent 1px 15px),
+                linear-gradient(145deg, #F8FBFE 0%, #F3F8FD 52%, #E7F1FA 100%);
             color: var(--paper);
             min-height: 100vh;
         }
@@ -72,13 +80,12 @@
             inset: 0;
             pointer-events: none;
             background:
-                linear-gradient(rgba(194, 64, 44, 0.025), rgba(42, 32, 26, 0)),
-                radial-gradient(circle at 50% 100%, rgba(42, 32, 26, 0.06), transparent 36rem);
-            mix-blend-mode: multiply;
+                linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 28%),
+                radial-gradient(circle at 50% 100%, rgba(18, 59, 102, 0.045), transparent 38rem);
         }
 
         button:focus-visible, input:focus-visible, textarea:focus-visible {
-            outline: 2px solid rgba(198, 80, 58, 0.72);
+            outline: 2px solid rgba(36, 116, 200, 0.72);
             outline-offset: 2px;
         }
 
@@ -100,7 +107,7 @@
             padding: 6px;
             border: 1px solid var(--line-strong);
             border-radius: 14px;
-            background: rgba(255, 249, 235, 0.82);
+            background: rgba(255, 255, 255, 0.82);
             box-shadow: var(--shadow-tight);
             backdrop-filter: blur(18px);
             -webkit-backdrop-filter: blur(18px);
@@ -140,7 +147,7 @@
             gap: 4px;
             padding: 3px;
             border-radius: 11px;
-            background: rgba(42, 32, 26, 0.035);
+            background: rgba(18, 59, 102, 0.035);
         }
 
         .nav-pill {
@@ -171,7 +178,7 @@
             width: 28px; height: 28px;
             display: inline-flex; align-items: center; justify-content: center;
             border-radius: 8px;
-            background: rgba(42, 32, 26, 0.1);
+            background: rgba(18, 59, 102, 0.1);
             color: var(--paper);
             font-weight: 700; font-size: 12px;
         }
@@ -238,7 +245,7 @@
             border: 1px solid var(--line);
             border-radius: var(--radius-md);
             color: var(--paper-soft);
-            background: rgba(42, 32, 26, 0.04);
+            background: rgba(18, 59, 102, 0.04);
             padding: 12px;
             line-height: 1.35;
             font-family: inherit;
@@ -279,11 +286,11 @@
             white-space: pre-wrap;
             transition: background var(--transition);
         }
-        .user-content:hover { background: rgba(194, 64, 44, 0.22); }
+        .user-content:hover { background: rgba(36, 116, 200, 0.22); }
 
         .bot-content {
             padding: 2px 0 2px 16px;
-            border-left: 2px solid rgba(194, 64, 44, 0.38);
+            border-left: 2px solid rgba(36, 116, 200, 0.38);
             color: var(--paper-soft);
         }
         .bot-content p { margin: 0 0 0.9em; }
@@ -296,7 +303,7 @@
         .bot-content :not(pre) > code {
             border: 1px solid var(--line);
             border-radius: 6px;
-            background: rgba(42, 32, 26, 0.07);
+            background: rgba(18, 59, 102, 0.07);
             padding: 0.1em 0.35em;
         }
         .bot-content pre {
@@ -306,7 +313,7 @@
             padding: 14px;
             border: 1px solid var(--line);
             border-radius: var(--radius-md);
-            background: rgba(42, 32, 26, 0.08);
+            background: rgba(18, 59, 102, 0.08);
         }
 
         .bot-label {
@@ -352,7 +359,7 @@
             padding: 8px;
             border: 1px solid var(--line-strong);
             border-radius: 16px;
-            background: rgba(255, 249, 235, 0.86);
+            background: rgba(255, 255, 255, 0.86);
             box-shadow: var(--shadow-soft);
             backdrop-filter: blur(18px);
             -webkit-backdrop-filter: blur(18px);
@@ -370,7 +377,7 @@
             font-size: 1rem;
             line-height: 1.5;
         }
-        .composer textarea::placeholder { color: rgba(42, 32, 26, 0.38); }
+        .composer textarea::placeholder { color: rgba(18, 59, 102, 0.38); }
 
         .composer-icon, .send-button {
             width: 42px; height: 42px;
@@ -385,7 +392,7 @@
         .composer-icon:hover { background: var(--paper-faint); color: var(--cinnabar); }
 
         .send-button {
-            color: #fff8ef;
+            color: #F7FBFF;
             background: var(--cinnabar);
         }
         .send-button:hover { transform: translateY(-1px); background: var(--cinnabar-strong); }
@@ -400,7 +407,7 @@
         /* ── Scrollbar ── */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(42, 32, 26, 0.16); }
+        ::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(18, 59, 102, 0.16); }
 
         /* ── Animations ── */
         @keyframes nav-in {
@@ -433,7 +440,7 @@
 
     <header class="top-nav">
         <button class="brand-lockup">
-            <img class="brand-mark brand-mark-sm" src="logo-horse.svg" alt="" width="34" height="34" aria-hidden="true">
+            <img class="brand-mark brand-mark-sm" src="logo-ragtenance.svg" alt="" width="34" height="34" aria-hidden="true">
             <span class="brand-name">Ragtenance</span>
         </button>
 

@@ -2,6 +2,7 @@ import importlib
 import sys
 
 import pytest
+from fastapi.testclient import TestClient
 
 from backend.app import app as entrypoint_app
 from backend.application.main import create_app
@@ -12,6 +13,15 @@ def test_application_main_builds_the_same_app_shape():
 
     assert app.title == entrypoint_app.title
     assert any(route.path == "/chat" for route in app.routes)
+
+
+def test_frontend_svg_uses_standard_media_type_and_is_not_cached():
+    response = TestClient(create_app()).get("/logo-ragtenance.svg")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/svg+xml"
+    assert response.headers["cache-control"] == "no-cache, no-store, must-revalidate"
+    assert "maintenance-module" in response.text
 
 
 def test_production_rejects_default_jwt_secret(monkeypatch):

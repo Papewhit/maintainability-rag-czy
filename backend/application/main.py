@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,6 +11,11 @@ from backend.infra.db.database import SessionLocal, init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+
+# Windows can inherit the non-standard ``image/svg`` mapping from the registry.
+# StaticFiles delegates to ``mimetypes``, so register the web-standard media type
+# explicitly before any SVG response is created.
+mimetypes.add_type("image/svg+xml", ".svg")
 
 
 @asynccontextmanager
@@ -105,7 +111,7 @@ def create_app() -> FastAPI:
     async def _no_cache(request, call_next):
         response = await call_next(request)
         path = request.url.path or ""
-        if path == "/" or path.endswith((".html", ".js", ".css")):
+        if path == "/" or path.endswith((".html", ".js", ".css", ".svg")):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"

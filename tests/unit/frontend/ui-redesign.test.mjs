@@ -14,6 +14,7 @@ const readRepo = (file) => readFileSync(join(repoRoot, file), "utf8");
 const index = readFrontend("index.html");
 const css = readFrontend("style.css");
 const script = readFrontend("script.js");
+const logo = readFrontend("logo-ragtenance.svg");
 const backendSchemas = readRepo("backend/contracts/schemas.py");
 const backendApi = readRepo("backend/api.py");
 const backendRouterAuth = readRepo("backend/routers/auth.py");
@@ -144,21 +145,52 @@ const checks = [
     },
   },
   {
-    name: "uses logo-horse.svg branding and removes old emoji branding",
+    name: "uses the equal-module Maintenance M branding",
     run() {
-      assert.match(index, /logo-horse\.svg/);
+      assert.match(index, /logo-ragtenance\.svg/);
+      assert.doesNotMatch(index, /logo-horse\.svg/);
       assert.match(css, /\.brand-mark/);
+      assert.match(logo, /<path id="maintenance-module"/);
+      assert.doesNotMatch(logo, /<rect id="maintenance-module"/);
+      assert.equal((logo.match(/<use href="#maintenance-module"/g) || []).length, 2);
+      assert.equal((logo.match(/<use href="#maintenance-module-top"/g) || []).length, 2);
+      assert.equal((logo.match(/<use href="#maintenance-module-bottom"/g) || []).length, 2);
+      assert.match(logo, /Q0 0 5 2\.5/);
+      assert.match(logo, /Q34 37 29 34\.5/);
+      assert.match(logo, /Q0 20 0 15/);
+      assert.match(logo, /M0 0 L34 17 V37 L0 20 Z/);
+      assert.match(logo, /L59 35 Q64 37\.5 69 35/);
+      assert.match(logo, /L69 55 Q64 57\.5 59 55/);
+      assert.doesNotMatch(logo, /horse|pony|马形/i);
       assert.doesNotMatch(index, /🐱/u);
     },
   },
   {
-    name: "uses ink and paper design tokens instead of the old pink palette",
+    name: "uses the evidence-blue palette without the old warm paper colors",
     run() {
-      assert.match(css, /--ink-bg:/);
-      assert.match(css, /--paper:/);
-      assert.match(css, /--cinnabar:/);
+      assert.match(css, /--blue-canvas:\s*#F3F8FD/i);
+      assert.match(css, /--blue-surface:\s*#F8FBFE/i);
+      assert.match(css, /--blue-ink:\s*#102A43/i);
+      assert.match(css, /--blue-navy:\s*#123B66/i);
+      assert.match(css, /--blue-main:\s*#2474C8/i);
+      assert.match(css, /--blue-signal:\s*#55A7F3/i);
+      assert.match(css, /--danger:\s*#B84242/i);
+      assert.match(css, /repeating-linear-gradient\(95deg, rgba\(18, 59, 102, 0\.022\)/i);
+      assert.match(css, /repeating-linear-gradient\(6deg, rgba\(18, 59, 102, 0\.014\)/i);
+      assert.doesNotMatch(css, /#(?:F4ECD8|ECE0C4|FBF5E3|EDDFBC|C2402C|D95E3B|D9A441)/i);
       assert.doesNotMatch(css, /--primary-color:\s*#ff9e99/i);
       assert.doesNotMatch(css, /--bg-color:\s*#fff5f5/i);
+    },
+  },
+  {
+    name: "submits authentication through native form semantics without Enter key detection",
+    run() {
+      const authFormMarkup = index.match(/<form class="auth-form"[\s\S]*?<\/form>/)?.[0] || "";
+      assert.match(authFormMarkup, /@submit\.prevent="handleAuthSubmit"/);
+      assert.match(authFormMarkup, /<button type="submit" class="primary-action"/);
+      assert.match(authFormMarkup, /<button type="button" class="text-action"/);
+      assert.doesNotMatch(authFormMarkup, /@keydown(?:\.enter)?|keyCode|event\.key/);
+      assert.doesNotMatch(authFormMarkup, /@click="handleAuthSubmit"/);
     },
   },
   {
