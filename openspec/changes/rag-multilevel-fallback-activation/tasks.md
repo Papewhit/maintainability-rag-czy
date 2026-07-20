@@ -1,48 +1,40 @@
-## 1. 发布候选与真实运行身份
+## 1. 项目级运行身份与数据规则
 
-- [ ] 1.1 指定 intent/FAST、rewrite、answer、judge、embedding、reranker、Milvus、BM25 与运行设备的发布候选配置
-- [ ] 1.2 固定 source commit、versioned source fingerprint、runtime config 与 config fingerprint
-- [ ] 1.3 为真实 corpus/Milvus collection/index profile/BM25 state 建立稳定 fingerprint，并记录生成方式与负责人
-- [ ] 1.4 验证评测环境不使用测试替身、合成 trace 或非代表性开发语料；任一缺失项记录为 blocking activation evidence
+- [ ] 1.1 指定 intent/FAST、rewrite、answer/judge、embedding、reranker、Milvus/BM25 与本地设备配置
+- [ ] 1.2 固定 source/config/model fingerprints 与结果目录
+- [ ] 1.3 明确真实文档公开许可、授权或受控执行方式，禁止未授权内容进入仓库/交接包
 
-## 2. 分层 Query Set 与标注
+## 2. 分层 Synthetic Set 与 Real Subset
 
-- [ ] 2.1 从可用真实语料建立 precise/comprehensive query set，覆盖 Level 0/1/2/3、filter/boost/none、术语变体和 timeout/degradation
-- [ ] 2.2 为每个 case 标注预期 plan、scope、路由 level、覆盖维度、允许回答范围、来源要求及质量判断准则
-- [ ] 2.3 评审并冻结 query-set 分层比例、最低规模、人工复核流程与 holdout 划分；记录 dataset/annotation/holdout fingerprint
-- [ ] 2.4 核实 query set 与 `rag-intent-routing-activation` 的发布语料和模型身份可比，无法对齐的 case 单独分层且不得混入联合结论
+- [ ] 2.1 构建 synthetic corpus/query/qrels，覆盖 Level 0/1/2/3、filter/boost/none、术语与困难负例
+- [ ] 2.2 标注 expected/allowed levels、coverage、allowed answers、forbidden claims、citations 和 fault scenarios
+- [ ] 2.3 覆盖 comprehensive partial/Y-Y/baseline-only/no-evidence 与 timeout/degradation
+- [ ] 2.4 选定少量真实文档和人工 query/qrels，记录授权、格式、领域与 fingerprint
+- [ ] 2.5 划分 development/gate 数据并冻结最终版本
 
-## 3. 真实端到端 Fallback 评测
+## 3. 真实模型端到端评测
 
-- [ ] 3.1 用真实发布候选依赖运行完整 Level 0→1→2→3 链路，保存逐 case plan、final evidence、trace、回答、来源和运行身份
-- [ ] 3.2 对比 fallback-disabled、仅 Level 1、仅 Level 2 与完整链路，保证除显式开关外 source/config/query/corpus/model 身份一致
-- [ ] 3.3 对 comprehensive partial/Y-Y/baseline-only/no-evidence 输出执行来源约束和未覆盖禁止回答检查
-- [ ] 3.4 对 filter 不越界、boost→none 披露、none 域内放宽、timeout rollback 与默认关闭兼容路径执行强制正确性检查
+- [ ] 3.1 在 synthetic 与 real-subset 上运行 fallback-disabled、Level 1、Level 2 和完整链路
+- [ ] 3.2 保存逐 case plan、trace、final evidence、回答、来源和运行身份
+- [ ] 3.3 强制检查 filter、未覆盖禁止回答、scope 披露、来源和关闭兼容路径
+- [ ] 3.4 分别计算 Level 分布、改善、来源/覆盖、P50/P95、调用、timeout、budget 与降级指标
 
-## 4. 指标、阈值与 Activation 证据
+## 4. 项目级门槛与 Budget
 
-- [ ] 4.1 计算 Level 0 命中率、Level 0/1/2/3 路由比例、Level 1/2 质量增益和 Level 3 触发合理性
-- [ ] 4.2 计算来源/覆盖合规率、P50/P95、embedding/search/rerank/LLM 调用量、CPU/GPU/内存峰值、timeout、budget exhaustion、错误与降级率
-- [ ] 4.3 基于首轮可信基线提出数值阈值并记录依据；由评审冻结后使用独立 holdout/发布候选执行最终 gate
-- [ ] 4.4 新建 governed activation validation 报告，绑定运行身份、query set/holdout、原始结果位置、阈值与 `passed|partial|failed` 结论
-- [ ] 4.5 任一强制正确性边界或冻结阈值未通过时确认默认关闭，记录阻塞项并停止激活工作
+- [ ] 4.1 基于 development baseline 提出并记录质量、延迟和可靠性门槛
+- [ ] 4.2 提出 total/Level 1/Level 2 参考 budget 候选
+- [ ] 4.3 冻结 gate 数据和门槛后验证候选；无候选通过则保留原值
+- [ ] 4.4 新建 activation validation 报告，声明 `passed|partial|failed`、样本限制和非生产边界
 
-## 5. 数据驱动预算调优
+## 5. 协同 Rehearsal 与参考默认值
 
-- [ ] 5.1 基于真实分层基线的质量、P95、timeout 与 budget-exhaustion 分布提出 total/Level 1/Level 2 budget 候选
-- [ ] 5.2 使用独立 gate 数据验证每个候选；不得用同一未隔离结果调参并自证通过
-- [ ] 5.3 只有同时满足全部正确性、质量、路由、延迟和可靠性阈值的候选才可修改默认 budget；否则保留实现 change 默认值
-- [ ] 5.4 若修改 budget，同步 `.env.example`、runtime default、配置迁移说明、契约测试和 activation 报告
+- [ ] 5.1 确认 comprehensive 运行引用可比身份下的 intent-routing 项目级 passed evidence
+- [ ] 5.2 在干净索引显式启用 intent/confidence/fallback，运行固定 synthetic + real smoke rehearsal
+- [ ] 5.3 验证 trace、前端 Level 展示、回答边界与显式关闭回滚
+- [ ] 5.4 通过后才修改参考开关/budget，并同步 `.env.example`、测试、报告和架构
+- [ ] 5.5 运行受影响 unit、integration、E2E、eval 与 documentation validation
 
-## 6. 协同灰度、默认启用与回滚
-
-- [ ] 6.1 确认 comprehensive 发布候选引用同一身份下有效的 `rag-intent-routing-activation` evidence；两个 gate 分别通过
-- [ ] 6.2 灰度前冻结 cohort、阶段、观察窗口、最低样本量、停止条件和回滚动作
-- [ ] 6.3 保持代码默认关闭，仅对受控 cohort 显式启用所需 intent、confidence 与 fallback 开关
-- [ ] 6.4 每阶段采集冻结的质量、路由、P95、资源、错误/降级与预算指标；任一停止条件触发时恢复关闭配置并记录证据
-- [ ] 6.5 全部灰度阶段通过后，才可修改 fallback 默认值；同步环境示例、默认值/回滚测试、activation 报告和 `docs/ARCHITECTURE.md`
-
-## 7. Evidence Disposition Gate
+## 6. Evidence Disposition Gate
 
 - [ ] New findings classified, or `No new findings` recorded
 - [ ] Code, test, review, runtime, or invalidation evidence linked

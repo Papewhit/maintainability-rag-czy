@@ -1,5 +1,7 @@
 # Repository Instructions
 
+Instructions for Ragtenance, the maintainability document RAG system.
+
 ## Test Taxonomy
 
 Tests are grouped by execution cost first and product area second. Do not add new
