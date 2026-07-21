@@ -1,12 +1,12 @@
 ---
 document_type: known_issue
 issue_id: KI-RAG-0017
-status: open
+status: resolved
 scope: rag.intent.provider-compatibility
 severity: high
 first_confirmed: 2026-07-19
-last_verified_commit: 5e49a4669f78dbaddf00ee97f1f76c7960bba419
-last_verified_date: 2026-07-19
+last_verified_commit: bbb244973037bc357d9bf71edf412d07a5081244
+last_verified_date: 2026-07-21
 source_findings: []
 ---
 
@@ -61,11 +61,59 @@ the exception-to-rules degradation path.
 
 ## Workaround
 
-Do not infer successful intent classification from the enable switch alone.
-Inspect `intent_fallback_to_rules`, `intent_llm_error`, and
-`intent_confidence`. For validation that requires true classifier output, use
-a model/provider/structured-output combination already proven compatible, or
-disable the classifier and label the run as rules-only.
+For revisions before the resolution, do not infer successful intent
+classification from the enable switch alone. Inspect
+`intent_fallback_to_rules`, `intent_llm_error`, and `intent_confidence`, or use
+a model/provider/structured-output combination already proven compatible.
+
+## Resolution
+
+The classifier system message now explicitly requires a schema-conformant
+JSON object and lists the allowed enum values and intent-specific field
+conditions. `with_structured_output(IntentDecision)` remains the only schema
+binding and validation path; the implementation does not add a permissive
+parser or a second handwritten response contract.
+
+On 2026-07-21, the opt-in integration smoke called the configured
+`qwen3.6-plus` endpoint and returned a schema-valid, non-fallback intent result:
+
+```powershell
+$env:RAG_INTENT_PROVIDER_SMOKE='1'
+$env:RAG_INTENT_PROVIDER_SMOKE_TIMEOUT_SECONDS='90'
+Remove-Item Env:ALL_PROXY -ErrorAction SilentlyContinue
+Remove-Item Env:all_proxy -ErrorAction SilentlyContinue
+uv run pytest tests/integration/rag/test_intent_classifier_provider.py -q
+```
+
+The result was `1 passed`; the deterministic classifier/evaluation suite was
+`31 passed, 1 skipped`.
+The two proxy variables were cleared only for this process because the current
+workstation advertises a SOCKS proxy without the optional HTTPX SOCKS package;
+the configured HTTP(S) proxy remained available.
+The relaxed smoke timeout isolates provider/schema compatibility and is not a
+latency or activation gate. Runtime defaults remain disabled, and the later
+activation development runs must separately freeze model identity and prove an
+acceptable classifier timeout. Frontend progress visibility remains governed
+by [KI-RAG-0012](rag-progress-ui-omits-intent-and-answer-handoff.md), while
+runtime trace already distinguishes model success from rules fallback.
+
+A subsequent full-chain E2E run confirmed that this distinction matters.
+LangSmith run `019f82cb-b723-7852-8bed-b62b25c6a721` no longer failed with the
+former JSON-mode 400, but `qwen3.6-plus` exceeded the E2E 5-second HTTP read
+timeout and correctly fell back to a precise rules plan. That result does not
+reopen this JSON-request issue; it blocks activation `model_success` for the
+current E2E identity and is routed to
+`openspec/changes/rag-intent-routing-activation/` as
+`INTENT-PROVIDER-F001`.
+
+Provider comparison also exposed an additional conditional-schema ambiguity:
+`qwen-flash` initially emitted the precise enum string `"none"` where a
+comprehensive decision requires JSON `null`. The prompt now makes that
+distinction explicit, after which the strict real-provider smoke passed under
+the 5-second invocation deadline. This is candidate evidence only, not a frozen
+FAST_MODEL choice or latency gate. The independent inability of the outer
+thread timeout to cancel an in-flight provider request is tracked by
+[KI-RAG-0021](intent-classifier-timeout-cannot-cancel-provider-call.md).
 
 ## Resolution Criteria
 

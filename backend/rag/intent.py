@@ -74,7 +74,12 @@ def _closed_scope_spans_for_consumed_documents(
 
 
 INTENT_SYSTEM_PROMPT = """你是 RAG graph 内部的意图解析器。一次调用只完成意图分类和计划提示。
-只输出 schema 允许的字段。禁止输出 semantic_query、terminology normalization、entities 或 postprocess profile。
+仅以符合既定 schema 的 JSON 对象输出，只包含 schema 允许的字段。禁止输出 semantic_query、terminology normalization、entities 或 postprocess profile。
+
+字段枚举和条件：
+- intent 只能是 precise_lookup 或 comprehensive_analysis；confidence 是 0 到 1。
+- precise_lookup 必须设置 target_granularity，且只能是 paragraph、table、step_list、figure；scope_hint 只能是 filter、boost、none 或 null；analysis_type 必须为 null，sub_queries 必须为空。
+- comprehensive_analysis 必须设置 analysis_type，且只能是 design_reuse、comparison、procedure_synthesis、general；sub_queries 至少一项，每项只含 query、domain、priority（1 到 3）；scope_hint 和 target_granularity 必须使用 JSON null，anchors 必须为空。这里的 scope_hint=null 不是字符串 "none"。
 
 scope_hint 只表达非硬范围偏好：普通文档偏好可选 boost，无文档偏好可选 none。
 不得用 scope_hint=filter 创建硬范围；context_files、未被否定的明确封闭措辞和解析成功的“《A》中”范围引用由确定性 planner 独占判定。
@@ -84,7 +89,7 @@ scope_hint 只表达非硬范围偏好：普通文档偏好可选 boost，无文
 
 示例 1："《部署手册》第三章的回滚步骤" -> precise_lookup，target_granularity=step_list。
 示例 2："表 2 的额定参数是多少" -> precise_lookup，target_granularity=table。
-示例 3："对比方案 A 与方案 B 的取舍" -> comprehensive_analysis，analysis_type=comparison，拆成独立维度。
+示例 3："对比方案 A 与方案 B 的取舍" -> comprehensive_analysis，analysis_type=comparison，拆成独立维度；scope_hint 必须为 JSON null，不能输出字符串 "none"。
 示例 4："综合多份维修记录给出操作流程" -> comprehensive_analysis，analysis_type=procedure_synthesis。
 """
 
