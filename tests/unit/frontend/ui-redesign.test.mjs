@@ -472,6 +472,76 @@ const checks = [
       assert.match(backendRagPipeline, /fallback_router_node/);
     },
   },
+  {
+    name: "sends and persists the per-message comprehensive override",
+    async run() {
+      const { vm } = createVm({
+        token: "token",
+        currentUser: { username: "user", role: "user" },
+        forceComprehensive: true,
+        userInput: "比较两个方案",
+      });
+      let streamedOptions = null;
+      vm.resetTextareaHeight = () => {};
+      vm.scheduleScrollToBottom = () => {};
+      vm.streamChatToBotSlot = async (_text, _idx, options) => {
+        streamedOptions = options;
+        return true;
+      };
+
+      await vm.handleSend();
+
+      assert.equal(vm.messages[0].forceComprehensive, true);
+      assert.equal(streamedOptions.forceComprehensive, true);
+      assert.match(index, /为我启用综合查询/);
+      assert.match(index, /intent_mode_degradation_error/);
+    },
+  },
+  {
+    name: "serializes only the boolean request override in chat payloads",
+    async run() {
+      const { vm } = createVm();
+      let payload = null;
+      vm.authFetch = async (_url, options) => {
+        payload = JSON.parse(options.body);
+        return {
+          ok: true,
+          body: {
+            getReader() {
+              return { read: async () => ({ done: true }) };
+            },
+          },
+        };
+      };
+      vm.scheduleScrollToBottom = () => {};
+      vm.messages = [vm.createBotMessage()];
+
+      await vm.streamChatToBotSlot("比较", 0, { forceComprehensive: true });
+
+      assert.equal(payload.force_comprehensive, true);
+      assert.equal("intent_mode" in payload, false);
+    },
+  },
+  {
+    name: "regenerate reuses the original user message mode instead of composer state",
+    async run() {
+      const { vm } = createVm({ forceComprehensive: false });
+      const user = vm.createUserMessage("比较", ["manual.pdf"], true);
+      const bot = vm.createBotMessage("旧回答");
+      vm.messages = [user, bot];
+      vm.scheduleScrollToBottom = () => {};
+      let options = null;
+      vm.streamChatToBotSlot = async (_text, _idx, incoming) => {
+        options = incoming;
+        return true;
+      };
+
+      await vm.regenerateAssistantAt(1);
+
+      assert.equal(options.forceComprehensive, true);
+      assert.deepEqual(Array.from(options.contextFiles), ["manual.pdf"]);
+    },
+  },
 ];
 
 const failures = [];

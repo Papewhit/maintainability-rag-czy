@@ -39,6 +39,7 @@ class ConversationStorage:
             msg_type = msg_data.get("type")
             content = msg_data.get("content", "")
             rag_trace = msg_data.get("rag_trace")
+            force_comprehensive = bool(msg_data.get("force_comprehensive", False))
             if msg_type == "human":
                 msg = HumanMessage(content=content)
             elif msg_type == "ai":
@@ -49,6 +50,8 @@ class ConversationStorage:
                 msg = HumanMessage(content=content)
             if rag_trace:
                 msg.additional_kwargs["rag_trace"] = rag_trace
+            if msg_type == "human":
+                msg.additional_kwargs["force_comprehensive"] = force_comprehensive
             messages.append(msg)
         return messages
 
@@ -57,15 +60,23 @@ class ConversationStorage:
         if not extra_message_data or idx >= len(extra_message_data):
             return None
         extra = extra_message_data[idx] or {}
-        return extra.get("rag_trace")
+        if "rag_trace" in extra:
+            return extra.get("rag_trace")
+        if "force_comprehensive" in extra:
+            return {"force_comprehensive": bool(extra.get("force_comprehensive"))}
+        return None
 
     @staticmethod
     def _serialize_message(message, timestamp: datetime, rag_trace=None) -> dict:
+        force_comprehensive = bool(
+            isinstance(rag_trace, dict) and rag_trace.get("force_comprehensive", False)
+        )
         return {
             "type": message.type,
             "content": str(message.content),
             "timestamp": timestamp.isoformat(),
-            "rag_trace": rag_trace,
+            "rag_trace": None if getattr(message, "type", "") == "human" else rag_trace,
+            "force_comprehensive": force_comprehensive,
         }
 
     @staticmethod
@@ -327,7 +338,12 @@ class ConversationStorage:
                     "type": row.message_type,
                     "content": row.content,
                     "timestamp": row.timestamp.isoformat(),
-                    "rag_trace": row.rag_trace,
+                    "rag_trace": None if row.message_type == "human" else row.rag_trace,
+                    "force_comprehensive": bool(
+                        row.message_type == "human"
+                        and isinstance(row.rag_trace, dict)
+                        and row.rag_trace.get("force_comprehensive", False)
+                    ),
                 }
                 for row in rows
             ]

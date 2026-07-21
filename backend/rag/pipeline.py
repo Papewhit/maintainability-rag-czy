@@ -50,7 +50,13 @@ from backend.rag.fallback_scope import (
     relax_scope,
 )
 from backend.rag.level3_answer import generate_level3_answer
-from backend.rag.intent import IntentClassifier, IntentParseResult, build_intent_parse_result
+from backend.rag.intent import (
+    IntentClassifier,
+    IntentParseResult,
+    IntentRoutingMode,
+    build_intent_parse_result,
+    resolve_intent_routing_mode,
+)
 from backend.rag.query_plan import (
     ComprehensiveQueryPlan,
     IntentQueryPlan,
@@ -244,6 +250,7 @@ class RAGState(TypedDict):
     context: str
     docs: List[dict]
     context_files: List[str]
+    force_comprehensive: bool
     route: Optional[str]
     expansion_type: Optional[str]
     expanded_query: Optional[str]
@@ -287,10 +294,14 @@ def intent_parse_node(state: RAGState) -> RAGState:
     config = _runtime_config()
     raw_query = state.get("question") or state.get("query") or ""
     context_files = list(state.get("context_files") or [])
-    needs_registry = config.intent_classifier_enabled or config.query_plan_enabled
+    routing_mode = resolve_intent_routing_mode(
+        force_comprehensive=bool(state.get("force_comprehensive", False)),
+        classifier_enabled=config.intent_classifier_enabled,
+    )
+    needs_registry = routing_mode is not IntentRoutingMode.PRECISE_ONLY or config.query_plan_enabled
     filename_registry = load_query_filename_registry() if needs_registry else None
     classifier = None
-    if config.intent_classifier_enabled:
+    if routing_mode is not IntentRoutingMode.PRECISE_ONLY:
         classifier = IntentClassifier(
             model_name=config.intent_classifier_model or FAST_MODEL,
             timeout_seconds=config.intent_classifier_timeout_seconds,
@@ -298,7 +309,8 @@ def intent_parse_node(state: RAGState) -> RAGState:
     result = build_intent_parse_result(
         raw_query,
         classifier=classifier,
-        classifier_enabled=config.intent_classifier_enabled,
+        classifier_enabled=routing_mode is not IntentRoutingMode.PRECISE_ONLY,
+        routing_mode=routing_mode,
         query_plan_enabled=config.query_plan_enabled,
         filename_registry=filename_registry,
         context_files=context_files,
@@ -2138,7 +2150,12 @@ def build_rag_graph():
 rag_graph = build_rag_graph()
 
 
-def run_rag_graph(question: str, context_files: list[str] | None = None) -> dict:
+def run_rag_graph(
+    question: str,
+    context_files: list[str] | None = None,
+    *,
+    force_comprehensive: bool = False,
+) -> dict:
     graph_start = time.perf_counter()
     result = rag_graph.invoke({
         "question": question,
@@ -2146,6 +2163,7 @@ def run_rag_graph(question: str, context_files: list[str] | None = None) -> dict
         "context": "",
         "docs": [],
         "context_files": context_files or [],
+        "force_comprehensive": bool(force_comprehensive),
         "route": None,
         "expansion_type": None,
         "expanded_query": None,

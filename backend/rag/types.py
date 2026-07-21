@@ -128,6 +128,12 @@ class RagTrace(TypedDict, total=False):
     intent_llm_ms: float
     intent_llm_error: str
     intent_fallback_to_rules: bool
+    intent_requested_mode: str
+    intent_effective_mode: str
+    intent_mode_source: str
+    intent_classifier_invoked: bool
+    intent_forced_comprehensive_succeeded: bool
+    intent_mode_degradation_error: str
     analysis_type: str
     sub_query_count: int
     retrieval_branch_count: int

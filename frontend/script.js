@@ -5,6 +5,7 @@ createApp({
         return {
             messages: [],
             userInput: "",
+            forceComprehensive: false,
             isLoading: false,
             activeView: "chat",
             abortController: null,
@@ -153,9 +154,13 @@ createApp({
             return div.innerHTML;
         },
 
-        createUserMessage(text, contextFiles = []) {
+        createUserMessage(text, contextFiles = [], forceComprehensive = false) {
             if (window.RagtenanceMessages?.createUserMessage) {
-                return window.RagtenanceMessages.createUserMessage(text, contextFiles);
+                return window.RagtenanceMessages.createUserMessage(
+                    text,
+                    contextFiles,
+                    forceComprehensive,
+                );
             }
             return {
                 id: "msg_" + Date.now() + "_" + Math.random().toString(16).slice(2),
@@ -163,6 +168,7 @@ createApp({
                 html: "",
                 isUser: true,
                 contextFiles,
+                forceComprehensive: !!forceComprehensive,
             };
         },
 
@@ -521,7 +527,8 @@ createApp({
             }
 
             const contextFiles = this.pendingContextFiles.map((file) => file.filename).filter(Boolean);
-            this.messages.push(this.createUserMessage(text, contextFiles));
+            const forceComprehensive = !!this.forceComprehensive;
+            this.messages.push(this.createUserMessage(text, contextFiles, forceComprehensive));
             this.userInput = "";
             this.$nextTick(() => {
                 this.resetTextareaHeight();
@@ -530,7 +537,11 @@ createApp({
 
             this.messages.push(this.createBotMessage());
             const botMsgIdx = this.messages.length - 1;
-            const streamOk = await this.streamChatToBotSlot(text, botMsgIdx, { regenerate: false, contextFiles });
+            const streamOk = await this.streamChatToBotSlot(text, botMsgIdx, {
+                regenerate: false,
+                contextFiles,
+                forceComprehensive,
+            });
             if (streamOk) {
                 this.consumePendingContextFiles();
             }
@@ -585,12 +596,17 @@ createApp({
             bot.ragTrace = null;
             bot.ragSteps = [];
             this.$nextTick(() => this.scheduleScrollToBottom());
-            await this.streamChatToBotSlot(userText, index, { regenerate: true });
+            await this.streamChatToBotSlot(userText, index, {
+                regenerate: true,
+                contextFiles: userMsg.contextFiles || [],
+                forceComprehensive: !!userMsg.forceComprehensive,
+            });
         },
 
         async streamChatToBotSlot(userText, botMsgIdx, options = {}) {
             const regenerate = !!(options && options.regenerate);
             const contextFiles = Array.isArray(options.contextFiles) ? options.contextFiles : [];
+            const forceComprehensive = !!options.forceComprehensive;
             let streamOk = false;
             let streamHadError = false;
             this.isLoading = true;
@@ -609,6 +625,7 @@ createApp({
                         session_id: this.sessionId,
                         regenerate,
                         context_files: contextFiles,
+                        force_comprehensive: forceComprehensive,
                     }),
                     signal: this.abortController.signal,
                 });
@@ -803,7 +820,11 @@ createApp({
                 const data = await response.json();
                 this.messages = data.messages.map((msg) => {
                     if (msg.type === "human") {
-                        return this.createUserMessage(msg.content);
+                        return this.createUserMessage(
+                            msg.content,
+                            [],
+                            !!msg.force_comprehensive,
+                        );
                     }
                     return this.createBotMessage(msg.content, msg.rag_trace || null);
                 });
@@ -1108,6 +1129,15 @@ createApp({
             if (!trace.tool_used) return "未调用工具";
             const stage = trace.retrieval_stage || trace.retrieval_mode || "已检索";
             return `${trace.tool_name || "工具"} · ${stage}`;
+        },
+
+        intentModeLabel(mode) {
+            const labels = {
+                forced_comprehensive: "综合查询",
+                auto_classifier: "自动分类",
+                precise_only: "精确查询",
+            };
+            return labels[mode] || mode || "未知";
         },
 
         traceChunks(trace) {

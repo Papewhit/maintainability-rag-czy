@@ -891,6 +891,8 @@ select:focus-visible {
 }
 
 .composer {
+    position: relative;
+    z-index: 3;
     display: flex;
     align-items: flex-end;
     gap: 8px;
@@ -954,9 +956,171 @@ select:focus-visible {
 }
 
 .composer-note {
-    margin-top: 8px;
+    margin: 8px 4px 0 auto;
     text-align: center;
     font-size: 0.76rem;
+    line-height: 19px;
+}
+
+.composer-meta {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    min-height: 34px;
+    padding: 0;
+}
+
+.comprehensive-tab {
+    --tab-surface: rgba(236, 239, 242, 0.97);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    max-width: min(360px, calc(100% - 190px));
+    margin: -4px 0 0 18px;
+    padding: 9px 12px 10px;
+    border: 1px solid var(--line-strong);
+    border-top: 0;
+    border-radius: 0 0 14px 14px;
+    background: var(--tab-surface);
+    box-shadow: 0 9px 20px rgba(18, 59, 102, 0.07);
+}
+
+.comprehensive-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    color: var(--blue-navy);
+    cursor: pointer;
+}
+
+.comprehensive-toggle input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.comprehensive-checkbox {
+    position: relative;
+    top: 1px;
+    width: 19px;
+    height: 19px;
+    flex: 0 0 19px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    background: rgba(248, 251, 254, 0.96);
+    color: transparent;
+    font-size: 0.62rem;
+    transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+
+.comprehensive-toggle:hover .comprehensive-checkbox {
+    border-color: rgba(36, 116, 200, 0.38);
+}
+
+.comprehensive-toggle input:focus-visible + .comprehensive-checkbox {
+    border-color: var(--blue-main);
+    box-shadow: 0 0 0 3px rgba(36, 116, 200, 0.12);
+}
+
+.comprehensive-toggle input:checked + .comprehensive-checkbox {
+    border-color: var(--blue-main);
+    background: var(--blue-main);
+    color: #F7FBFF;
+}
+
+.comprehensive-toggle input:disabled + .comprehensive-checkbox,
+.comprehensive-toggle input:disabled ~ .comprehensive-copy {
+    opacity: 0.58;
+    cursor: not-allowed;
+}
+
+.comprehensive-copy {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.comprehensive-copy strong {
+    flex: 0 0 auto;
+    font-size: 0.79rem;
+    font-weight: 650;
+}
+
+.comprehensive-help {
+    position: relative;
+    top: 1px;
+    width: 17px;
+    height: 17px;
+    flex: 0 0 17px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(90, 111, 132, 0.42);
+    border-radius: 50%;
+    color: rgba(90, 111, 132, 0.72);
+    font-size: 0.69rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    outline: none;
+}
+
+.comprehensive-help:hover,
+.comprehensive-help:focus-visible {
+    border-color: rgba(36, 116, 200, 0.5);
+    color: var(--blue-main);
+}
+
+.comprehensive-tooltip {
+    position: absolute;
+    z-index: 20;
+    left: 0;
+    right: auto;
+    bottom: calc(100% + 10px);
+    width: min(270px, calc(100vw - 48px));
+    padding: 10px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: rgba(248, 251, 254, 0.98);
+    box-shadow: var(--shadow-soft);
+    color: var(--paper);
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.55;
+    text-align: left;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity var(--transition), transform var(--transition);
+}
+
+.comprehensive-help:hover + .comprehensive-tooltip,
+.comprehensive-help:focus-visible + .comprehensive-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.message-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--blue-navy);
+    opacity: 0.82;
 }
 
 .panel-backdrop {
@@ -1547,5 +1711,20 @@ body::-webkit-scrollbar-thumb:hover {
 
     .selected-file {
         align-items: flex-start;
+    }
+}
+
+@media (max-width: 520px) {
+    .composer-meta {
+        display: block;
+    }
+
+    .comprehensive-tab {
+        max-width: calc(100% - 36px);
+    }
+
+    .composer-note {
+        margin-right: 4px;
+        text-align: right;
     }
 }

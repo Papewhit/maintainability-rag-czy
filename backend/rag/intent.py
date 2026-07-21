@@ -4,6 +4,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, replace
+from enum import Enum
 from threading import BoundedSemaphore
 from typing import Any, Literal
 
@@ -93,9 +94,33 @@ scope_hint 只表达非硬范围偏好：普通文档偏好可选 boost，无文
 示例 4："综合多份维修记录给出操作流程" -> comprehensive_analysis，analysis_type=procedure_synthesis。
 """
 
+FORCED_COMPREHENSIVE_PROMPT = """本次请求已由用户显式选择综合查询。
+你必须输出 intent=comprehensive_analysis，并生成 schema-valid 的 analysis_type 与非空 sub_queries。
+不要输出 precise_lookup。若无法遵守，调用方会安全降级为精确查询。
+"""
+
 
 _INTENT_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="rag-intent")
 _INTENT_SLOTS = BoundedSemaphore(4)
+
+
+class IntentRoutingMode(str, Enum):
+    FORCED_COMPREHENSIVE = "forced_comprehensive"
+    AUTO_CLASSIFIER = "auto_classifier"
+    PRECISE_ONLY = "precise_only"
+
+
+def resolve_intent_routing_mode(
+    *,
+    force_comprehensive: bool,
+    classifier_enabled: bool,
+) -> IntentRoutingMode:
+    """Resolve the request override and server policy without side effects."""
+    if force_comprehensive:
+        return IntentRoutingMode.FORCED_COMPREHENSIVE
+    if classifier_enabled:
+        return IntentRoutingMode.AUTO_CLASSIFIER
+    return IntentRoutingMode.PRECISE_ONLY
 
 
 class IntentSubQuery(BaseModel):
@@ -169,16 +194,24 @@ class IntentClassifier:
         )
         return self._model
 
-    def classify(self, raw_query: str) -> tuple[IntentDecision, float]:
+    def classify(
+        self,
+        raw_query: str,
+        *,
+        force_comprehensive: bool = False,
+    ) -> tuple[IntentDecision, float]:
         started = time.perf_counter()
         structured = self._get_model().with_structured_output(IntentDecision)
         if not _INTENT_SLOTS.acquire(blocking=False):
             raise RuntimeError("intent classifier capacity exhausted")
+        system_prompt = INTENT_SYSTEM_PROMPT
+        if force_comprehensive:
+            system_prompt = f"{system_prompt}\n\n{FORCED_COMPREHENSIVE_PROMPT}"
         try:
             future = _INTENT_EXECUTOR.submit(
                 structured.invoke,
                 [
-                    {"role": "system", "content": INTENT_SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": raw_query},
                 ],
             )
@@ -305,6 +338,7 @@ def build_intent_parse_result(
     decision: IntentDecision | None = None,
     classifier: IntentClassifier | None = None,
     classifier_enabled: bool = True,
+    routing_mode: IntentRoutingMode | None = None,
     query_plan_enabled: bool = False,
     filename_registry: list[dict[str, str]] | None = None,
     context_files: list[str] | None = None,
@@ -312,7 +346,14 @@ def build_intent_parse_result(
     llm_model: str | None = None,
     llm_ms: float = 0.0,
 ) -> IntentParseResult:
-    if not classifier_enabled:
+    mode = routing_mode or (
+        IntentRoutingMode.AUTO_CLASSIFIER
+        if classifier_enabled
+        else IntentRoutingMode.PRECISE_ONLY
+    )
+    classifier_invoked = mode is not IntentRoutingMode.PRECISE_ONLY
+    mode_source = "user" if mode is IntentRoutingMode.FORCED_COMPREHENSIVE else "environment"
+    if mode is IntentRoutingMode.PRECISE_ONLY:
         plan = build_compatible_precise_plan(
             raw_query,
             query_plan_enabled=query_plan_enabled,
@@ -328,6 +369,11 @@ def build_intent_parse_result(
                 "intent_confidence": 1.0,
                 "query_plan_type": "precise",
                 "intent_classifier_enabled": False,
+                "intent_requested_mode": mode.value,
+                "intent_effective_mode": IntentRoutingMode.PRECISE_ONLY.value,
+                "intent_mode_source": mode_source,
+                "intent_classifier_invoked": False,
+                "intent_forced_comprehensive_succeeded": False,
                 "intent_compatibility_source": "query_plan" if query_plan_enabled else "raw_query",
                 "intent_fallback_to_rules": False,
             },
@@ -338,7 +384,15 @@ def build_intent_parse_result(
     try:
         if decision is None:
             effective_classifier = effective_classifier or IntentClassifier()
-            decision, llm_ms = effective_classifier.classify(raw_query)
+            if mode is IntentRoutingMode.FORCED_COMPREHENSIVE:
+                decision, llm_ms = effective_classifier.classify(
+                    raw_query,
+                    force_comprehensive=True,
+                )
+            else:
+                decision, llm_ms = effective_classifier.classify(raw_query)
+        if mode is IntentRoutingMode.FORCED_COMPREHENSIVE and decision.intent != "comprehensive_analysis":
+            raise ValueError("forced comprehensive classifier returned precise intent")
         effective_model = llm_model or (effective_classifier.model_name if effective_classifier else "provided")
         if decision.intent == "precise_lookup":
             plan: IntentQueryPlan = _precise_plan_from_decision(
@@ -362,6 +416,14 @@ def build_intent_parse_result(
             "intent_confidence": decision.confidence,
             "query_plan_type": plan_type,
             "intent_classifier_enabled": True,
+            "intent_requested_mode": mode.value,
+            "intent_effective_mode": mode.value,
+            "intent_mode_source": mode_source,
+            "intent_classifier_invoked": classifier_invoked,
+            "intent_forced_comprehensive_succeeded": (
+                mode is IntentRoutingMode.FORCED_COMPREHENSIVE
+                and isinstance(plan, ComprehensiveQueryPlan)
+            ),
             "intent_llm_model": effective_model,
             "intent_llm_ms": llm_ms,
             "intent_fallback_to_rules": False,
@@ -398,6 +460,12 @@ def build_intent_parse_result(
                 "intent_confidence": 0.0,
                 "query_plan_type": "precise",
                 "intent_classifier_enabled": True,
+                "intent_requested_mode": mode.value,
+                "intent_effective_mode": IntentRoutingMode.PRECISE_ONLY.value,
+                "intent_mode_source": mode_source,
+                "intent_classifier_invoked": classifier_invoked,
+                "intent_forced_comprehensive_succeeded": False,
+                "intent_mode_degradation_error": str(exc),
                 "intent_llm_model": llm_model
                 or (effective_classifier.model_name if effective_classifier else "unknown"),
                 "intent_llm_ms": llm_ms,

@@ -22,6 +22,7 @@ from backend.chat.tools import (
     search_knowledge_base,
     get_last_rag_context,
     reset_tool_call_guards,
+    set_force_comprehensive,
     set_rag_context_files,
     set_rag_step_queue,
 )
@@ -246,10 +247,19 @@ def get_agent_instance():
 storage = ConversationStorage()
 
 
-def _retrieve_attached_context(user_text: str, context_files: list[str]) -> dict:
+def _retrieve_attached_context(
+    user_text: str,
+    context_files: list[str],
+    *,
+    force_comprehensive: bool = False,
+) -> dict:
     from backend.rag.pipeline import run_rag_graph
 
-    return run_rag_graph(user_text, context_files=context_files)
+    return run_rag_graph(
+        user_text,
+        context_files=context_files,
+        force_comprehensive=force_comprehensive,
+    )
 
 
 def _attached_context_payload(
@@ -267,6 +277,23 @@ def _attached_context_payload(
         docs=docs,
     )
     return context, rag_trace, apply_rag_trace_to_turn_context(turn_context, rag_trace)
+
+
+def _history_extra_message_data(messages: list) -> list[dict | None]:
+    """Preserve per-message request identity and assistant traces during compaction."""
+    extras: list[dict | None] = []
+    for message in messages:
+        additional = dict(getattr(message, "additional_kwargs", {}) or {})
+        if getattr(message, "type", None) == "human":
+            extras.append({
+                "force_comprehensive": bool(additional.get("force_comprehensive", False)),
+            })
+        elif additional.get("rag_trace") is not None:
+            extras.append({"rag_trace": additional["rag_trace"]})
+        else:
+            extras.append(None)
+    return extras
+
 
 def summarize_old_messages(model, messages: list) -> str:
     """将旧消息总结为摘要"""
@@ -291,6 +318,7 @@ def chat_with_agent(
     user_id: str = "default_user",
     session_id: str = "default_session",
     context_files: list[str] | None = None,
+    force_comprehensive: bool = False,
 ):
     """使用 Agent 处理用户消息并返回响应"""
     agent_instance, model_instance = get_agent_instance()
@@ -300,9 +328,15 @@ def chat_with_agent(
     # 清理可能残留的 RAG 上下文，避免跨请求污染
     get_last_rag_context(clear=True)
     reset_tool_call_guards()
-    turn_context = plan_rag_turn(RagTurnRequest(user_text=user_text, context_files=context_files or [], stream=False))
+    turn_context = plan_rag_turn(RagTurnRequest(
+        user_text=user_text,
+        context_files=context_files or [],
+        stream=False,
+        force_comprehensive=force_comprehensive,
+    ))
     context_files = turn_context.context_files
     set_rag_context_files(context_files)
+    set_force_comprehensive(turn_context.force_comprehensive)
 
     if len(messages) > 50:
         summary = summarize_old_messages(model_instance, messages[:40])
@@ -317,7 +351,16 @@ def chat_with_agent(
     attached_rag_trace = None
     retrieved_context = ""
     if turn_context.policy == RagExecutionPolicy.FORCED_PRELOAD:
-        rag_result = _retrieve_attached_context(user_text, context_files)
+        try:
+            rag_result = _retrieve_attached_context(
+                user_text,
+                context_files,
+                force_comprehensive=turn_context.force_comprehensive,
+            )
+        except Exception:
+            set_rag_context_files(None)
+            set_force_comprehensive(False)
+            raise
         retrieved_context, attached_rag_trace, turn_context = _attached_context_payload(
             rag_result,
             turn_context,
@@ -333,6 +376,7 @@ def chat_with_agent(
         result = answer_result.raw_result
     finally:
         set_rag_context_files(None)
+        set_force_comprehensive(False)
 
     response_content = extract_answer_content(result)
     ai_message = AIMessage(content=response_content)
@@ -344,14 +388,19 @@ def chat_with_agent(
     rag_trace = maybe_verify_citation_trace(response_content, rag_trace)
 
     if compacted_history:
-        extra_message_data = [None] * (len(messages) - 1) + [{"rag_trace": rag_trace}]
+        extra_message_data = _history_extra_message_data(messages)
+        extra_message_data[-2] = {"force_comprehensive": bool(force_comprehensive)}
+        extra_message_data[-1] = {"rag_trace": rag_trace}
         storage.save(user_id, session_id, messages, extra_message_data=extra_message_data)
     else:
         storage.append_messages(
             user_id,
             session_id,
             [user_message, ai_message],
-            extra_message_data=[None, {"rag_trace": rag_trace}],
+            extra_message_data=[
+                {"force_comprehensive": bool(force_comprehensive)},
+                {"rag_trace": rag_trace},
+            ],
         )
 
     return {
@@ -366,6 +415,7 @@ async def chat_with_agent_stream(
     session_id: str = "default_session",
     regenerate: bool = False,
     context_files: list[str] | None = None,
+    force_comprehensive: bool = False,
 ):
     """使用 Agent 处理用户消息并流式返回响应。
 
@@ -379,9 +429,15 @@ async def chat_with_agent_stream(
     # 清理可能残留的 RAG 上下文
     get_last_rag_context(clear=True)
     reset_tool_call_guards()
-    turn_context = plan_rag_turn(RagTurnRequest(user_text=user_text, context_files=context_files or [], stream=True))
+    turn_context = plan_rag_turn(RagTurnRequest(
+        user_text=user_text,
+        context_files=context_files or [],
+        stream=True,
+        force_comprehensive=force_comprehensive,
+    ))
     context_files = turn_context.context_files
     set_rag_context_files(context_files)
+    set_force_comprehensive(turn_context.force_comprehensive)
 
     # 统一输出队列：所有事件（content / rag_step）都汇入这里
     output_queue = asyncio.Queue()
@@ -402,19 +458,36 @@ async def chat_with_agent_stream(
 
     regenerate = bool(regenerate)
     user_message = None
-    if regenerate:
-        if not messages or getattr(messages[-1], "type", None) != "ai":
-            raise ValueError("无法重新生成：上一条不是助手回复")
-        messages.pop()
-        if not messages or getattr(messages[-1], "type", None) != "human":
-            raise ValueError("无法重新生成：缺少对应的用户消息")
-    else:
-        user_message = HumanMessage(content=user_text)
-        messages.append(user_message)
+    try:
+        if regenerate:
+            if not messages or getattr(messages[-1], "type", None) != "ai":
+                raise ValueError("无法重新生成：上一条不是助手回复")
+            messages.pop()
+            if not messages or getattr(messages[-1], "type", None) != "human":
+                raise ValueError("无法重新生成：缺少对应的用户消息")
+        else:
+            user_message = HumanMessage(content=user_text)
+            messages.append(user_message)
+    except Exception:
+        set_rag_step_queue(None)
+        set_rag_context_files(None)
+        set_force_comprehensive(False)
+        raise
     attached_rag_trace = None
     retrieved_context = ""
     if turn_context.policy == RagExecutionPolicy.FORCED_PRELOAD:
-        rag_result = await asyncio.to_thread(_retrieve_attached_context, user_text, context_files)
+        try:
+            rag_result = await asyncio.to_thread(
+                _retrieve_attached_context,
+                user_text,
+                context_files,
+                force_comprehensive=turn_context.force_comprehensive,
+            )
+        except Exception:
+            set_rag_step_queue(None)
+            set_rag_context_files(None)
+            set_force_comprehensive(False)
+            raise
         retrieved_context, attached_rag_trace, turn_context = _attached_context_payload(
             rag_result,
             turn_context,
@@ -481,6 +554,7 @@ async def chat_with_agent_stream(
         # 正常结束或异常退出时清理
         set_rag_step_queue(None)
         set_rag_context_files(None)
+        set_force_comprehensive(False)
         if not agent_task.done():
              agent_task.cancel()
 
@@ -501,7 +575,10 @@ async def chat_with_agent_stream(
     ai_message = AIMessage(content=full_response)
     messages.append(ai_message)
     if compacted_history:
-        extra_message_data = [None] * (len(messages) - 1) + [{"rag_trace": rag_trace}]
+        extra_message_data = _history_extra_message_data(messages)
+        if not regenerate:
+            extra_message_data[-2] = {"force_comprehensive": bool(force_comprehensive)}
+        extra_message_data[-1] = {"rag_trace": rag_trace}
         await asyncio.to_thread(
             storage.save,
             user_id,
@@ -525,5 +602,8 @@ async def chat_with_agent_stream(
             session_id,
             [user_message, ai_message],
             None,
-            [None, {"rag_trace": rag_trace}],
+            [
+                {"force_comprehensive": bool(force_comprehensive)},
+                {"rag_trace": rag_trace},
+            ],
         )

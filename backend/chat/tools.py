@@ -13,6 +13,10 @@ from backend.rag.trace import mark_context_delivery
 _LAST_RAG_CONTEXT: ContextVar[dict | None] = ContextVar('_LAST_RAG_CONTEXT', default=None)
 _KNOWLEDGE_TOOL_CALLS_THIS_TURN: ContextVar[dict | None] = ContextVar('_KNOWLEDGE_TOOL_CALLS_THIS_TURN', default=None)
 _RAG_CONTEXT_FILES_THIS_TURN: ContextVar[list[str]] = ContextVar('_RAG_CONTEXT_FILES_THIS_TURN', default=[])
+_FORCE_COMPREHENSIVE_THIS_TURN: ContextVar[bool] = ContextVar(
+    '_FORCE_COMPREHENSIVE_THIS_TURN',
+    default=False,
+)
 _RAG_STEP_QUEUE: ContextVar[object | None] = ContextVar('_RAG_STEP_QUEUE', default=None)
 _RAG_STEP_LOOP: ContextVar[object | None] = ContextVar('_RAG_STEP_LOOP', default=None)
 
@@ -60,6 +64,16 @@ def set_rag_context_files(filenames: Optional[list[str]] = None):
 def get_rag_context_files() -> list[str]:
     """Return current-turn filename constraints for knowledge retrieval."""
     return list(_RAG_CONTEXT_FILES_THIS_TURN.get())
+
+
+def set_force_comprehensive(force_comprehensive: bool = False):
+    """Set the current-turn request override consumed by the knowledge tool."""
+    _FORCE_COMPREHENSIVE_THIS_TURN.set(bool(force_comprehensive))
+
+
+def get_force_comprehensive() -> bool:
+    """Return the current-turn comprehensive override without resolving server policy."""
+    return bool(_FORCE_COMPREHENSIVE_THIS_TURN.get())
 
 
 def set_rag_step_queue(queue):
@@ -177,7 +191,7 @@ def search_knowledge_base(query: str) -> str:
 
     from backend.rag.pipeline import run_rag_graph
 
-    rag_result = run_rag_graph(query, context_files=get_rag_context_files())
+    rag_result = run_rag_graph(query, context_files=get_rag_context_files(), force_comprehensive=get_force_comprehensive())
 
     docs = rag_result.get("docs", []) if isinstance(rag_result, dict) else []
     context = rag_result.get("context", "") if isinstance(rag_result, dict) else ""

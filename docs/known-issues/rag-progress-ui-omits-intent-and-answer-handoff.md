@@ -22,9 +22,10 @@ text began streaming, the UI showed a noticeable interval with no new stage
 or progress information.
 
 The same run had `RAG_INTENT_CLASSIFIER_ENABLED=true`. The persisted RAG trace
-contained intent-parse output, but the frontend did not show whether the
-classifier ran successfully, which plan type it selected, how confident it
-was, or whether it fell back to rules.
+contained intent-parse output. The frontend now shows requested versus
+effective routing mode and labels forced-mode degradation, but it still does
+not show the selected intent/plan, confidence, latency, or detailed fallback
+state for automatic classification.
 
 In session `session_1784426649833`, this missing distinction was material:
 the trace recorded `intent_classifier_enabled=true` but also
@@ -43,9 +44,10 @@ the normal UI also failed to distinguish this second degraded state.
 ## Impact
 
 Users cannot distinguish active answer generation from a stalled request
-during model time-to-first-token. Operators also cannot verify intent-routing
-activation from the normal UI, so configuration mistakes, classifier fallback,
-and a valid precise/comprehensive decision look the same.
+during model time-to-first-token. Operators can verify a request-level forced
+mode and its safe degradation in the normal UI, but automatic-classifier
+configuration mistakes, fallback, and a valid precise/comprehensive decision
+still lack sufficient UI detail.
 
 The observed 5-15 second model interval is not yet attributed to one cause. It
 may include upstream model TTFT, prompt size, provider variance, or agent/tool
@@ -75,21 +77,21 @@ stream and does not represent final-answer TTFT.
   `model_instance.astream()` for forced preload or `agent_instance.astream()`
   for optional tool execution. No SSE event is produced before the first
   non-empty answer chunk.
-- `frontend/index.html` renders a small legacy subset of `ragTrace` and does
-  not render `intent_classifier_enabled`, `intent_confidence`,
-  `query_plan_type`, `intent_llm_ms`, `intent_fallback_to_rules`, or
-  `intent_llm_error`.
+- `frontend/index.html` renders requested/effective routing mode and forced
+  degradation, but does not render `intent_confidence`, `query_plan_type`,
+  `intent_llm_ms`, `intent_fallback_to_rules`, or `intent_llm_error`.
 - `frontend/script.js::currentThinkingLabel()` repeats the last RAG step label
   until content arrives, so the quiet handoff is not represented as a new
   phase.
 
 ## Workaround
 
-Use the LangSmith project `superhermes-rag-full-chain-e2e` together with the
-`POST /chat/stream` SSE response and persisted `GET /sessions/<session_id>`
-trace. Compare intent timing, retrieval timing, model span start, and first
-answer token rather than treating the last visible RAG step as request
-completion.
+Use the requested/effective mode shown in the UI for request-control checks.
+For automatic-classifier details and the answer handoff, use the LangSmith
+project `superhermes-rag-full-chain-e2e` together with the `POST /chat/stream`
+SSE response and persisted `GET /sessions/<session_id>` trace. Compare intent
+timing, retrieval timing, model span start, and first answer token rather than
+treating the last visible RAG step as request completion.
 
 ## Resolution Criteria
 

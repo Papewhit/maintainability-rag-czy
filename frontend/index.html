@@ -104,6 +104,10 @@
                     <div v-for="(msg, index) in messages" :key="msg.id || index" :class="['message', msg.isUser ? 'user-message' : 'bot-message']">
                         <div v-if="msg.isUser" class="message-content user-content">
                             <div v-text="msg.text"></div>
+                            <div v-if="msg.forceComprehensive" class="message-mode-badge">
+                                <i class="fas fa-layer-group"></i>
+                                已请求综合查询
+                            </div>
                             <div v-if="msg.contextFiles && msg.contextFiles.length" class="message-attachments">
                                 <span v-for="filename in msg.contextFiles" :key="filename">
                                     <i class="fas fa-file-lines"></i>
@@ -176,6 +180,13 @@
                             <div class="reasoning-content">
                                 <div class="trace-grid">
                                     <div class="trace-line">工具：{{ msg.ragTrace.tool_used ? msg.ragTrace.tool_name : '未使用' }}</div>
+                                    <div v-if="msg.ragTrace.intent_requested_mode" class="trace-line">
+                                        请求模式：{{ intentModeLabel(msg.ragTrace.intent_requested_mode) }}
+                                    </div>
+                                    <div v-if="msg.ragTrace.intent_effective_mode" class="trace-line">
+                                        实际模式：{{ intentModeLabel(msg.ragTrace.intent_effective_mode) }}
+                                        <span v-if="msg.ragTrace.intent_mode_degradation_error">（已安全降级）</span>
+                                    </div>
                                     <div v-if="msg.ragTrace.retrieval_stage" class="trace-line">检索阶段：{{ msg.ragTrace.retrieval_stage }}</div>
                                     <div v-if="msg.ragTrace.grade_score" class="trace-line">相关性评分：{{ msg.ragTrace.grade_score }}</div>
                                     <div v-if="msg.ragTrace.grade_route" class="trace-line">评分决策：{{ msg.ragTrace.grade_route }}</div>
@@ -341,7 +352,26 @@
                     <i class="fas fa-arrow-up"></i>
                 </button>
             </div>
-            <p class="composer-note">AI 生成的内容可能包含错误，请仔细甄别。</p>
+            <div class="composer-meta">
+                <div class="comprehensive-tab">
+                    <label class="comprehensive-toggle">
+                        <input v-model="forceComprehensive" type="checkbox" :disabled="isLoading" />
+                        <span class="comprehensive-checkbox" aria-hidden="true">
+                            <i class="fas fa-check"></i>
+                        </span>
+                        <span class="comprehensive-copy">
+                            <strong>为我启用综合查询</strong>
+                        </span>
+                    </label>
+                    <span class="comprehensive-help" tabindex="0" aria-label="了解综合查询机制">
+                        ?
+                    </span>
+                    <span class="comprehensive-tooltip" role="tooltip">
+                        适合比较、归纳和跨主题分析。系统会为每个子问题分别检索，再汇总相关证据；若无法生成有效拆解，会安全回退到精确查询。
+                    </span>
+                </div>
+                <p class="composer-note">AI 生成的内容可能包含错误，请仔细甄别。</p>
+            </div>
         </div>
 
         <div v-if="isAuthenticated && showHistoryPanel" class="panel-backdrop" @click.self="showHistoryPanel = false">

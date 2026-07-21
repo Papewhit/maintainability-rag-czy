@@ -24,6 +24,7 @@ class RagTurnRequest:
     user_text: str
     context_files: list[str] = field(default_factory=list)
     stream: bool = False
+    force_comprehensive: bool = False
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class RagTurnContext:
     scope_mode_before: str | None = None
     scope_mode_after: str | None = None
     level3_answer: str | None = None
+    force_comprehensive: bool = False
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,16 @@ def plan_rag_turn(
     if unified_execution_enabled is None:
         unified_execution_enabled = load_runtime_config().unified_execution_enabled
 
+    if request.force_comprehensive:
+        return RagTurnContext(
+            policy=RagExecutionPolicy.FORCED_PRELOAD,
+            context_files=context_files,
+            delivery_mode="system_message",
+            unified_execution_enabled=bool(unified_execution_enabled),
+            policy_reason="user_forced_comprehensive",
+            force_comprehensive=True,
+        )
+
     if context_files:
         return RagTurnContext(
             policy=RagExecutionPolicy.FORCED_PRELOAD,
@@ -81,6 +93,7 @@ def plan_rag_turn(
             delivery_mode="system_message",
             unified_execution_enabled=bool(unified_execution_enabled),
             policy_reason="attached_context_files",
+            force_comprehensive=False,
         )
 
     if unified_execution_enabled and _looks_like_document_question(request.user_text):
@@ -90,6 +103,7 @@ def plan_rag_turn(
             delivery_mode="system_message",
             unified_execution_enabled=True,
             policy_reason="document_intent",
+            force_comprehensive=False,
         )
 
     return RagTurnContext(
@@ -98,6 +112,7 @@ def plan_rag_turn(
         delivery_mode="tool_response",
         unified_execution_enabled=bool(unified_execution_enabled),
         policy_reason="agent_optional_tool",
+        force_comprehensive=False,
     )
 
 

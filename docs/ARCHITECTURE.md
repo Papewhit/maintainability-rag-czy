@@ -223,7 +223,7 @@ BM25 isolation is manual through `BM25_STATE_PATH`.
 
 Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contracts/schemas.py`; normalization/serialization in `backend/rag/trace.py` and `backend/rag/formatting.py`. Trace covers intent/model fallback, requested/effective strategy, per-branch and aggregate embedding/search/rerank costs, stage status/errors/timings, terminology fusion coverage, final representation, and confidence. Comprehensive trace and every branch retrieval diagnostic retain the resolved shared retrieval scope mode/source/matched files so boost scope remains distinguishable from no scope across API/history boundaries (`RAG-INTENT-F029`). Public trace retains the complete terminology preflight context: `semantic_query`, `term_matches`, `normalized_query`, `sparse_expansion`, and `protected_tokens` (`RAG-INTENT-F019`, `RAG-INTENT-F023`). Public retrieved-chunk schemas also retain branch ids, per-branch ranks/scores, baseline match state, best local rank, coverage count, and multi-query RRF score (`RAG-INTENT-F025`); auto-merged parents inherit the maximum contributing multi-query RRF score alongside unioned branch provenance (`RAG-INTENT-F031`). A failed multi-query merge preserves the undeduplicated branch union, aggregates all known branch provenance by candidate identity onto every retained duplicate, and reports the skipped/error state plus all knowable candidate counts before branch-aware shared postprocess continues (`RAG-INTENT-F020`, `RAG-INTENT-F022`). `backend/rag/observability.py` defines pure aggregation over supplied traces for rollout metrics including classifier and graph P50/P95, failure/fallback rates, intent share, profile/bucket counts, baseline rates, retrieval calls, rerank pairs, and budget exhaustion. Comprehensive evaluation error/degradation rates count top-level stage errors as well as branch errors and diagnostic errors (`RAG-INTENT-F030`). The observability module is not yet connected to a persisted trace reader, exporter, dashboard, or alerting path.
 
-The current frontend does not render the intent-classifier fields already present in the final trace, and the SSE timeline has no event between the last RAG step and the first answer token. Model time-to-first-token is therefore a user-visible silent interval, while classifier activation and fallback require direct trace or external telemetry inspection; see [KI-RAG-0012](known-issues/rag-progress-ui-omits-intent-and-answer-handoff.md).
+The frontend renders requested versus effective routing mode (including forced-mode degradation), but it still does not surface classifier intent/confidence or add an SSE handoff event between the last RAG step and the first answer token. Model time-to-first-token is therefore a user-visible silent interval, while classifier activation still requires direct trace or external telemetry inspection; see [KI-RAG-0012](known-issues/rag-progress-ui-omits-intent-and-answer-handoff.md).
 
 LangSmith does not currently have a stable application request root, so one
 chat turn can fragment across multiple root traces; see
@@ -232,6 +232,19 @@ The intent classifier requests schema-conformant JSON and degrades to rules on
 model failure or timeout; it remains default disabled. A timed-out synchronous
 provider call can continue running and retain a classifier capacity slot; see
 [KI-RAG-0021](known-issues/intent-classifier-timeout-cannot-cancel-provider-call.md).
+
+Each chat request may carry the default-false `force_comprehensive` override.
+The intent-node boundary resolves it once with the server classifier setting:
+an explicit user override selects `forced_comprehensive`, otherwise an enabled
+classifier selects `auto_classifier`, and the default is `precise_only` with no
+intent-model call. Forced mode reuses the same classifier schema and
+comprehensive graph; unavailable, timed-out, invalid, or contradictory output
+degrades explicitly to the precise compatibility plan. Public and persisted
+trace records requested/effective mode, source, invocation, forced success, and
+degradation error. The composer persists the override per user message and
+regenerate reuses that historical value. This request control does not change
+the default classifier activation state or constitute classifier-quality
+evidence.
 
 The confidence gate can reject mutually corroborating high-score evidence and
 produce a Level 3 no-evidence answer; see
@@ -262,7 +275,7 @@ Degradation rules include hybrid-to-dense fallback, candidate preservation when 
 | Query plan | Implemented, default disabled | `QUERY_PLAN_ENABLED=false` |
 | Unified execution/fallback scaffolding | Implemented, default disabled | both runtime flags false |
 | Citation verification | Implemented, default disabled | citation flag false |
-| Intent routing | Implemented, default disabled; Ragtenance project-level activation planned | `RAG_INTENT_CLASSIFIER_ENABLED=false`; mixed synthetic + authorized-real [activation change](../openspec/changes/rag-intent-routing-activation/) |
+| Intent routing | Implemented, automatic classifier default disabled; explicit request override available | `RAG_INTENT_CLASSIFIER_ENABLED=false`; `force_comprehensive=false`; mixed synthetic + authorized-real [activation change](../openspec/changes/rag-intent-routing-activation/) |
 | Anchor workflow validation bundle | Validation-only | `.env.rag-intent-routing-workflow.example`; not production guidance |
 | Full-chain RAG E2E bundle | Validation-only | `.env.rag-full-chain-e2e.example`; isolated `v4_full` index authorities; not production guidance |
 | Comprehensive parallel retrieval | Implemented, gated by intent routing | `quality_first_v1`; classifier default disabled |

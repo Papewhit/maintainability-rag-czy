@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = "default_session"
     regenerate: Optional[bool] = False
     context_files: Optional[List[str]] = None
+    force_comprehensive: bool = False
 
 
 class RetrievedChunk(BaseModel):
@@ -61,6 +62,12 @@ class RagTrace(BaseModel):
     intent_llm_ms: Optional[float] = None
     intent_llm_error: Optional[str] = None
     intent_fallback_to_rules: Optional[bool] = None
+    intent_requested_mode: Optional[str] = None
+    intent_effective_mode: Optional[str] = None
+    intent_mode_source: Optional[str] = None
+    intent_classifier_invoked: Optional[bool] = None
+    intent_forced_comprehensive_succeeded: Optional[bool] = None
+    intent_mode_degradation_error: Optional[str] = None
     analysis_type: Optional[str] = None
     sub_query_count: Optional[int] = None
     retrieval_branch_count: Optional[int] = None
@@ -222,6 +229,7 @@ class MessageInfo(BaseModel):
     content: str
     timestamp: str
     rag_trace: Optional[RagTrace] = None
+    force_comprehensive: bool = False
 
 
 class SessionMessagesResponse(BaseModel):

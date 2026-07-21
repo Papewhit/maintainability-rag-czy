@@ -29,6 +29,7 @@ async def get_session_messages(session_id: str, current_user: User = Depends(get
                 content=msg["content"],
                 timestamp=msg["timestamp"],
                 rag_trace=msg.get("rag_trace"),
+                force_comprehensive=bool(msg.get("force_comprehensive", False)),
             )
             for msg in records
         ]

@@ -23,6 +23,7 @@ async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_c
             current_user.username,
             session_id,
             request.context_files or [],
+            request.force_comprehensive,
         )
         if isinstance(resp, dict):
             return ChatResponse(**resp)
@@ -59,6 +60,7 @@ async def chat_stream_endpoint(request: ChatRequest, current_user: User = Depend
                 session_id,
                 bool(request.regenerate),
                 request.context_files or [],
+                request.force_comprehensive,
             ):
                 yield chunk
         except ValueError as e:

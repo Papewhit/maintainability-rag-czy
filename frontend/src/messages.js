@@ -3,13 +3,14 @@
         return "msg_" + Date.now() + "_" + Math.random().toString(16).slice(2);
     }
 
-    function createUserMessage(text, contextFiles) {
+    function createUserMessage(text, contextFiles, forceComprehensive) {
         return {
             id: nextMessageId(),
             text,
             html: "",
             isUser: true,
             contextFiles: contextFiles || [],
+            forceComprehensive: !!forceComprehensive,
         };
     }
 
