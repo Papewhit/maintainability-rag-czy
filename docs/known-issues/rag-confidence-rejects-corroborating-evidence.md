@@ -5,9 +5,9 @@ status: open
 scope: rag.confidence
 severity: high
 first_confirmed: 2026-07-19
-last_verified_commit: 5e49a4669f78dbaddf00ee97f1f76c7960bba419
-last_verified_date: 2026-07-19
-source_findings: []
+last_verified_commit: fd9fb5ea22ecdbf9fe28b9b4915762b1cc0f4267
+last_verified_date: 2026-07-21
+source_findings: [RAG-FB-ACT-F001]
 ---
 
 # Confidence gate can reject corroborating high-score evidence
@@ -58,6 +58,19 @@ changed margin and root-share values. An isolated `v4_full` rerun is required
 before assigning the defect solely to the confidence formula or changing any
 threshold.
 
+A later structured trace from LangSmith run
+`019f8374-f02f-7460-9850-10663866f655` provides a second failure shape. All
+five final documents represented both generated subqueries, but Level 2
+recorded both `weak_margin_and_root` and `low_score_and_margin` before
+`levels_exhausted` reached Level 3. Together with the earlier
+`weak_margin_and_root`-only run, this is sufficient to treat the weak-margin
+reason as lacking demonstrated standalone specificity for activation.
+
+The later run does not isolate `low_score_and_margin`, so it is not evidence
+that the low-score reason should be disabled or relaxed. That reason may
+remain a strong signal and must be measured separately from weak-margin and
+from their conjunction.
+
 ## Workaround
 
 For validation, inspect the final source chunks whenever Level 3 is reached;
@@ -65,11 +78,21 @@ do not treat the Level 3 label alone as proof that evidence is absent. Restart
 with `.env.rag-full-chain-e2e.example`, reindex into its isolated collection,
 and preserve the complete trace and answer for comparison.
 
+Keep the reference confidence/fallback path disabled until signal-stratified
+activation evidence exists. In activation candidates, test
+`weak_margin_and_root` disabled or retuned as an independent reason; do not
+apply the same change to `low_score_and_margin` without its own evidence.
+
 ## Resolution Criteria
 
 - Reproduce or invalidate the contradiction using a clean isolated index and
   the same question.
 - Confidence evidence distinguishes genuinely ambiguous close scores from
   multiple high-score chunks that independently corroborate the answer.
+- A frozen signal-stratified gate and ablation separately report
+  `weak_margin_and_root`, `low_score_and_margin`, and their conjunction.
+- `weak_margin_and_root` either meets the standalone specificity gate or is
+  disabled/retuned in the activation candidate; `low_score_and_margin` is
+  retained, changed, or rejected only from its independent evidence.
 - When final top-k evidence directly supports the requested fact, Level 3
   delivery does not claim that the knowledge base lacks that information.

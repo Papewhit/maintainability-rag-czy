@@ -78,7 +78,10 @@ def test_classifier_returns_structured_precise_decision_with_few_shot_prompt():
     assert elapsed_ms >= 0
     system_prompt = model.invoker.messages[0]["content"]
     assert system_prompt.count("示例") >= 3
+    assert "JSON" in system_prompt
+    assert 'scope_hint=null 不是字符串 "none"' in system_prompt
     assert "terminology" in system_prompt
+    assert model.invoker.schema is IntentDecision
     assert model.invoker.invoke_count == 1
 
 

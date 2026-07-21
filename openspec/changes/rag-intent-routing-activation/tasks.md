@@ -3,6 +3,7 @@
 - [ ] 1.1 指定 FAST_MODEL、answer/judge、embedding、reranker、Milvus/BM25 与本地运行设备配置
 - [ ] 1.2 固定 source/config/model fingerprints 与结果目录
 - [ ] 1.3 明确真实文档的公开许可、授权或受控执行方式，禁止未授权内容进入仓库/交接包
+- [ ] 1.4 冻结 intent classifier 的 provider/model/timeout 与冷启动/单次调用计时口径，并验证 KI-RAG-0021 的 timeout 后 slot 恢复；未解决时保留为 activation blocker 或明确的 `partial` 限制
 
 ## 2. 合成集与真实子集
 
@@ -13,7 +14,7 @@
 
 ## 3. 真实模型 Intent 与 Paired A/B
 
-- [ ] 3.1 用真实 FAST_MODEL 在 synthetic 与 real-subset 上运行 intent evaluator
+- [ ] 3.1 用冻结的真实 FAST_MODEL/provider/timeout 身份在 synthetic 与 real-subset 上运行 intent evaluator；normal gate 必须取得非 fallback `model_success`，不得用放宽 timeout 的 compatibility smoke 替代
 - [ ] 3.2 计算 intent accuracy、plan validity、sub-query quality，并保留失败/降级明细
 - [ ] 3.3 在相同身份下运行 `quality_first_v1` 与 `eval_no_crossencoder_v1`
 - [ ] 3.4 验证 paired identity 拒绝逻辑，分别汇总 synthetic/real 指标

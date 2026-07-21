@@ -18,6 +18,7 @@
 - [ ] 3.2 保存逐 case plan、trace、final evidence、回答、来源和运行身份
 - [ ] 3.3 强制检查 filter、未覆盖禁止回答、scope 披露、来源和关闭兼容路径
 - [ ] 3.4 分别计算 Level 分布、改善、来源/覆盖、P50/P95、调用、timeout、budget 与降级指标
+- [ ] 3.5 对 confidence reason 进行分层与消融：单独验证 `weak_margin_and_root` 和 `low_score_and_margin` 的特异性，并保存共现 case 无法归因的限制
 
 ## 4. 项目级门槛与 Budget
 
@@ -25,6 +26,7 @@
 - [ ] 4.2 提出 total/Level 1/Level 2 参考 budget 候选
 - [ ] 4.3 冻结 gate 数据和门槛后验证候选；无候选通过则保留原值
 - [ ] 4.4 新建 activation validation 报告，声明 `passed|partial|failed`、样本限制和非生产边界
+- [ ] 4.5 仅在冻结 gate 证明特异性后保留 `weak_margin_and_root` 独立触发；否则在候选配置中停用或收紧它，同时独立决定是否保留 `low_score_and_margin`
 
 ## 5. 协同 Rehearsal 与参考默认值
 

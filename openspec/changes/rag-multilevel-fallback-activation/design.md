@@ -65,6 +65,10 @@ comprehensive fallback 使用与 `rag-intent-routing-activation` 可比的 sourc
 
 activation validation 报告记录运行身份、数据版本、阈值、budget、rehearsal 与 `passed|partial|failed`。`passed` 只表示满足 Ragtenance 项目级展示/研究复现门槛，不表示生产 readiness。
 
+### 决策 9：Confidence reasons 必须分信号验证
+
+activation gate 按单一 reason 与 reason 组合分别报告混淆结果和消融结果。已有真实模型证据表明 `weak_margin_and_root` 在高相关、相互佐证的 final evidence 上反复触发，因此它不得在未通过冻结 specificity gate 时作为独立启用条件；若未通过，activation candidate 必须停用或收紧该 reason。`low_score_and_margin` 在最新 case 中与它共现，无法由该 case 单独归因，且仍可能是强信号，因此必须独立评估，不能随 `weak_margin_and_root` 一并削弱。
+
 ## Risks / Trade-offs
 
 - **合成 case 被模板线索轻易识别** → 多生成器模板、事实图、最小差异对、反事实孪生和人工抽检。
@@ -73,6 +77,7 @@ activation validation 报告记录运行身份、数据版本、阈值、budget�
 - **Level 平均增益掩盖安全失败** → hard gates 独立判定。
 - **budget 适配单台机器** → 记录硬件和模型身份，明确只作参考配置。
 - **项目级 passed 被误读** → 架构与验证报告明确非生产定位。
+- **共现 reasons 掩盖单一信号缺陷** → 按 reason 分层并做消融；不从共现 case 推断 `low_score_and_margin` 无效。
 
 ## Migration Plan
 

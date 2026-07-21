@@ -44,6 +44,17 @@ query set MUST 覆盖 precise/comprehensive、Level 0/1/2/3、filter/boost/none�
 - **WHEN** 所有候选失败或证据不完整
 - **THEN** 默认 budget MUST 保持不变
 
+### Requirement: Confidence Signal 分层 Gate
+activation evidence MUST 按单一 confidence reason 与 reason 组合分别计算特异性并执行消融。`weak_margin_and_root` MUST NOT 作为独立启用条件，除非它在冻结 gate 上满足项目门槛；未通过时，候选配置 MUST 停用或收紧该 reason。`low_score_and_margin` MUST 独立评估，系统 MUST NOT 仅凭它与低特异性 reason 共现就停用或放宽该信号。
+
+#### Scenario: weak-margin 独立特异性不足
+- **WHEN** 冻结 gate 或消融证据显示 `weak_margin_and_root` 会反复拒绝直接相关、相互佐证的 final evidence
+- **THEN** activation candidate 停用或收紧该独立 trigger，并重新运行适用 gate
+
+#### Scenario: 两个 reasons 共现
+- **WHEN** `weak_margin_and_root` 与 `low_score_and_margin` 在同一失败 case 中共现
+- **THEN** 报告记录该 case 不能单独归因，并使用单信号样本或消融分别决定两个 reasons 的 activation 状态
+
 ### Requirement: Intent-Routing 协同
 comprehensive fallback gate MUST 引用可比身份下有效的 `rag-intent-routing-activation` 项目级证据。intent 与 fallback MUST 分别报告结论；intent gate 未通过时，完整 comprehensive fallback MUST NOT 标记 passed。
 

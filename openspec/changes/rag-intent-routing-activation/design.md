@@ -4,6 +4,8 @@ Ragtenance 的目标级别是“高于 demo 的学生/课题合作项目”：�
 
 `rag-intent-routing` 已实现 intent classifier、Precise/Comprehensive QueryPlan、综合 fan-out、版本化 postprocess profile、公共 trace 和评测 harness。当前默认仍为 `RAG_INTENT_CLASSIFIER_ENABLED=false`。已有 100 条合成 intent query 能验证解析契约，但缺少配套的完整合成 corpus，并且尚未用少量真实文档证明从解析到检索/回答的生态有效性。
 
+前置 provider-compatibility change 已证明 JSON 请求/schema 可以成功，但没有证明当前 E2E 身份满足 activation 延迟预算。`INTENT-PROVIDER-F001` 记录了 `qwen3.6-plus + 5s` 在 LangSmith run `019f82cb-b723-7852-8bed-b62b25c6a721` 中超时并降级；一次 `qwen-flash + 5s` 成功只能作为 development 候选。正常 gate 必须在同一冻结身份下取得非 fallback `model_success`，并分别记录冷启动总耗时、模型调用耗时和 warm-run 分布。`INTENT-PROVIDER-F002` / KI-RAG-0021 还表明外层线程 timeout 不会取消已开始的 provider 调用，因此可靠性判断必须包含 timeout 后的 capacity/slot 恢复。
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -31,6 +33,8 @@ Ragtenance 的目标级别是“高于 demo 的学生/课题合作项目”：�
 ### 决策 2：真实执行边界与替身测试分开
 
 activation run 使用实际配置的 FAST_MODEL、embedding、Milvus/BM25、reranker 和 answer/judge model。unit tests 可以使用替身，但报告必须标记 `contract-only`；默认启用结论至少需要一次真实模型 + 真实索引的混合集运行。
+
+FAST_MODEL 的 `model_success` 必须来自 gate 所冻结的确切 provider/model/timeout 身份。放宽 timeout 的兼容性 smoke、规则 fallback 或另一个候选模型的成功均不得替代。计时口径必须区分模型对象冷构造、单次 provider invoke 和 intent node 端到端耗时。
 
 ### 决策 3：保留轻量运行身份
 
