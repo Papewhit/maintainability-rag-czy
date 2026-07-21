@@ -9,6 +9,7 @@ from langchain_core.messages import SystemMessage
 
 from backend.rag.runtime_config import load_runtime_config
 from backend.rag.trace import RAG_CONTEXT_FORMAT_VERSION
+from backend.rag.types import Level3Delivery
 from backend.shared.filename_utils import dedupe_filenames
 from backend.chat.fallback_delivery import build_fallback_delivery_instruction
 
@@ -37,6 +38,7 @@ class RagTurnContext:
     fallback_level: int = 0
     scope_mode_before: str | None = None
     scope_mode_after: str | None = None
+    level3_delivery: Level3Delivery | None = None
     level3_answer: str | None = None
     force_comprehensive: bool = False
 
@@ -171,6 +173,7 @@ def apply_rag_trace_to_turn_context(
         fallback_level=int(trace.get("fallback_level") or 0),
         scope_mode_before=trace.get("level2_previous_scope_mode"),
         scope_mode_after=trace.get("level2_new_scope_mode"),
+        level3_delivery=trace.get("level3_delivery"),
         level3_answer=trace.get("level3_answer"),
     )
 
@@ -183,6 +186,7 @@ def _with_fallback_delivery_instruction(
         fallback_level=turn_context.fallback_level,
         scope_mode_before=turn_context.scope_mode_before,
         scope_mode_after=turn_context.scope_mode_after,
+        level3_delivery=turn_context.level3_delivery,
         level3_answer=turn_context.level3_answer,
     )
     if not instruction:

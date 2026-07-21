@@ -4,6 +4,7 @@
 
 ## What Changes
 
+- 在 `intent_parse` 完成后显式发送最终精确/综合执行路线的 `rag_step`，安全降级时展示实际采用的路线而不是请求路线。
 - 为 comprehensive 的分解、并行召回、分支 rerank、merge 和 shared postprocess 增加有序的聚合级 `rag_step` 事件，不从并行 worker 直接发出乱序事件。
 - 明确区分候选证据、final top-k 和真正进入 Level 3 交付的 evidence；前端“最终来源片段”只展示回答实际消费的集合，候选片段另作诊断展示。
 - 将 Level 3 交付拆成 typed mode、覆盖维度、未覆盖维度、逐维度证据与 delivery constraints；不再让一个 `level3_answer` 字符串同时充当状态、控制指令和最终文案。
@@ -17,7 +18,7 @@
 
 ### Modified Capabilities
 
-- `rag-intent-routing`: 补充 comprehensive 正常执行阶段的公共事件及 final evidence/trace 展示契约。
+- `rag-intent-routing`: 补充 intent 最终路线、comprehensive 正常执行阶段的公共事件及 final evidence/trace 展示契约。
 - `rag-multilevel-fallback`: 将 Level 3 覆盖与交付改为 typed contract，并保持 partial 与 evidence-only 的既有生成边界。
 
 ## Impact

@@ -8,6 +8,7 @@
 
 **Goals:**
 
+- intent parse 完成后显式展示最终采用的精确/综合执行路线，包括安全降级后的实际路线。
 - comprehensive 正常路径产生有序、聚合级、用户可理解的进度事件。
 - trace 和 UI 区分 candidates、final top-k 与 answer-consumed evidence。
 - Level 3 使用 typed delivery contract 表达 mode、coverage、证据与约束。
@@ -24,6 +25,8 @@
 ## Decisions
 
 ### 决策 1：只在 graph node 边界发送聚合事件
+
+`intent_parse` 在 typed plan 已确定后发送一次最终路线事件；精确路线进入 `retrieve_initial`，综合路线进入 `decompose_and_fanout`。forced/automatic classifier 降级时事件必须显示实际执行路线，并仅用通用降级说明，不公开 provider 错误或原始模型输出。
 
 在 decompose/fanout、branch rerank、merge 和 shared postprocess 的主执行边界发送开始/完成事件；并行 branch worker 不直接写 SSE，以避免线程完成顺序造成 UI 乱序。事件 detail 携带计划/完成分支数、候选/最终数和策略，但不泄露内部 Prompt 或完整查询内容。
 
@@ -71,4 +74,4 @@ Trace 明确保留：candidate/initial/expanded 诊断集合、`final_evidence_c
 
 ## Open Questions
 
-- 候选诊断区是否默认折叠属于 UI 细节，但不得与“最终来源片段”混用。
+- 已决：候选诊断区随现有默认折叠的思考过程显示，并与“最终来源片段”使用独立标题和数据选择器；本 change 不增加第二层折叠控件。

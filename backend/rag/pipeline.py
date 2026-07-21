@@ -49,7 +49,11 @@ from backend.rag.fallback_scope import (
     level2_same_root_cap,
     relax_scope,
 )
-from backend.rag.level3_answer import generate_level3_answer
+from backend.rag.level3_answer import (
+    build_level3_delivery,
+    level3_answer_evidence,
+    render_level3_delivery,
+)
 from backend.rag.intent import (
     IntentClassifier,
     IntentParseResult,
@@ -68,6 +72,8 @@ from backend.rag.formatting import format_rag_documents
 from backend.rag.trace import (
     append_stage_error as _trace_append_stage_error,
     build_initial_rag_trace,
+    candidate_identity,
+    evidence_chunks,
     merge_expanded_rag_trace,
 )
 from backend.rag.runtime_config import RagRuntimeConfig, load_runtime_config
@@ -318,14 +324,26 @@ def intent_parse_node(state: RAGState) -> RAGState:
         llm_model=config.intent_classifier_model or FAST_MODEL,
     )
     plan = result.query_plan
+    plan_type = "comprehensive" if isinstance(plan, ComprehensiveQueryPlan) else "precise"
     semantic_query = plan.semantic_query if isinstance(plan, PreciseQueryPlan) else plan.clean_query
     trace = dict(result.trace)
     trace.setdefault("tool_used", True)
     trace.setdefault("tool_name", "search_knowledge_base")
+    if plan_type == "comprehensive":
+        route_detail = "已选择多维分析与并行检索"
+        route_label = "意图解析：综合路线"
+    else:
+        route_detail = "已选择单路径精确检索"
+        route_label = "意图解析：精确路线"
+        if trace.get("intent_mode_degradation_error"):
+            route_detail += "（请求的综合模式不可用，已安全降级）"
+        elif trace.get("intent_fallback_to_rules"):
+            route_detail += "（分类器不可用，已按规则降级）"
+    emit_rag_step("🧭", route_label, route_detail)
     return {
         "intent_result": result,
         "query_plan": plan,
-        "query_plan_type": "comprehensive" if isinstance(plan, ComprehensiveQueryPlan) else "precise",
+        "query_plan_type": plan_type,
         "raw_query": plan.raw_query,
         "clean_query": plan.clean_query,
         "semantic_query": semantic_query,
@@ -335,12 +353,17 @@ def intent_parse_node(state: RAGState) -> RAGState:
 
 def _fallback_to_initial_retrieval(state: RAGState, rag_trace: dict, expanded_start: float) -> RAGState:
     docs = state.get("docs") or []
+    public_docs = evidence_chunks(list(docs))
     context = state.get("context") or _format_docs(docs)
     timings = _trace_timings(rag_trace)
     timings["expanded_retrieve_ms"] = elapsed_ms(expanded_start)
     rag_trace.update({
-        "retrieved_chunks": docs,
+        "retrieved_chunks": public_docs,
         "expanded_retrieved_chunks": [],
+        "final_evidence_chunks": public_docs,
+        "answer_evidence_chunks": public_docs,
+        "evidence_contract_version": "rag-evidence-v1",
+        "answer_evidence_subset_of_final": True,
         "retrieval_stage": "initial",
         "fallback_timed_out": True,
         "fallback_returned_initial": True,
@@ -477,6 +500,11 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         fanout_limit,
     )
     branches = build_retrieval_branches(plan)
+    emit_rag_step(
+        "📑",
+        "综合检索：分解与并行召回",
+        f"计划分支 {len(branches)} 个（分析维度 {len(plan.sub_queries)} 个）",
+    )
     resolution = resolve_comprehensive_postprocess_policy(plan.postprocess_profile)
     scope_trace = {
         "scope_mode": plan.retrieval_scope.scope_mode,
@@ -585,6 +613,14 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         (int(result.meta.get("candidate_k") or 0) for result in results),
         default=0,
     )
+    candidate_documents = []
+    seen_candidate_ids = set()
+    for result in results:
+        for candidate in result.candidates:
+            candidate_id = candidate_identity(candidate)
+            if candidate_id not in seen_candidate_ids:
+                seen_candidate_ids.add(candidate_id)
+                candidate_documents.append(candidate)
     patch = {
         "requested_comprehensive_postprocess_profile": resolution.requested_profile,
         "effective_comprehensive_postprocess_profile": resolution.effective_profile,
@@ -608,6 +644,7 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         "candidate_k": candidate_k,
         "baseline_candidate_count": len(baseline.candidates),
         "baseline_hit": bool(baseline.candidates),
+        "candidate_evidence_chunks": evidence_chunks(candidate_documents),
         "query_plan_enabled": True,
         "scope_filter_applied": plan.retrieval_scope.scope_mode == "filter",
         "strict_scope_filter": plan.retrieval_scope.scope_mode == "filter",
@@ -661,6 +698,11 @@ def decompose_and_fanout(state: RAGState) -> RAGState:
         "timings": {"comprehensive_fanout_ms": elapsed_ms(started)},
         "stage_errors": branch_errors,
     }
+    emit_rag_step(
+        "✅",
+        "综合检索：并行召回完成",
+        f"完成分支 {len(results)}/{len(branches)} 个，候选 {sum(len(item.candidates) for item in results)} 个",
+    )
     return {
         "query_plan": plan,
         "comprehensive_policy_resolution": resolution,
@@ -675,6 +717,11 @@ def branch_rerank_node(state: RAGState) -> RAGState:
     branch_results = list(state.get("branch_retrieval_results") or [])
     if not isinstance(resolution, ComprehensivePolicyResolution):
         raise TypeError("branch_rerank requires a resolved comprehensive policy")
+    emit_rag_step(
+        "⚖️",
+        "综合检索：分支处理",
+        f"处理分支 {len(branch_results)} 个",
+    )
     config = _runtime_config()
     output_budget = _effective_rerank_output_size(
         5,
@@ -721,6 +768,11 @@ def branch_rerank_node(state: RAGState) -> RAGState:
         "stage_errors": list(device_error_trace.get("stage_errors") or []),
         "timings": {"comprehensive_branch_rerank_ms": elapsed_ms(started)},
     })
+    emit_rag_step(
+        "✅",
+        "综合检索：分支处理完成",
+        f"完成分支 {len(results)} 个，保留候选 {sum(len(item.candidates) for item in results)} 个",
+    )
     return {
         "branch_rerank_results": results,
         "rag_trace": _merge_comprehensive_trace(state, patch),
@@ -733,6 +785,11 @@ def merge_sub_query_results(state: RAGState) -> RAGState:
     if not isinstance(resolution, ComprehensivePolicyResolution):
         raise TypeError("merge_sub_query_results requires a resolved comprehensive policy")
     started = time.perf_counter()
+    emit_rag_step(
+        "🔗",
+        "综合检索：合并证据",
+        f"合并分支 {len(branch_results)} 个",
+    )
     try:
         merged, meta = resolution.policy.merger.merge(
             branch_results,
@@ -748,6 +805,11 @@ def merge_sub_query_results(state: RAGState) -> RAGState:
         "timings": {"multi_query_merge_ms": elapsed_ms(started)},
         "stage_errors": errors,
     }
+    emit_rag_step(
+        "✅",
+        "综合检索：证据合并完成",
+        f"合并候选 {len(merged)} 个",
+    )
     return {
         "merged_candidates": merged,
         "merge_meta": meta,
@@ -762,6 +824,11 @@ def shared_postprocess_node(state: RAGState) -> RAGState:
     if not isinstance(plan, ComprehensiveQueryPlan) or not isinstance(resolution, ComprehensivePolicyResolution):
         raise TypeError("shared_postprocess requires comprehensive plan and policy")
     started = time.perf_counter()
+    emit_rag_step(
+        "🧩",
+        "综合检索：最终后处理",
+        f"输入候选 {len(state.get('merged_candidates') or [])} 个",
+    )
     same_root_cap_override = state.get("same_root_cap_override")
 
     def structure_rerank_with_round_cap(docs, top_k):
@@ -788,7 +855,11 @@ def shared_postprocess_node(state: RAGState) -> RAGState:
     shared_timings = dict(patch.get("timings") or {})
     shared_timings["comprehensive_shared_postprocess_ms"] = elapsed_ms(started)
     patch.update({
-        "retrieved_chunks": docs,
+        "retrieved_chunks": evidence_chunks(docs),
+        "final_evidence_chunks": evidence_chunks(docs),
+        "answer_evidence_chunks": evidence_chunks(docs),
+        "evidence_contract_version": "rag-evidence-v1",
+        "answer_evidence_subset_of_final": True,
         "retrieval_stage": "comprehensive",
         "retrieval_mode": "comprehensive_parallel_hybrid",
         "context_chars": len(context),
@@ -796,6 +867,11 @@ def shared_postprocess_node(state: RAGState) -> RAGState:
         "final_context_chunk_count": len(docs),
         "timings": shared_timings,
     })
+    emit_rag_step(
+        "✅",
+        "综合检索：最终后处理完成",
+        f"最终证据 {len(docs)} 个",
+    )
     return {
         "docs": docs,
         "context": context,
@@ -1452,11 +1528,13 @@ def level3_insufficient_evidence_node(state: RAGState) -> RAGState:
     if not isinstance(plan, (PreciseQueryPlan, ComprehensiveQueryPlan)):
         raise TypeError("Level 3 requires a typed query plan")
     final_documents = list(state.get("docs") or [])
-    answer = generate_level3_answer(
+    delivery = build_level3_delivery(
         plan,
         attempted_levels,
         final_documents=final_documents,
     )
+    answer = render_level3_delivery(delivery)
+    answer_evidence = level3_answer_evidence(delivery, final_documents)
     uncovered_sub_queries = []
     baseline_evidence_used = False
     if isinstance(plan, ComprehensiveQueryPlan):
@@ -1481,6 +1559,11 @@ def level3_insufficient_evidence_node(state: RAGState) -> RAGState:
         "level3_attempted_levels": attempted_levels,
         "level3_uncovered_sub_queries": uncovered_sub_queries,
         "level3_baseline_evidence_used": baseline_evidence_used,
+        "final_evidence_chunks": evidence_chunks(final_documents),
+        "answer_evidence_chunks": evidence_chunks(answer_evidence),
+        "evidence_contract_version": "rag-evidence-v1",
+        "answer_evidence_subset_of_final": True,
+        "level3_delivery": delivery,
         "level3_answer": answer,
         "level3_ms": elapsed_ms(started),
     })
@@ -1815,6 +1898,7 @@ def _retrieve_expanded_candidate_only(
         ),
     )
     docs = final_result.get("docs", [])
+    public_docs = evidence_chunks(list(docs))
     meta = dict(final_result.get("meta", {}))
     meta.setdefault("final_rerank_execution_mode", meta.get("rerank_execution_mode"))
     final_timings = dict(meta.pop("timings", {}) or {})
@@ -1829,8 +1913,12 @@ def _retrieve_expanded_candidate_only(
             "step_back_answer": state.get("step_back_answer", ""),
             "hypothetical_doc": state.get("hypothetical_doc", ""),
             "expansion_type": strategy,
-            "retrieved_chunks": docs,
-            "expanded_retrieved_chunks": docs,
+            "retrieved_chunks": public_docs,
+            "expanded_retrieved_chunks": public_docs,
+            "final_evidence_chunks": public_docs,
+            "answer_evidence_chunks": public_docs,
+            "evidence_contract_version": "rag-evidence-v1",
+            "answer_evidence_subset_of_final": True,
             "context_files": context_files,
             "retrieval_stage": "expanded",
             "context_chars": len(context),
@@ -2039,6 +2127,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         item["rrf_rank"] = idx
 
     context = _format_docs(deduped)
+    public_docs = evidence_chunks(list(deduped))
     emit_rag_step("✅", f"扩展检索完成，共 {len(deduped)} 个片段")
     rag_trace = state.get("rag_trace", {}) or {}
     expanded_timings = {
@@ -2053,8 +2142,12 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         "step_back_answer": state.get("step_back_answer", ""),
         "hypothetical_doc": state.get("hypothetical_doc", ""),
         "expansion_type": strategy,
-        "retrieved_chunks": deduped,
-        "expanded_retrieved_chunks": deduped,
+        "retrieved_chunks": public_docs,
+        "expanded_retrieved_chunks": public_docs,
+        "final_evidence_chunks": public_docs,
+        "answer_evidence_chunks": public_docs,
+        "evidence_contract_version": "rag-evidence-v1",
+        "answer_evidence_subset_of_final": True,
         "context_files": context_files,
         "retrieval_stage": "expanded",
         "rerank_enabled": rerank_enabled_any,

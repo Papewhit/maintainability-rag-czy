@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Any, Dict, Optional, List
+from pydantic import BaseModel, ConfigDict
+from typing import Any, Dict, Literal, Optional, List
 
 
 class RegisterRequest(BaseModel):
@@ -36,6 +36,8 @@ class ChatRequest(BaseModel):
 
 class RetrievedChunk(BaseModel):
     filename: str
+    candidate_id: Optional[str] = None
+    chunk_id: Optional[str] = None
     page_number: Optional[str | int] = None
     text: Optional[str] = None
     score: Optional[float] = None
@@ -50,9 +52,49 @@ class RetrievedChunk(BaseModel):
     multi_query_rrf_score: Optional[float] = None
 
 
+class Level3EvidenceRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str
+    chunk_id: str
+    filename: str
+    page_number: Optional[str | int]
+    excerpt: str
+
+
+class Level3DimensionEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dimension_id: str
+    label: str
+    evidence_refs: List[Level3EvidenceRef]
+
+
+class Level3Delivery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal[
+        "partial_synthesis",
+        "full_coverage_low_confidence",
+        "baseline_only",
+        "no_evidence",
+        "precise_insufficient",
+    ]
+    covered_count: int
+    total_count: int
+    covered_dimensions: List[str]
+    uncovered_dimensions: List[str]
+    dimension_evidence: List[Level3DimensionEvidence]
+    baseline_evidence: List[Level3EvidenceRef]
+    constraints: List[str]
+    attempted_levels: List[int]
+
+
 class RagTrace(BaseModel):
     tool_used: bool
     tool_name: str
+    evidence_contract_version: Optional[str] = None
+    answer_evidence_subset_of_final: Optional[bool] = None
     intent: Optional[str] = None
     intent_confidence: Optional[float] = None
     query_plan_type: Optional[str] = None
@@ -209,12 +251,16 @@ class RagTrace(BaseModel):
     level3_uncovered_sub_queries: Optional[List[str]] = None
     level3_baseline_evidence_used: Optional[bool] = None
     level3_answer: Optional[str] = None
+    level3_delivery: Optional[Level3Delivery] = None
     level3_ms: Optional[float] = None
     timings: Optional[Dict[str, float]] = None
     stage_errors: Optional[List[Dict[str, Any]]] = None
     retrieved_chunks: Optional[List[RetrievedChunk]] = None
     initial_retrieved_chunks: Optional[List[RetrievedChunk]] = None
     expanded_retrieved_chunks: Optional[List[RetrievedChunk]] = None
+    candidate_evidence_chunks: Optional[List[RetrievedChunk]] = None
+    final_evidence_chunks: Optional[List[RetrievedChunk]] = None
+    answer_evidence_chunks: Optional[List[RetrievedChunk]] = None
     attached_context_chunks: Optional[List[RetrievedChunk]] = None
     context_files: Optional[List[str]] = None
 

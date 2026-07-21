@@ -473,6 +473,29 @@ const checks = [
     },
   },
   {
+    name: "renders only answer-consumed evidence as final sources and separates candidates",
+    run() {
+      assert.match(index, /最终来源片段/);
+      assert.match(index, /候选片段（诊断）/);
+      const { vm } = createVm();
+      const current = {
+        answer_evidence_chunks: [{ chunk_id: "answer" }],
+        retrieved_chunks: [{ chunk_id: "retrieved" }],
+        initial_retrieved_chunks: [{ chunk_id: "eliminated" }],
+        expanded_retrieved_chunks: [{ chunk_id: "answer" }],
+      };
+      assert.deepEqual(Array.from(vm.traceChunks(current), (item) => item.chunk_id), ["answer"]);
+      assert.deepEqual(
+        Array.from(vm.traceCandidateChunks(current), (item) => item.chunk_id),
+        ["eliminated", "answer"],
+      );
+      assert.deepEqual(
+        Array.from(vm.traceChunks({ retrieved_chunks: [{ chunk_id: "legacy" }], initial_retrieved_chunks: [{ chunk_id: "wrong" }] }), (item) => item.chunk_id),
+        ["legacy"],
+      );
+    },
+  },
+  {
     name: "sends and persists the per-message comprehensive override",
     async run() {
       const { vm } = createVm({

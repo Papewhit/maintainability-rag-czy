@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from backend.contracts.schemas import ChatResponse, RagTrace
 
@@ -180,7 +181,40 @@ def test_rag_trace_schema_preserves_multilevel_fallback_fields():
         "level3_attempted_levels": [1, 2, 3],
         "level3_uncovered_sub_queries": ["missing dimension"],
         "level3_baseline_evidence_used": False,
+        "level3_delivery": {
+            "mode": "partial_synthesis",
+            "covered_count": 1,
+            "total_count": 2,
+            "covered_dimensions": ["cost"],
+            "uncovered_dimensions": ["risk"],
+            "dimension_evidence": [{
+                "dimension_id": "sub_query_0",
+                "label": "cost",
+                "evidence_refs": [{
+                    "candidate_id": "final-1",
+                    "chunk_id": "final-1",
+                    "filename": "final.pdf",
+                    "page_number": 1,
+                    "excerpt": "final",
+                }],
+            }],
+            "baseline_evidence": [],
+            "constraints": ["answer_covered_dimensions_only"],
+            "attempted_levels": [1, 2, 3],
+        },
         "level3_answer": "deterministic constraint",
+        "final_evidence_chunks": [{
+            "candidate_id": "final-1",
+            "chunk_id": "final-1",
+            "filename": "final.pdf",
+            "text": "final",
+        }],
+        "answer_evidence_chunks": [{
+            "candidate_id": "final-1",
+            "chunk_id": "final-1",
+            "filename": "final.pdf",
+            "text": "final",
+        }],
         "level3_ms": 1.0,
     }
 
@@ -195,4 +229,35 @@ def test_rag_trace_schema_preserves_multilevel_fallback_fields():
     public_trace = response.model_dump()["rag_trace"]
 
     for field, expected in fallback_fields.items():
-        assert public_trace[field] == expected
+        if field in {"final_evidence_chunks", "answer_evidence_chunks"}:
+            assert public_trace[field][0]["candidate_id"] == expected[0]["candidate_id"]
+            assert public_trace[field][0]["chunk_id"] == expected[0]["chunk_id"]
+            assert public_trace[field][0]["text"] == expected[0]["text"]
+        else:
+            assert public_trace[field] == expected
+
+
+@pytest.mark.parametrize(
+    "delivery",
+    [
+        {"mode": "partial_synthesis", "covered_count": 1, "total_count": 2},
+        {
+            "mode": "future_unknown_mode",
+            "covered_count": 0,
+            "total_count": 0,
+            "covered_dimensions": [],
+            "uncovered_dimensions": [],
+            "dimension_evidence": [],
+            "baseline_evidence": [],
+            "constraints": [],
+            "attempted_levels": [3],
+        },
+    ],
+)
+def test_rag_trace_schema_rejects_incomplete_or_unknown_level3_delivery(delivery):
+    with pytest.raises(ValidationError):
+        RagTrace.model_validate({
+            "tool_used": True,
+            "tool_name": "search_knowledge_base",
+            "level3_delivery": delivery,
+        })

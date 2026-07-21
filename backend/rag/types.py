@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 class StageErrorDict(TypedDict):
@@ -36,6 +36,44 @@ class CandidateTrace(TypedDict, total=False):
     doc_scope_match_score: float | None
     filename_boost_applied: bool
     filename_boost_score: float | None
+
+
+class EvidenceIdentity(TypedDict):
+    candidate_id: str
+    chunk_id: str
+
+
+Level3Mode = Literal[
+    "partial_synthesis",
+    "full_coverage_low_confidence",
+    "baseline_only",
+    "no_evidence",
+    "precise_insufficient",
+]
+
+
+class Level3EvidenceRef(EvidenceIdentity):
+    filename: str
+    page_number: int | str | None
+    excerpt: str
+
+
+class Level3DimensionEvidence(TypedDict):
+    dimension_id: str
+    label: str
+    evidence_refs: list[Level3EvidenceRef]
+
+
+class Level3Delivery(TypedDict):
+    mode: Level3Mode
+    covered_count: int
+    total_count: int
+    covered_dimensions: list[str]
+    uncovered_dimensions: list[str]
+    dimension_evidence: list[Level3DimensionEvidence]
+    baseline_evidence: list[Level3EvidenceRef]
+    constraints: list[str]
+    attempted_levels: list[int]
 
 
 class RetrievalMeta(TypedDict, total=False):
@@ -201,6 +239,12 @@ class RagTrace(TypedDict, total=False):
     retrieved_chunks: list[dict[str, Any]]
     initial_retrieved_chunks: list[dict[str, Any]]
     expanded_retrieved_chunks: list[dict[str, Any]]
+    candidate_evidence_chunks: list[dict[str, Any]]
+    final_evidence_chunks: list[dict[str, Any]]
+    answer_evidence_chunks: list[dict[str, Any]]
+    level3_delivery: Level3Delivery
+    evidence_contract_version: str
+    answer_evidence_subset_of_final: bool
     attached_context_chunks: list[dict[str, Any]]
     attached_context_count: int
     context_files: list[str]

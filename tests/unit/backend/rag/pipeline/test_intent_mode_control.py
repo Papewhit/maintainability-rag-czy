@@ -123,6 +123,7 @@ def test_intent_node_resolves_forced_mode_even_when_environment_classifier_is_of
         patch("backend.rag.pipeline.load_runtime_config", return_value=config),
         patch("backend.rag.pipeline.load_query_filename_registry", return_value=[]),
         patch("backend.rag.pipeline.IntentClassifier", return_value=classifier),
+        patch("backend.rag.pipeline.emit_rag_step") as emit,
     ):
         result = rag_pipeline.intent_parse_node({
             "question": "对比方案",
@@ -132,6 +133,41 @@ def test_intent_node_resolves_forced_mode_even_when_environment_classifier_is_of
 
     assert isinstance(result["query_plan"], ComprehensiveQueryPlan)
     assert classifier.calls == [("对比方案", True)]
+    emit.assert_called_once_with(
+        "🧭",
+        "意图解析：综合路线",
+        "已选择多维分析与并行检索",
+    )
+
+
+def test_intent_node_emits_effective_precise_route_without_provider_error_text():
+    config = replace(
+        load_runtime_config({}),
+        intent_classifier_enabled=False,
+        query_plan_enabled=False,
+    )
+    classifier = RecordingClassifier(error=RuntimeError("secret provider failure"))
+
+    with (
+        patch("backend.rag.pipeline.load_runtime_config", return_value=config),
+        patch("backend.rag.pipeline.load_query_filename_registry", return_value=[]),
+        patch("backend.rag.pipeline.IntentClassifier", return_value=classifier),
+        patch("backend.rag.pipeline.emit_rag_step") as emit,
+    ):
+        result = rag_pipeline.intent_parse_node({
+            "question": "综合分析",
+            "context_files": [],
+            "force_comprehensive": True,
+        })
+
+    assert isinstance(result["query_plan"], PreciseQueryPlan)
+    assert result["query_plan_type"] == "precise"
+    emit.assert_called_once_with(
+        "🧭",
+        "意图解析：精确路线",
+        "已选择单路径精确检索（请求的综合模式不可用，已安全降级）",
+    )
+    assert "secret provider failure" not in emit.call_args.args[2]
 
 
 def test_chat_contract_defaults_old_clients_and_forces_preload_for_user_override():

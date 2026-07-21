@@ -1,4 +1,5 @@
 from dataclasses import replace
+import time
 from unittest.mock import patch
 
 import pytest
@@ -31,6 +32,67 @@ def _plan() -> ComprehensiveQueryPlan:
         ),
         coverage_domains=("mechanical", "electrical"),
     )
+
+
+def _run_observed_comprehensive_nodes(delays):
+    emitted = []
+
+    def retrieve(query, **kwargs):
+        time.sleep(delays.get(query, 0))
+        return {
+            "candidates": [{
+                "chunk_id": query,
+                "filename": "manual.pdf",
+                "text": query,
+                "matched_branch_ids": [],
+            }],
+            "meta": {"timings": {}, "stage_errors": []},
+        }
+
+    with (
+        patch("backend.rag.pipeline.retrieve_candidate_pool", side_effect=retrieve),
+        patch("backend.rag.pipeline.emit_rag_step", side_effect=lambda _icon, label, detail, **_kwargs: emitted.append((label, detail))),
+    ):
+        state = {
+            "question": _plan().raw_query,
+            "context_files": [],
+            "query_plan": _plan(),
+            "query_plan_type": "comprehensive",
+            "rag_trace": {},
+        }
+        state.update(rag_pipeline.decompose_and_fanout(state))
+        with patch(
+            "backend.rag.pipeline.run_branch_rerank",
+            return_value=(state["branch_retrieval_results"], {}),
+        ):
+            state.update(rag_pipeline.branch_rerank_node(state))
+        state.update(rag_pipeline.merge_sub_query_results(state))
+        with patch(
+            "backend.rag.pipeline.run_shared_postprocess",
+            return_value=(list(state["merged_candidates"][:1]), {"timings": {}}),
+        ):
+            state.update(rag_pipeline.shared_postprocess_node(state))
+    return emitted, state
+
+
+def test_comprehensive_aggregate_events_are_ordered_and_worker_order_independent():
+    first, first_state = _run_observed_comprehensive_nodes({"综合风险": 0.02, "机械风险": 0.01})
+    second, second_state = _run_observed_comprehensive_nodes({"电气风险": 0.02, "机械风险": 0.01})
+
+    assert first == second
+    assert [label for label, _detail in first] == [
+        "综合检索：分解与并行召回",
+        "综合检索：并行召回完成",
+        "综合检索：分支处理",
+        "综合检索：分支处理完成",
+        "综合检索：合并证据",
+        "综合检索：证据合并完成",
+        "综合检索：最终后处理",
+        "综合检索：最终后处理完成",
+    ]
+    assert first_state["rag_trace"]["answer_evidence_chunks"][0]["candidate_id"]
+    assert first_state["rag_trace"]["final_evidence_chunks"] == first_state["rag_trace"]["answer_evidence_chunks"]
+    assert second_state["rag_trace"]["final_evidence_chunks"] == second_state["rag_trace"]["answer_evidence_chunks"]
 
 
 def test_fanout_uses_clean_query_baseline_and_each_branch_runs_independent_preflight():
@@ -495,6 +557,7 @@ def test_shared_postprocess_preserves_actual_upstream_merge_timing():
 
 def test_comprehensive_graph_runs_once_and_returns_merged_context_with_full_trace():
     plan = _plan()
+    emitted = []
     intent_result = IntentParseResult(
         intent="comprehensive_analysis",
         confidence=0.9,
@@ -541,6 +604,10 @@ def test_comprehensive_graph_runs_once_and_returns_merged_context_with_full_trac
         patch("backend.rag.pipeline._step_chain_check", side_effect=pass_stage),
         patch("backend.rag.pipeline._apply_structure_rerank", side_effect=pass_stage),
         patch("backend.rag.pipeline._evaluate_retrieval_confidence", return_value={"fallback_required": False}),
+        patch(
+            "backend.rag.pipeline.emit_rag_step",
+            side_effect=lambda _icon, label, detail, **_kwargs: emitted.append((label, detail)),
+        ),
     ):
         graph = rag_pipeline.build_rag_graph()
         result = graph.invoke(
@@ -565,6 +632,10 @@ def test_comprehensive_graph_runs_once_and_returns_merged_context_with_full_trac
     assert result["rag_trace"]["tool_name"] == "search_knowledge_base"
     assert result["rag_trace"]["branch_candidate_count"] == 3
     assert result["rag_trace"]["deduplicated_candidate_count"] == 0
+    assert [label for label, _detail in emitted[:2]] == [
+        "意图解析：综合路线",
+        "综合检索：分解与并行召回",
+    ]
 
     chat_payload = ChatResponse(
         response="ok",

@@ -126,6 +126,20 @@ def candidate_identity(doc: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def evidence_chunks(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return public evidence records with an explicit stable identity."""
+    records = []
+    for doc in docs:
+        identity = candidate_identity(doc)
+        records.append({
+            **doc,
+            "filename": str(doc.get("filename") or "Unknown"),
+            "candidate_id": identity,
+            "chunk_id": str(doc.get("chunk_id") or identity),
+        })
+    return records
+
+
 def rerank_input_hash(doc: dict[str, Any]) -> str:
     text = doc.get("rerank_pair_text") or doc.get("retrieval_text") or doc.get("text") or ""
     return trace_text_hash(text)
@@ -231,14 +245,21 @@ def build_initial_rag_trace(
     attached_docs: list[dict[str, Any]] | None = None,
     attached_meta: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    public_docs = evidence_chunks(docs)
+    candidate_docs = evidence_chunks(list(retrieve_meta.get("candidates_before_rerank") or docs))
     trace: dict[str, Any] = {
         **STANDARD_EXECUTION_FIELDS,
         "tool_used": True,
         "tool_name": "search_knowledge_base",
         "query": query,
         "expanded_query": query,
-        "retrieved_chunks": docs,
-        "initial_retrieved_chunks": docs,
+        "retrieved_chunks": public_docs,
+        "initial_retrieved_chunks": public_docs,
+        "candidate_evidence_chunks": candidate_docs,
+        "final_evidence_chunks": public_docs,
+        "answer_evidence_chunks": public_docs,
+        "evidence_contract_version": "rag-evidence-v1",
+        "answer_evidence_subset_of_final": True,
         "attached_context_chunks": list(attached_docs or []),
         "context_files": list(context_files or []),
         "retrieval_stage": "initial",

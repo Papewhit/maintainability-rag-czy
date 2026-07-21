@@ -1,5 +1,20 @@
 ## ADDED Requirements
 
+### Requirement: Intent 最终路线显式事件
+Intent parse MUST 在 typed query plan 确定后产生一个用户可见 `rag_step`，明确标识本轮最终采用精确路线或综合路线。该事件 MUST 以实际 `query_plan_type` 为准；请求综合模式或自动分类器发生降级时 MUST 显示降级后的精确路线，并 MUST NOT 暴露 provider 错误、内部 Prompt、完整查询或原始模型输出。
+
+#### Scenario: 精确路线显式可见
+- **WHEN** intent parse 最终产生 `PreciseQueryPlan`
+- **THEN** 后续检索开始前的 SSE 包含一次“意图解析：精确路线”事件
+
+#### Scenario: 综合路线显式可见
+- **WHEN** intent parse 最终产生 `ComprehensiveQueryPlan`
+- **THEN** decompose/fanout 事件之前的 SSE 包含一次“意图解析：综合路线”事件
+
+#### Scenario: 综合请求安全降级
+- **WHEN** requested comprehensive 因分类器不可用、超时、无效或矛盾输出而最终产生 `PreciseQueryPlan`
+- **THEN** intent 事件显示精确路线与通用安全降级说明，不显示综合路线或底层错误文本
+
 ### Requirement: Comprehensive 聚合进度事件
 Comprehensive graph MUST 在分解/并行召回、分支 rerank、merge 和 shared postprocess 的主 node 边界产生有序 `rag_step`；并行 branch worker MUST NOT 直接产生无序用户事件。正常 comprehensive 请求即使不进入 fallback，也 MUST 向 stream frontend 展示检索进度。
 

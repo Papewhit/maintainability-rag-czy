@@ -187,6 +187,46 @@ class RagAnswerExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("不得回答未覆盖维度", prepared[-2].content)
         self.assertNotIn("must not be injected", prepared[-2].content)
 
+    def test_level_three_partial_uses_typed_contract_as_control_input(self):
+        delivery = {
+            "mode": "partial_synthesis",
+            "covered_count": 1,
+            "total_count": 2,
+            "covered_dimensions": ["成本"],
+            "uncovered_dimensions": ["风险"],
+            "dimension_evidence": [{
+                "dimension_id": "sub_query_0",
+                "label": "成本",
+                "evidence_refs": [{
+                    "candidate_id": "cost",
+                    "chunk_id": "cost",
+                    "filename": "cost.pdf",
+                    "page_number": 3,
+                    "excerpt": "成本证据",
+                }],
+            }],
+            "baseline_evidence": [],
+            "constraints": ["answer_covered_dimensions_only"],
+            "attempted_levels": [1, 2, 3],
+        }
+        turn = replace(
+            plan_rag_turn(RagTurnRequest(user_text="compare", context_files=["manual.pdf"])),
+            fallback_level=3,
+            level3_delivery=delivery,
+            level3_answer="legacy text must not control",
+        )
+
+        prepared = prepare_rag_answer_messages(
+            [SimpleNamespace(type="human", content="compare")],
+            turn,
+            retrieved_context="must not be injected",
+        )
+
+        self.assertIn("不是可直接复述的最终答案", prepared[-2].content)
+        self.assertIn("不得输出‘证据摘录’", prepared[-2].content)
+        self.assertIn("成本证据", prepared[-2].content)
+        self.assertNotIn("legacy text must not control", prepared[-2].content)
+
     def test_other_levels_do_not_add_fallback_delivery_instruction(self):
         turn = replace(
             plan_rag_turn(

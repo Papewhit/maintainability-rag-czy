@@ -87,6 +87,31 @@ class RagFormattingTests(unittest.TestCase):
         self.assertIn("不得回答未覆盖维度", response)
         self.assertNotEqual(response, NO_RELEVANT_DOCUMENTS_MESSAGE)
 
+    def test_optional_tool_level_three_uses_same_typed_renderer(self):
+        delivery = {
+            "mode": "no_evidence",
+            "covered_count": 0,
+            "total_count": 2,
+            "covered_dimensions": [],
+            "uncovered_dimensions": ["成本", "风险"],
+            "dimension_evidence": [],
+            "baseline_evidence": [],
+            "constraints": ["insufficient_evidence", "no_synthesis"],
+            "attempted_levels": [1, 2, 3],
+        }
+        response = format_rag_tool_response(
+            [],
+            retrieval_meta={
+                "fallback_level": 3,
+                "level3_delivery": delivery,
+                "level3_answer": "legacy text must not control",
+            },
+        )
+
+        self.assertIn("evidence-only/insufficient", response)
+        self.assertIn("证据不足", response)
+        self.assertNotIn("legacy text must not control", response)
+
     def test_search_tool_reuses_graph_context_and_marks_delivery(self):
         chat_tools.get_last_rag_context(clear=True)
         chat_tools.reset_tool_call_guards()

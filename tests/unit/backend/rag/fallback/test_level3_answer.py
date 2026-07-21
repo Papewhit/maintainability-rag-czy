@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from backend.rag.level3_answer import generate_level3_answer
+from backend.rag.level3_answer import (
+    build_level3_delivery,
+    generate_level3_answer,
+    level3_answer_evidence,
+    render_level3_delivery,
+)
 from backend.rag.query_plan import (
     ComprehensiveQueryPlan,
     PreciseQueryPlan,
@@ -155,3 +160,40 @@ def test_comprehensive_full_coverage_low_confidence_has_dedicated_guidance():
     assert "补充未覆盖维度" not in answer
     assert "仅展示上述证据摘录，不生成综合解答" in answer
     assert "生成部分解答" not in answer
+
+
+def test_typed_partial_delivery_is_authoritative_and_deduplicates_shared_evidence():
+    shared = {
+        "chunk_id": "shared",
+        "text": "同一片段覆盖成本与风险",
+        "filename": "shared.pdf",
+        "page_number": 4,
+        "matched_branch_ids": ["sub_query_0", "sub_query_1"],
+    }
+    delivery = build_level3_delivery(_comprehensive(), [1, 2, 3], final_documents=[shared])
+
+    assert delivery["mode"] == "full_coverage_low_confidence"
+    assert delivery["covered_count"] == 2
+    assert delivery["total_count"] == 2
+    assert [item["candidate_id"] for item in delivery["dimension_evidence"][0]["evidence_refs"]] == ["shared"]
+    assert [item["candidate_id"] for item in delivery["dimension_evidence"][1]["evidence_refs"]] == ["shared"]
+    assert level3_answer_evidence(delivery, [shared]) == [shared]
+    assert generate_level3_answer(_comprehensive(), [1, 2, 3], final_documents=[shared]) == render_level3_delivery(delivery)
+
+
+@pytest.mark.parametrize(
+    ("documents", "mode"),
+    [
+        ([{"chunk_id": "one", "text": "cost", "matched_branch_ids": ["sub_query_0"]}], "partial_synthesis"),
+        ([{"chunk_id": "base", "text": "background", "matched_branch_ids": ["baseline"]}], "baseline_only"),
+        ([], "no_evidence"),
+    ],
+)
+def test_typed_comprehensive_modes(documents, mode):
+    assert build_level3_delivery(_comprehensive(), [3], final_documents=documents)["mode"] == mode
+
+
+def test_typed_precise_mode_preserves_scope_boundary():
+    delivery = build_level3_delivery(_precise("filter"), [1, 3])
+    assert delivery["mode"] == "precise_insufficient"
+    assert "scope_mode:filter" in delivery["constraints"]

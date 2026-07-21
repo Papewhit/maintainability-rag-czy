@@ -40,6 +40,7 @@ def test_intent_parse_disabled_builds_compatibility_plan_without_registry_or_llm
         patch("backend.rag.pipeline.load_runtime_config", return_value=config),
         patch("backend.rag.pipeline.load_query_filename_registry", side_effect=AssertionError("registry")),
         patch("backend.rag.pipeline.IntentClassifier", side_effect=AssertionError("classifier")),
+        patch("backend.rag.pipeline.emit_rag_step") as emit,
     ):
         result = rag_pipeline.intent_parse_node(
             {"question": "《部署手册》中，如何回滚？", "context_files": []}
@@ -49,6 +50,11 @@ def test_intent_parse_disabled_builds_compatibility_plan_without_registry_or_llm
     assert result["query_plan_type"] == "precise"
     assert result["semantic_query"] == "《部署手册》中，如何回滚？"
     assert result["rag_trace"]["intent_classifier_enabled"] is False
+    emit.assert_called_once_with(
+        "🧭",
+        "意图解析：精确路线",
+        "已选择单路径精确检索",
+    )
 
 
 def test_retrieve_initial_consumes_precise_plan_and_preserves_intent_trace():

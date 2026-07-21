@@ -5,8 +5,8 @@ status: open
 scope: rag.observability
 severity: medium
 first_confirmed: 2026-07-19
-last_verified_commit: 5e49a4669f78dbaddf00ee97f1f76c7960bba419
-last_verified_date: 2026-07-19
+last_verified_commit: 961eb0f29677a23d2a0bcf5ff4da720ab701fa79
+last_verified_date: 2026-07-21
 source_findings: []
 ---
 
@@ -23,9 +23,10 @@ or progress information.
 
 The same run had `RAG_INTENT_CLASSIFIER_ENABLED=true`. The persisted RAG trace
 contained intent-parse output. The frontend now shows requested versus
-effective routing mode and labels forced-mode degradation, but it still does
-not show the selected intent/plan, confidence, latency, or detailed fallback
-state for automatic classification.
+effective routing mode, labels forced-mode degradation, and receives an
+explicit RAG step for the final precise/comprehensive execution route. It still
+does not show classifier confidence, latency, or detailed automatic-classifier
+fallback state.
 
 In session `session_1784426649833`, this missing distinction was material:
 the trace recorded `intent_classifier_enabled=true` but also
@@ -45,9 +46,9 @@ the normal UI also failed to distinguish this second degraded state.
 
 Users cannot distinguish active answer generation from a stalled request
 during model time-to-first-token. Operators can verify a request-level forced
-mode and its safe degradation in the normal UI, but automatic-classifier
-configuration mistakes, fallback, and a valid precise/comprehensive decision
-still lack sufficient UI detail.
+mode, its safe degradation, and the final precise/comprehensive execution
+route in the normal UI, but automatic-classifier configuration mistakes,
+confidence, latency, and fallback still lack sufficient UI detail.
 
 The observed 5-15 second model interval is not yet attributed to one cause. It
 may include upstream model TTFT, prompt size, provider variance, or agent/tool
@@ -67,8 +68,9 @@ seconds), and the final answer model at 15.11 seconds. The root trace's
 0.86-second first-token value belongs to the earlier agent/tool-decision
 stream and does not represent final-answer TTFT.
 
-- `backend/rag/pipeline.py::intent_parse_node()` writes intent fields into the
-  trace but emits no `rag_step` event.
+- `backend/rag/pipeline.py::intent_parse_node()` now emits one final-route
+  `rag_step`; it intentionally uses generic degradation wording and keeps
+  provider diagnostics in the trace.
 - `backend/chat/agent.py::chat_with_agent_stream()` forwards RAG steps and
   non-empty model content only. After retrieval, `_agent_worker()` enters
   `stream_answer_with_rag_context()` without emitting an answer-generation
@@ -77,17 +79,18 @@ stream and does not represent final-answer TTFT.
   `model_instance.astream()` for forced preload or `agent_instance.astream()`
   for optional tool execution. No SSE event is produced before the first
   non-empty answer chunk.
-- `frontend/index.html` renders requested/effective routing mode and forced
-  degradation, but does not render `intent_confidence`, `query_plan_type`,
-  `intent_llm_ms`, `intent_fallback_to_rules`, or `intent_llm_error`.
+- `frontend/index.html` renders requested/effective routing mode, forced
+  degradation, and the final route through the RAG-step timeline, but does not
+  render `intent_confidence`, `intent_llm_ms`, `intent_fallback_to_rules`, or
+  `intent_llm_error`.
 - `frontend/script.js::currentThinkingLabel()` repeats the last RAG step label
   until content arrives, so the quiet handoff is not represented as a new
   phase.
 
 ## Workaround
 
-Use the requested/effective mode shown in the UI for request-control checks.
-For automatic-classifier details and the answer handoff, use the LangSmith
+Use the requested/effective mode and final-route step shown in the UI for
+request-control checks. For automatic-classifier details and the answer handoff, use the LangSmith
 project `superhermes-rag-full-chain-e2e` together with the `POST /chat/stream`
 SSE response and persisted `GET /sessions/<session_id>` trace. Compare intent
 timing, retrieval timing, model span start, and first answer token rather than
@@ -95,8 +98,9 @@ treating the last visible RAG step as request completion.
 
 ## Resolution Criteria
 
-- The UI exposes the effective intent result, including classifier versus
-  rules fallback and precise versus comprehensive plan.
+- The UI exposes automatic-classifier versus rules fallback together with
+  classifier confidence and latency; the precise/comprehensive final plan is
+  already visible in the route step.
 - The streaming timeline represents the transition from completed RAG
   delivery to active answer generation before the first text token arrives.
 - Runtime evidence can separate retrieval completion, model request start,

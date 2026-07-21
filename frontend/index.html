@@ -214,7 +214,7 @@
                                 </div>
 
                                 <div v-if="traceChunks(msg.ragTrace).length" class="sources">
-                                    <strong>来源片段</strong>
+                                    <strong>最终来源片段</strong>
                                     <div v-for="(chunk, cIdx) in traceChunks(msg.ragTrace)" :key="cIdx" class="source-item">
                                         <div class="source-title-line">
                                             <span>{{ chunk.filename || '未知文档' }}</span>
@@ -223,6 +223,16 @@
                                             <small v-if="chunk.rerank_score !== null && chunk.rerank_score !== undefined">
                                                 rerank {{ Number(chunk.rerank_score).toFixed(4) }}
                                             </small>
+                                        </div>
+                                        <p v-if="chunk.text">{{ chunk.text }}</p>
+                                    </div>
+                                </div>
+                                <div v-if="traceCandidateChunks(msg.ragTrace).length" class="sources trace-block">
+                                    <strong>候选片段（诊断）</strong>
+                                    <div v-for="(chunk, cIdx) in traceCandidateChunks(msg.ragTrace)" :key="'candidate-' + cIdx" class="source-item">
+                                        <div class="source-title-line">
+                                            <span>{{ chunk.filename || '未知文档' }}</span>
+                                            <small v-if="chunk.page_number">第 {{ chunk.page_number }} 页</small>
                                         </div>
                                         <p v-if="chunk.text">{{ chunk.text }}</p>
                                     </div>

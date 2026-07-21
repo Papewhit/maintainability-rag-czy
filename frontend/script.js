@@ -1142,17 +1142,32 @@ createApp({
 
         traceChunks(trace) {
             if (!trace) return [];
-            const chunks = [];
-            const add = (items) => {
-                if (Array.isArray(items)) {
-                    items.forEach((item) => chunks.push(item));
-                }
-            };
-            add(trace.initial_retrieved_chunks);
-            add(trace.expanded_retrieved_chunks);
-            if (!chunks.length) {
-                add(trace.retrieved_chunks);
+            if (Object.prototype.hasOwnProperty.call(trace, "answer_evidence_chunks")) {
+                return Array.isArray(trace.answer_evidence_chunks)
+                    ? trace.answer_evidence_chunks.slice(0, 8)
+                    : [];
             }
+            return Array.isArray(trace.retrieved_chunks)
+                ? trace.retrieved_chunks.slice(0, 8)
+                : [];
+        },
+
+        traceCandidateChunks(trace) {
+            if (!trace) return [];
+            const chunks = [];
+            const seen = new Set();
+            [trace.candidate_evidence_chunks, trace.initial_retrieved_chunks, trace.expanded_retrieved_chunks]
+                .forEach((items) => {
+                    if (!Array.isArray(items)) return;
+                    items.forEach((item) => {
+                        const key = item.candidate_id || item.chunk_id
+                            || `${item.filename || ""}|${item.page_number || ""}|${item.text || ""}`;
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            chunks.push(item);
+                        }
+                    });
+                });
             return chunks.slice(0, 8);
         },
     },

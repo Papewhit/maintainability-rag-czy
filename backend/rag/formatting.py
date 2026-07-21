@@ -64,6 +64,7 @@ def format_rag_tool_response(
         fallback_level=int(retrieval_meta.get("fallback_level") or 0),
         scope_mode_before=retrieval_meta.get("level2_previous_scope_mode"),
         scope_mode_after=retrieval_meta.get("level2_new_scope_mode"),
+        level3_delivery=retrieval_meta.get("level3_delivery"),
         level3_answer=retrieval_meta.get("level3_answer"),
     )
     delivery_prefix = (
