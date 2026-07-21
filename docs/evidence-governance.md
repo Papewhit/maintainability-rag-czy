@@ -2,8 +2,8 @@
 document_type: governance
 status: current
 scope: documentation
-last_verified_commit: 2748ab5639454dcd2f7bd12e75783de16c9731b2
-last_verified_date: 2026-07-13
+last_verified_commit: 911892fe2fed917305fd89ebf44d059294837c85
+last_verified_date: 2026-07-21
 ---
 
 # Documentation Evidence Governance
@@ -47,6 +47,36 @@ record intended work.
 | Change-local discovery/trade-off | change `design.md` and conditional `findings.md` |
 | Reproducible test/evaluation evidence | `docs/validation/*.md` or change evidence |
 | Intended work | OpenSpec change or issue |
+
+### Architecture Content Boundary
+
+`docs/ARCHITECTURE.md` explains the current system well enough that a reader
+does not materially misjudge its responsibilities, flows, storage and wire
+boundaries, runtime defaults, feature states, degradation behavior, trace and
+evaluation contracts, or operational prerequisites. It may also identify an
+implemented-but-disabled or planned boundary when the distinction is explicit
+and links to the governing specification, change, issue, or evidence.
+
+A confirmed unresolved problem may appear beside the affected architecture
+only as the minimum current-state qualification needed to avoid a misleading
+description. That qualification states the relevant behavior, limitation, or
+operational consequence and links to its authoritative known-issue document.
+The architecture overview is neither a complete known-issue catalog nor a
+second authority for the problem lifecycle.
+
+Do not put known-issue reproduction steps, investigation history, detailed
+evidence, workaround procedures, speculative root-cause analysis, proposed
+fixes, or resolution criteria in `docs/ARCHITECTURE.md`. Those details belong
+in the typed known-issue document. Do not introduce a confirmed unresolved
+problem only in the architecture overview; create or update its governed
+known-issue authority and link it. Likewise, intended work belongs to an
+OpenSpec change or external issue rather than architecture prose.
+
+Navigation sections in `docs/ARCHITECTURE.md` link to governed collections and
+authorities. They do not enumerate individual known issues already described
+beside their affected components. When a problem is resolved, update the
+current architecture if behavior or boundaries changed, then remove stale
+problem qualifications and links.
 
 ## Decision Tests
 

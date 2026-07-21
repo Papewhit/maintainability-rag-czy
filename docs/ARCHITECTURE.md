@@ -56,7 +56,7 @@ DocumentService
 | Stage | Path | Contract |
 | --- | --- | --- |
 | Registry | `backend/documents/parse_adapter/registry.py` | Extension dispatch. Registered adapter failure is fatal; it does not fall back to the legacy loader. |
-| DeepDoc | `backend/documents/parse_adapter/deepdoc/adapter.py` | PDF/DOCX parsing, OCR, layout, tables, figures, and parse metadata. `.doc` is registered but currently routed through the DOCX parser without legacy-DOC conversion. |
+| DeepDoc | `backend/documents/parse_adapter/deepdoc/adapter.py` | PDF/DOCX parsing, OCR, layout, tables, figures, and parse metadata. `.doc` is registered but currently routed through the DOCX parser without legacy-DOC conversion ([KI-RAG-0005](known-issues/legacy-doc-ingestion.md)). |
 | Excel | `backend/documents/parse_adapter/excel.py` | XLS/XLSX parsing into the common parsed model. |
 | Parse contract | `backend/documents/parse_adapter/base.py` | Parsed document, blocks, tables, figures, parse metadata. |
 | Normalizer | `backend/documents/normalizer/pipeline.py` | Deterministic structural enrichment. |
@@ -66,19 +66,21 @@ DocumentService
 
 Only an unregistered extension can reach the legacy `DocumentLoader`. Parse metadata persistence is best-effort; adapter parsing and leaf generation are required for upload success.
 
-DeepDoc native-text output can currently merge paragraphs from opposite sides
-of a visible heading before normalization ([KI-RAG-0018](known-issues/deepdoc-native-text-can-merge-paragraphs-across-section-headings.md)).
-Its adapter also recognizes `x.y` headings but misclassifies `x.y.z` section
-headings as list items, allowing the list normalizer to group sibling sections
-and preventing their section identity from reaching chunks
-([KI-RAG-0019](known-issues/three-level-section-headings-are-treated-as-list-items.md)).
+DeepDoc native-text parsing can lose a visible heading boundary or treat a
+three-level numeric section heading as a list item, so section identity may not
+reach chunks; see
+[KI-RAG-0018](known-issues/deepdoc-native-text-can-merge-paragraphs-across-section-headings.md)
+and
+[KI-RAG-0019](known-issues/three-level-section-headings-are-treated-as-list-items.md).
 
-The administrator document list is reconstructed by querying Milvus after an
-upload batch. Uploads are sequential, but the frontend performs only one list
-read after the batch, and insert/query operations use separate fresh Milvus
-clients without an explicit read-your-writes boundary. The immediate list can
-therefore omit the most recent successful upload until refresh; see
+The document list read immediately after an upload batch can temporarily omit
+the most recent successful upload until refresh; see
 [KI-RAG-0015](known-issues/document-list-can-lag-completed-multi-upload.md).
+
+The administrator document endpoint is a capped, current-profile Milvus-leaf
+projection rather than a durable upload inventory, and complete leaf-embedding
+failure can still be reported as upload success; see
+[KI-RAG-0020](known-issues/document-inventory-is-not-a-durable-upload-authority.md).
 
 ### Terminology and Rescan
 
@@ -218,19 +220,16 @@ Internal contracts are in `backend/rag/types.py`; API schemas in `backend/contra
 
 The current frontend does not render the intent-classifier fields already present in the final trace, and the SSE timeline has no event between the last RAG step and the first answer token. Model time-to-first-token is therefore a user-visible silent interval, while classifier activation and fallback require direct trace or external telemetry inspection; see [KI-RAG-0012](known-issues/rag-progress-ui-omits-intent-and-answer-handoff.md).
 
-LangSmith does not currently have a stable application request root. A
-forced-preload turn records its RAG graph and final answer model as separate
-roots, while the intent classifier's executor also loses the active trace
-parent; optional-tool execution keeps more of the agent path together but
-still emits the classifier as a separate root. See
+LangSmith does not currently have a stable application request root, so one
+chat turn can fragment across multiple root traces; see
 [KI-RAG-0016](known-issues/langsmith-chat-turns-fragment-across-root-traces.md).
-The active Qwen OpenAI-compatible endpoint also rejects the classifier's
-JSON-object structured-output call because the prompt omits the provider's
-literal `json` requirement, causing every inspected call to fall back to
-rules; see
+The active Qwen OpenAI-compatible endpoint rejects the classifier's JSON-mode
+call, causing classification to degrade to rules; see
 [KI-RAG-0017](known-issues/intent-classifier-json-mode-prompt-is-provider-incompatible.md).
 
-The confidence gate can also interpret a small score margin plus low dominant-root share as insufficient even when several high-score final chunks corroborate the requested fact. A contaminated shared collection is a known confounder in the current runtime evidence, so threshold or formula changes require an isolated-index reproduction; see [KI-RAG-0013](known-issues/rag-confidence-rejects-corroborating-evidence.md).
+The confidence gate can reject mutually corroborating high-score evidence and
+produce a Level 3 no-evidence answer; see
+[KI-RAG-0013](known-issues/rag-confidence-rejects-corroborating-evidence.md).
 
 Evaluation lives under `tests/eval/`, `tests/regression/`, and `backend/evaluation/`. Reports must bind a commit and source fingerprint and distinguish deterministic substitutes from real models/infrastructure. Intent-routing source fingerprint version 2 is intended to bind a sorted manifest containing all RAG, infrastructure, and shared Python runtime files plus the API schema, evaluation code/runner, OpenSpec design/spec, and annotated datasets, so transitive retrieval/preflight/merge changes invalidate paired evidence (`RAG-INTENT-F028`). Its current manifest still names historical change-artifact paths that are absent from clean worktrees, so fingerprint evaluation currently fails before producing that evidence ([KI-RAG-0007](known-issues/intent-routing-fingerprint-archived-openspec-paths.md)). Microbenchmarks are not production-capacity evidence.
 
@@ -266,28 +265,16 @@ Degradation rules include hybrid-to-dense fallback, candidate preservation when 
 
 Planned changes are excluded from active diagrams and do not override current defaults. Implemented-but-disabled capabilities remain outside the default execution path until their project-level validation and local rehearsal gates are satisfied. Ragtenance is a student portfolio/research-collaboration derivative project above demo level, not a production service: intent-routing activation is based on real-model runs over a versioned synthetic set plus a small public/authorized real-document subset, followed by a fixed local rehearsal. This evidence can support Ragtenance reference defaults but makes no production-readiness, SLA, capacity, or domain-representativeness claim.
 
-## Known Limitations and Navigation
+## Governed Evidence Navigation
 
-- Entity metadata uses Milvus dynamic fields; explicit schema migration remains unresolved.
-- Historical entity metadata has mixed shapes; runtime compatibility exists, storage normalization does not.
-- Retrieval output mapping is manually maintained across paths.
-- Entity metadata data-quality observability is limited.
-- Step-chain and confidence remain default disabled pending broader production evidence.
-- Terminology rescan currently violates the parent-only store contract and has unreliable parent rollback.
-- `.doc` is registered but lacks a legacy-DOC conversion/parser path.
-- Index profiles do not automatically isolate BM25 state.
-- Profiles below `v4_table_aware` omit parsed table parents and leaves without making upload fail ([KI-RAG-0010](known-issues/table-evidence-is-not-indexed-below-v4-table-aware.md)).
-- DeepDoc native-text parsing can merge paragraphs across a visible section heading, and three-level numeric headings can be normalized as list items instead of section boundaries ([KI-RAG-0018](known-issues/deepdoc-native-text-can-merge-paragraphs-across-section-headings.md), [KI-RAG-0019](known-issues/three-level-section-headings-are-treated-as-list-items.md)).
-- Milvus candidate retrieval can return mixed-profile rows from a contaminated collection ([KI-RAG-0011](known-issues/milvus-retrieval-does-not-enforce-index-profile-isolation.md)).
-- A newly configured Milvus collection must be initialized before the first registry/retrieval read ([KI-RAG-0014](known-issues/milvus-read-path-requires-preinitialized-collection.md)).
-- The post-upload document list can omit the most recent successful file until a manual refresh because its immediate Milvus read has no explicit read-your-writes boundary ([KI-RAG-0015](known-issues/document-list-can-lag-completed-multi-upload.md)).
-- Frontend progress omits intent results and the RAG-to-answer-generation handoff, leaving model TTFT as a silent interval ([KI-RAG-0012](known-issues/rag-progress-ui-omits-intent-and-answer-handoff.md)).
-- One chat turn can fragment into several LangSmith root traces, and the current intent classifier JSON-mode request is rejected by the active provider before degrading to rules ([KI-RAG-0016](known-issues/langsmith-chat-turns-fragment-across-root-traces.md), [KI-RAG-0017](known-issues/intent-classifier-json-mode-prompt-is-provider-incompatible.md)).
-- Confidence can reject mutually corroborating high-score evidence and produce a Level 3 no-evidence answer; shared-index contamination remains a confounder ([KI-RAG-0013](known-issues/rag-confidence-rejects-corroborating-evidence.md)).
-- Intent-routing source fingerprint evaluation references archived OpenSpec paths and fails in clean worktrees ([KI-RAG-0007](known-issues/intent-routing-fingerprint-archived-openspec-paths.md)).
-- Anchor routing lacks an atomic capability configuration and shared extraction/normalization contract; multilevel fallback mixed evaluation, reference tuning and local rehearsal remain pending under [fallback activation](../openspec/changes/rag-multilevel-fallback-activation/), while its narrow manual M8.5 UX gate passed under `VAL-RAG-FALLBACK-001`; the grouped env examples remain validation-only.
-
-See [Evidence Governance](evidence-governance.md), [ADRs](architecture/decisions/), [known issues](known-issues/), [enhancements](enhancements/), [validation](validation/), [postprocess pipeline](rag-postprocess-evidence/pipeline.md), [OpenSpec changes](../openspec/changes/), and [stable specs](../openspec/specs/).
+Use [Evidence Governance](evidence-governance.md) to select the authoritative
+source for a question. Current rationale lives in [ADRs](architecture/decisions/);
+confirmed unresolved problems in [known issues](known-issues/); future
+opportunities in [enhancements](enhancements/); reproducible evidence in
+[validation](validation/); intended work in [OpenSpec changes](../openspec/changes/);
+and stable contracts in [OpenSpec specs](../openspec/specs/). The
+[postprocess pipeline](rag-postprocess-evidence/pipeline.md) provides supporting
+technical detail for the shared retrieval stages.
 
 ## Architecture Verification
 
