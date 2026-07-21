@@ -1,8 +1,8 @@
 ---
 document_type: current_architecture
 status: current
-verified_commit: 27249fcc9393c84778a5ccc4860a670669aad5c8
-last_verified_date: 2026-07-17
+verified_commit: bbb244973037bc357d9bf71edf412d07a5081244
+last_verified_date: 2026-07-21
 authority: current-system-overview
 ---
 
@@ -12,7 +12,12 @@ authority: current-system-overview
 
 This is the single current-system overview for Ragtenance. Stable contracts live in `openspec/specs/`; rationale, known issues, enhancements, and reproducible evidence live in the governed locations defined by [Evidence Governance](evidence-governance.md).
 
-Current facts were verified against commit `27249fcc9393c84778a5ccc4860a670669aad5c8` on 2026-07-17 (Asia/Hong_Kong). Uncommitted working-tree changes are outside that baseline unless stated. **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
+**Editing rule:** Before changing this overview, apply the
+[Architecture Content Boundary](evidence-governance.md#architecture-content-boundary);
+keep findings, detailed issue evidence, workarounds, and intended work in their
+governed authorities.
+
+Current facts were verified against the working tree based on commit `bbb244973037bc357d9bf71edf412d07a5081244` on 2026-07-21 (Asia/Hong_Kong). **Default enabled** means active with unset environment; **implemented, default disabled** requires configuration; **planned** means an unimplemented OpenSpec change and is excluded from active flows.
 
 ## System Context and Components
 
@@ -223,9 +228,10 @@ The current frontend does not render the intent-classifier fields already presen
 LangSmith does not currently have a stable application request root, so one
 chat turn can fragment across multiple root traces; see
 [KI-RAG-0016](known-issues/langsmith-chat-turns-fragment-across-root-traces.md).
-The active Qwen OpenAI-compatible endpoint rejects the classifier's JSON-mode
-call, causing classification to degrade to rules; see
-[KI-RAG-0017](known-issues/intent-classifier-json-mode-prompt-is-provider-incompatible.md).
+The intent classifier requests schema-conformant JSON and degrades to rules on
+model failure or timeout; it remains default disabled. A timed-out synchronous
+provider call can continue running and retain a classifier capacity slot; see
+[KI-RAG-0021](known-issues/intent-classifier-timeout-cannot-cancel-provider-call.md).
 
 The confidence gate can reject mutually corroborating high-score evidence and
 produce a Level 3 no-evidence answer; see

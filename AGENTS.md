@@ -36,12 +36,15 @@ validation scripts at the repository root.
 
 ## Architecture and Evidence Routing
 
-Use [the current architecture](docs/ARCHITECTURE.md) when work may assess or
-change component responsibilities, cross-module flows, storage boundaries,
-metadata or wire contracts, runtime defaults, feature status, degradation,
-trace behavior, or evaluation contracts. The evidence boundary, relevant
-component sections, feature status matrix, and known limitations are useful
-starting points; expand reading when the impact is broader or unclear.
+When work may assess or change component responsibilities, cross-module flows,
+storage boundaries, metadata or wire contracts, runtime defaults, feature
+status, degradation, trace behavior, or evaluation contracts, first read both
+[the current architecture](docs/ARCHITECTURE.md) and the Authority Routing,
+Architecture Content Boundary, and Architecture Impact Test sections of
+[documentation evidence governance](docs/evidence-governance.md). Apply those
+rules before updating the architecture overview. The evidence boundary,
+relevant component sections, feature status matrix, and known limitations are
+useful starting points; expand reading when the impact is broader or unclear.
 
 For design, OpenSpec, review, governed documentation, known limitations,
 technical debt, enhancements, or validation evidence, first read

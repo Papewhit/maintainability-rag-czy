@@ -59,10 +59,10 @@ and links to the governing specification, change, issue, or evidence.
 
 A confirmed unresolved problem may appear beside the affected architecture
 only as the minimum current-state qualification needed to avoid a misleading
-description. That qualification states the relevant behavior, limitation, or
-operational consequence and links to its authoritative known-issue document.
-The architecture overview is neither a complete known-issue catalog nor a
-second authority for the problem lifecycle.
+description. Use one or two sentences to summarize the relevant behavior,
+limitation, or operational consequence, then point the details to the
+authoritative known-issue document. The architecture overview is neither a
+complete known-issue catalog nor a second authority for the problem lifecycle.
 
 Do not put known-issue reproduction steps, investigation history, detailed
 evidence, workaround procedures, speculative root-cause analysis, proposed
