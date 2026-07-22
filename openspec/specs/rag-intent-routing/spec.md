@@ -385,3 +385,74 @@ ChatRequest MUST 以默认 false 的可选字段承载用户选择。同步/流�
 #### Scenario: forced 模式降级 trace
 - **WHEN** forced comprehensive 无法产生合法 comprehensive plan
 - **THEN** trace 保留 requested=`forced_comprehensive`、effective precise degradation 和具体错误
+
+### Requirement: Provider-compatible structured intent output
+当 intent classifier 使用 structured output 时，系统 MUST 保持 `IntentDecision` 为唯一输出 schema，并 MUST 满足所配置 provider 对 JSON Mode 的请求前置条件。对于要求消息声明 JSON 输出的 provider，请求消息 MUST 明确包含 JSON 输出要求；系统 MUST NOT 通过另一套手写 schema 或宽松 JSON 解析绕过 `IntentDecision` 校验。
+
+#### Scenario: JSON-object provider 成功分类
+- **WHEN** classifier 使用要求消息包含 JSON 关键词的 OpenAI-compatible provider，并通过 `with_structured_output(IntentDecision)` 发起调用
+- **THEN** system message 明确要求 JSON 输出，返回内容通过 `IntentDecision` 校验，且成功 trace 标记 `intent_fallback_to_rules=false`
+
+#### Scenario: Provider 或 schema 仍然失败
+- **WHEN** provider 拒绝请求、调用超时或返回内容不能通过 `IntentDecision` 校验
+- **THEN** 系统保持既有兼容降级语义，输出 `PreciseQueryPlan` 并记录 `intent_fallback_to_rules=true` 与具体错误
+
+#### Scenario: 确定性测试与真实 provider 证据分离
+- **WHEN** 测试仅使用 structured-output 替身而未调用真实配置 provider
+- **THEN** 测试只证明 prompt/schema/降级契约，不得声明真实 provider compatibility 或 activation `model_success`
+
+### Requirement: Intent 最终路线显式事件
+Intent parse MUST 在 typed query plan 确定后产生一个用户可见 `rag_step`，明确标识本轮最终采用精确路线或综合路线。该事件 MUST 以实际 `query_plan_type` 为准；请求综合模式或自动分类器发生降级时 MUST 显示降级后的精确路线，并 MUST NOT 暴露 provider 错误、内部 Prompt、完整查询或原始模型输出。
+
+#### Scenario: 精确路线显式可见
+- **WHEN** intent parse 最终产生 `PreciseQueryPlan`
+- **THEN** 后续检索开始前的 SSE 包含一次“意图解析：精确路线”事件
+
+#### Scenario: 综合路线显式可见
+- **WHEN** intent parse 最终产生 `ComprehensiveQueryPlan`
+- **THEN** decompose/fanout 事件之前的 SSE 包含一次“意图解析：综合路线”事件
+
+#### Scenario: 综合请求安全降级
+- **WHEN** requested comprehensive 因分类器不可用、超时、无效或矛盾输出而最终产生 `PreciseQueryPlan`
+- **THEN** intent 事件显示精确路线与通用安全降级说明，不显示综合路线或底层错误文本
+
+### Requirement: Comprehensive 聚合进度事件
+Comprehensive graph MUST 在分解/并行召回、分支 rerank、merge 和 shared postprocess 的主 node 边界产生有序 `rag_step`；并行 branch worker MUST NOT 直接产生无序用户事件。正常 comprehensive 请求即使不进入 fallback，也 MUST 向 stream frontend 展示检索进度。
+
+#### Scenario: Comprehensive 正常路径事件完整
+- **WHEN** ComprehensiveQueryPlan 完成正常分支检索并在 Level 0 结束
+- **THEN** SSE 依序包含分解/并行检索、分支处理、证据合并和最终后处理事件，不依赖 fallback 事件证明检索发生
+
+#### Scenario: 并行分支事件保持确定顺序
+- **WHEN** 多个 branch worker 以不同顺序完成
+- **THEN** frontend 只接收 node 汇总后的聚合事件，顺序不随 worker 完成时序变化
+
+#### Scenario: 事件携带聚合计数
+- **WHEN** comprehensive node 发出完成事件
+- **THEN** detail 包含适用的计划/完成分支数、候选数或 final evidence 数，但不暴露内部 Prompt
+
+### Requirement: Final 与 Answer Evidence 身份
+公共 trace MUST 区分候选诊断集合、shared postprocess `final_evidence_chunks` 和实际进入 answer context/Level 3 delivery 的 `answer_evidence_chunks`。前端“最终来源片段”MUST 只展示 answer evidence；initial/expanded candidates MUST NOT 被合并后冒充最终来源。
+
+#### Scenario: 普通回答展示最终消费证据
+- **WHEN** final top-k 被格式化进正常 answer context
+- **THEN** `answer_evidence_chunks` 与实际格式化文档 identity 一致，frontend 最终来源只展示该集合
+
+#### Scenario: 候选被 final selection 淘汰
+- **WHEN** initial 或 expanded candidate 未进入 final top-k
+- **THEN** 它 MAY 出现在候选诊断区，但 MUST NOT 出现在最终来源片段
+
+#### Scenario: 旧 trace 兼容
+- **WHEN** 历史 trace 没有 answer evidence 字段
+- **THEN** frontend MAY 回退到 `retrieved_chunks`，但 MUST NOT 回退到 initial/expanded 并集作为最终来源
+
+### Requirement: Comprehensive 交付事件与证据可验证
+Stream 最终 trace、历史消息和非流式响应 MUST 保持 comprehensive event 对应的最终 evidence identity、branch provenance 和 answer-consumed identity，使评测能够验证显示来源与回答输入一致。
+
+#### Scenario: Stream 完成后的证据一致性
+- **WHEN** comprehensive stream 完成并发送最终 trace
+- **THEN** trace 中 answer evidence IDs 与前端来源 IDs 及后端格式化输入一致
+
+#### Scenario: Level 3 后仍可识别实际证据
+- **WHEN** comprehensive 请求进入 Level 3 且 graph 的返回 docs 为空
+- **THEN** trace 仍通过 typed Level 3 refs 和 answer evidence IDs 标识实际进入交付模板的 final documents
