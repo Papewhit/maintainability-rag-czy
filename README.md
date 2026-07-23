@@ -1,8 +1,6 @@
 # Ragtenance
 
-Ragtenance 是一个面向私有文档知识库的 RAG 问答系统。项目以 FastAPI 后端为核心，连接 PostgreSQL、Redis、Milvus、Embedding 模型和 CrossEncoder reranker，提供账号认证、会话管理、文档上传索引、流式问答和可追溯检索证据。
-
-它现在已经是独立演进的项目：核心目标不是做一个普通聊天壳，而是把“文档解析 -> 结构化索引 -> 多阶段检索 -> 证据重排 -> 可诊断回答”做成一条稳定、可评测、可维护的本地知识库流水线。
+Ragtenance 是面向维修性（Maintainability）设计文档知识库的 RAG 问答系统。项目以 FastAPI 后端为核心，连接 PostgreSQL、Redis、Milvus 存储，通过 LangGraph 编排 Agentic RAG 能力，支持接入本地 Embedding 模型和 CrossEncoder reranker，提供账号认证、会话管理、文档上传索引、流式问答和检索证据可追溯等核心功能。
 
 ## 项目定位
 
@@ -10,11 +8,10 @@ Ragtenance 适合这些场景：
 
 | 场景 | Ragtenance 的处理方式 |
 | --- | --- |
-| 私有文档问答 | 管理员上传 PDF、Word、Excel，系统自动解析并索引到 Milvus |
-| 技术手册检索 | 通过文件名、页码、标题、章节和 chunk/root 证据做多层定位 |
+| 文档知识库构建 | 管理员上传 PDF、Word、Excel，系统自动解析并索引到 Milvus |
+| 工程手册检索 | 通过文件名、页码、标题、章节和 chunk/root 证据做多层定位 |
 | 可追溯回答 | 回答链路保留 `rag_trace`，便于查看检索、重排、上下文和降级情况 |
 | 本地或内网部署 | Docker 管理 PostgreSQL、Redis、Milvus、etcd、MinIO、Attu |
-| RAG 质量调优 | 内置过一套基于 gold dataset 的评测口径，README 固化当前关键数据 |
 
 ## 核心能力
 
@@ -52,12 +49,10 @@ Ragtenance 适合这些场景：
 | `backend/services/` | 文档上传、索引、删除等用例编排 |
 | `backend/chat/` | Chat Agent、工具调用、会话存储接入和 RAG 执行 |
 | `backend/rag/` | QueryPlan、检索、重排、上下文、引用、诊断、trace |
-| `backend/infra/` | 数据库、Redis、Embedding、Milvus 读写和父 chunk 存储 |
+| `backend/infra/` | 数据库、Redis、Embedding、Milvus 读写和分层 chunk 存储 |
 | `backend/documents/` | 文档解析、分块和元数据抽取 |
 | `frontend/` | Web UI、知识库管理、会话历史、流式对话展示 |
 | `tests/` | 后端入口、API、RAG 核心模块和前端静态检查相关测试 |
-
-本地运行时还会使用一些不上传到 GitHub 的维护目录：`data/`、`docs/`、`eval/`、`scripts/`、`volumes/`。其中评测和历史设计材料的关键结论已经整理进本文档。
 
 ## 请求链路
 
@@ -138,8 +133,6 @@ K2 / I2 / M0 / A1 / fp16
 | 规范档位 | 数据类型 | File@5 | File+Page@5 | Chunk@5 | Root@5 | P50 | P95 | 结论 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | `K2/I2/M0/A1/fp16` | fp16 | 0.992 | 0.768 | 0.720 | 0.793 | 1116 ms | 1283 ms | 当前默认质量档 |
-
-这组结果说明：默认档在文件召回、页码定位、chunk 命中和 root/章节证据命中之间最均衡；`fp16` 在 GPU rerank 场景下兼顾质量、显存占用和延迟。
 
 ## 数据集与评测口径
 
@@ -279,22 +272,6 @@ RERANK_TOP_N=30
 BM25_STATE_PATH=data/bm25_state_v3_quality.json
 ```
 
-## 上传范围
-
-本仓库上传到 GitHub 的范围以核心应用为主：后端、前端、测试、配置模板、Docker 编排和锁文件。
-
-以下目录属于本地运行数据、历史文档、评测材料或维护脚本，不上传到 GitHub：
-
-```text
-data/
-docs/
-eval/
-scripts/
-volumes/
-```
-
-此外，虚拟环境、依赖目录、IDE 配置缓存、pytest/ruff 缓存和 `.env` 也不会作为新内容上传。
-
 ## 验证
 
 核心静态检查：
@@ -341,8 +318,8 @@ uv run pytest tests\eval tests\regression -q
 
 | 方向 | 目标 |
 | --- | --- |
-| 页码感知排序 | 进一步提升 `File+Page@5` 和 `Chunk@5` |
-| qrel 人工复核 | 提高 chunk/root 指标可信度 |
 | 选择性 fallback | 只在低置信度问题上触发更昂贵链路 |
+| 页码感知排序 | 进一步提升 `File+Page@5` 和 `Chunk@5` |
 | 答案评测 | 增加 groundedness、citation coverage 和 answer relevance |
+| 意图路由增强 | 提高精确/综合检索意图场景识别能力 |
 | 业务语料微调 | 对 hard negative 和同系列产品文档做更强区分 |
