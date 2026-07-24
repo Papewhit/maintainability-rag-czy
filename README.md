@@ -1,6 +1,18 @@
-# Ragtenance
+<h1 align="center">
+  <img src="frontend/logo-ragtenance.svg" width="84" alt="" valign="middle">
+  Ragtenance
+</h1>
 
-Ragtenance 是面向维修性（Maintainability）设计文档知识库的 RAG 问答系统。项目以 FastAPI 后端为核心，连接 PostgreSQL、Redis、Milvus 存储，通过 LangGraph 编排 Agentic RAG 能力，支持接入本地 Embedding 模型和 CrossEncoder reranker，提供账号认证、会话管理、文档上传索引、流式问答和检索证据可追溯等核心功能。
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12+"></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-✓-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI"></a>
+  <a href="https://langchain-ai.github.io/langgraph/"><img src="https://img.shields.io/badge/LangGraph-✓-1C3C3C?style=flat-square&logo=langchain&logoColor=white" alt="LangGraph"></a>
+  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-✓-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker"></a>
+</p>
+
+<p align="center">Ragtenance 是面向维修性（Maintainability）设计文档知识库的 RAG 问答系统。项目以 FastAPI 后端为核心，连接 PostgreSQL、Redis、Milvus 存储，通过 LangGraph 编排 Agentic RAG 能力，支持接入本地 Embedding 模型和 CrossEncoder reranker，提供账号认证、会话管理、文档上传索引、流式问答和检索证据可追溯等核心功能。</p>
+
+---
 
 ## 项目定位
 
